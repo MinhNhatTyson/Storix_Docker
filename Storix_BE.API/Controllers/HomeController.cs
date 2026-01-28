@@ -38,7 +38,7 @@ namespace Storix_BE.API.Controllers
                 RoleId = user.Result.RoleId
             });
         }
-        [HttpGet("login-google")]
+       /* [HttpGet("login-google")]
         public IResult LoginWithGoogle([FromQuery] string returnURL, LinkGenerator linkGenerator, SignInManager<User> signManager, HttpContext context)
         {
             //tà đạo
@@ -59,13 +59,13 @@ namespace Storix_BE.API.Controllers
 
             var user = service.LoginWithGoogleAsync(result.Principal);
             var token = GenerateJSONWebToken(user.Result);
-            /*return Results.Redirect(returnURL);*/
+            *//*return Results.Redirect(returnURL);*//*
             return Ok(new
             {
                 Token = token,
                 RoleId = user.Result.RoleId
             });
-        }
+        }*/
         private string GenerateJSONWebToken(User user)
         {
             var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_config["Jwt:Key"]));
