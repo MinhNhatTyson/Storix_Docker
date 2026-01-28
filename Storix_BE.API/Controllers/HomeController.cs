@@ -13,6 +13,8 @@ using Microsoft.AspNetCore.Authentication.Google;
 
 namespace Storix_BE.API.Controllers
 {
+    [ApiController]
+    [Route("api/[controller]")]
     public class HomeController : Controller
     {
         private readonly IUserService _accService;
