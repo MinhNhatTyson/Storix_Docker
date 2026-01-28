@@ -6,18 +6,16 @@ using Storix_BE.Domain.Context;
 using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.WebHost.UseUrls("http://0.0.0.0:8080");
+
+builder.Configuration
+    .AddJsonFile("appsettings.json", optional: true)
+    .AddEnvironmentVariables();
+
 
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 builder.Services.AddDbContext<StorixDbContext>(options =>
     options.UseNpgsql(connectionString));
-
-builder.Configuration
-    .SetBasePath(Directory.GetCurrentDirectory())
-    .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true) // optional: true allows fallback
-    .AddUserSecrets<Program>(optional: true) // Only works if your project has user secrets enabled
-    .AddEnvironmentVariables()
-    .AddCommandLine(args);
-
 var config = builder.Configuration;
 Log.Logger = new LoggerConfiguration()
     .ReadFrom.Configuration(config)
