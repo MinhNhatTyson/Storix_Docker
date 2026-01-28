@@ -1,0 +1,20 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Storix_BE.Domain\Storix_BE.Domain.csproj" />
+  </ItemGroup>
+	
+	<ItemGroup>
+		<Folder Include="Interfaces\" />
+		<Folder Include="Implementation\" />
+	</ItemGroup>
+	<ItemGroup>
+		<PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />
+	</ItemGroup>
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+    
+</Project>

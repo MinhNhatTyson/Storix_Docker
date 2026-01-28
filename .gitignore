@@ -1,0 +1,59 @@
+## Build results
+[Bb]in/
+[Oo]bj/
+[Pp]ublish/
+[Rr]elease*/
+[Dd]ebug*/
+
+## Visual Studio
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+## Rider / JetBrains
+.idea/
+*.sln.iml
+
+## VS Code
+.vscode/
+
+## NuGet
+*.nupkg
+*.snupkg
+*.nuget.props
+*.nuget.targets
+packages/
+
+## Logs
+*.log
+*.tlog
+*.svclog
+
+## Temporary files
+*.tmp
+*.temp
+*.bak
+*.cache
+*.pdb
+*.obj
+*.dbmdl
+
+## User-specific files
+*.userprefs
+*.userosscache
+
+## IIS / ASP.NET
+_ReSharper*/
+*.[Rr]e[Ss]harper
+_UpgradeReport_Files/
+_UpgradeLog*.XML
+*.pubxml.user
+
+## Others
+[Tt]est[Rr]esult*/
+[Bb]uild[Ll]og.*
+.DS_Store
+Thumbs.db
+
