@@ -15,6 +15,7 @@ namespace Storix_BE.Service.Interfaces
     {
         Task<User> Login(string email, string password);
         Task<User> LoginWithGoogleAsync(ClaimsPrincipal? claimsPrincipal);
+        Task<User> SignupNewAccount(string fullName, string email, string phoneNumber, string password, string address, string companyCode);
         Task<User> RegisterCompanyAsync(
             string companyName,
             string? businessCode,

@@ -40,6 +40,21 @@ namespace Storix_BE.API.Controllers
                 RoleId = user.Result.RoleId
             });
         }
+
+        [HttpPost("Signup")]
+        public async Task<IActionResult> Signup([FromBody] SignupRequest request)
+        {
+            try
+            {
+                var user = await _accService.SignupNewAccount(request.FullName, request.Email, request.PhoneNumber, request.Password, request.Address, request.CompanyCode);
+                return CreatedAtAction(nameof(Login), new { email = user.Email }, user);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ex.Message);
+            }
+        }
+
         [HttpGet("login-google")]
         public IResult LoginWithGoogle([FromQuery] string returnURL, LinkGenerator linkGenerator, SignInManager<User> signManager, HttpContext context)
         {
@@ -90,5 +105,6 @@ namespace Storix_BE.API.Controllers
         }
 
         public sealed record LoginRequest(string Email, string Password);
+        public sealed record SignupRequest(string FullName, string Email, string PhoneNumber, string Password, string Address, string CompanyCode);
     }
 }

@@ -62,6 +62,50 @@ namespace Storix_BE.Repository.Implementation
             return user;
         }
 
+        public async Task<User> SignupNewAccount(string fullName, string email, string phoneNumber, string password, string address, string companyCode)
+        {
+            if (await _context.Users.AnyAsync(x => x.Email == email))
+            {
+                throw new Exception("Email already exists.");
+            }
+            if (await _context.Companies.AnyAsync(c => c.BusinessCode == companyCode) == false)
+            {
+                throw new Exception("Company code is invalid.");
+            }
+            var company = await _context.Companies.FirstOrDefaultAsync(c => c.BusinessCode == companyCode);
+            var newUser = new User();
+            var newId = await GenerateUniqueRandomIdAsync();
+            if (company != null)
+            {
+                var passwordHash = HashPassword(password);
+                newUser = new User
+                {
+                    Id = newId,
+                    FullName = fullName,
+                    Email = email,
+                    Phone = phoneNumber,
+                    PasswordHash = passwordHash,
+                    Status = "Active",
+                    CreatedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified),
+                    CompanyId = company.Id,
+                    Company = company,
+                    RoleId = 2 //Mac dinh la Company admin
+                };
+            }
+            _context.Users.Add(newUser);
+            await _context.SaveChangesAsync();
+
+            return newUser;
+
+            // Trường hợp muốn trả về field theo yêu cầu
+            //var newlyCreatedUser = await this.GetAccountById(User.UserId);
+            //var userDTO = new UserDTO
+            //{
+            //    UserID = newlyCreatedUser.UserId,
+            //};
+            //return userDTO;
+        }
+
         public async Task<User> RegisterCompanyAdministratorAsync(
             string companyName,
             string? businessCode,
@@ -200,6 +244,26 @@ namespace Storix_BE.Repository.Implementation
         {
             return await _context.Roles.FirstOrDefaultAsync(r => r.Name == name);
 
+        }
+        private string HashPassword(string password)
+        {
+            return BCrypt.Net.BCrypt.HashPassword(password);
+        }
+        private async Task<int> GenerateUniqueRandomIdAsync()
+        {
+            const int min = 1000; // small but non-trivial
+            const int max = 9999;
+            const int maxAttempts = 200;
+
+            for (int attempt = 0; attempt < maxAttempts; attempt++)
+            {
+                int candidate = Random.Shared.Next(min, max + 1);
+                bool exists = await _context.Users.AnyAsync(u => u.Id == candidate);
+                if (!exists)
+                    return candidate;
+            }
+
+            throw new InvalidOperationException($"Unable to generate a unique user id after {maxAttempts} attempts.");
         }
     }
 }

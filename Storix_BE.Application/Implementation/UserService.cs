@@ -27,6 +27,22 @@ namespace Storix_BE.Service.Implementation
             return await _accRepository.LoginWithGoogleAsync(claimsPrincipal);
         }
 
+        public async Task<User> SignupNewAccount(
+            string fullName,
+            string email,
+            string phoneNumber,
+            string password,
+            string address,
+            string companyCode)
+        {
+            return await _accRepository.SignupNewAccount(
+                fullName,
+                email,
+                phoneNumber,
+                password,
+                address,
+                companyCode);
+        }
         public async Task<User> RegisterCompanyAsync(
             string companyName,
             string? businessCode,
