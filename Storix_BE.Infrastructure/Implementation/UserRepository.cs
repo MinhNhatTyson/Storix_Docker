@@ -9,6 +9,7 @@ using System.Linq;
 using System.Security.Claims;
 using System.Text;
 using System.Threading.Tasks;
+using static Microsoft.EntityFrameworkCore.DbLoggerCategory.Database;
 
 namespace Storix_BE.Repository.Implementation
 {
@@ -47,16 +48,18 @@ namespace Storix_BE.Repository.Implementation
 
             if (user == null)
             {
-                return null;
-                /*var newUser = new User
+                var newUser = new User();
+                var newId = await GenerateUniqueRandomIdAsync();
+                newUser = new User
                 {
-                    Email = email,
+                    Id = newId,
                     FullName = claimsPrincipal?.FindFirst(ClaimTypes.GivenName)?.Value ?? String.Empty,
+                    Email = email,
                     Status = "Active",
-                    CreatedAt = DateTime.UtcNow,
-                    PasswordHash = BCrypt.Net.BCrypt.HashPassword("123")
-                };*/
-                //Add user sau
+                    CreatedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified),
+                    RoleId = 2 //Mac dinh la Company admin
+                };                
+               
             }
 
             return user;

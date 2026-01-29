@@ -27,10 +27,12 @@ namespace Storix_BE.API.Controllers
         [HttpPost("Login")]
         public IActionResult Login([FromBody] LoginRequest request)
         {
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
             var user = _accService.Login(request.Email, request.Password);
             
             if (user == null || user.Result == null)
-                return Unauthorized();
+                return Unauthorized(new { message = "Invalid email or password." });
 
             var token = GenerateJSONWebToken(user.Result);
 
@@ -44,6 +46,8 @@ namespace Storix_BE.API.Controllers
         [HttpPost("Signup")]
         public async Task<IActionResult> Signup([FromBody] SignupRequest request)
         {
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
             try
             {
                 var user = await _accService.SignupNewAccount(request.FullName, request.Email, request.PhoneNumber, request.Password, request.Address, request.CompanyCode);

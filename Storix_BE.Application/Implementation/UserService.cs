@@ -12,10 +12,12 @@ namespace Storix_BE.Service.Implementation
 {
     public class UserService : IUserService
     {
+        private readonly IEmailService _emailService;
         private readonly IUserRepository _accRepository;
-        public UserService(IUserRepository accRepository)
+        public UserService(IUserRepository accRepository, IEmailService emailService)
         {
             _accRepository = accRepository;
+            _emailService = emailService;
         }
         public async Task<User> Login(string email, string password)
         {
@@ -35,13 +37,12 @@ namespace Storix_BE.Service.Implementation
             string address,
             string companyCode)
         {
-            return await _accRepository.SignupNewAccount(
-                fullName,
-                email,
-                phoneNumber,
-                password,
-                address,
-                companyCode);
+            var user = await _accRepository.SignupNewAccount(fullName, email, phoneNumber, password, address, companyCode);
+            await _emailService.SendEmailAsync(email,
+                "Storix - New account confirmation",
+                "<h1>Thank you!</h1><p>you have successfuly registered a new Storix account with the following detail: </p>"
+            );
+            return user;
         }
         public async Task<User> RegisterCompanyAsync(
             string companyName,
