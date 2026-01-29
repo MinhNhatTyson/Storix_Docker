@@ -1,4 +1,5 @@
 ﻿using Storix_BE.Domain.Models;
+using Storix_BE.Repository.DTO;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -32,5 +33,6 @@ namespace Storix_BE.Repository.Interfaces
         Task<User?> GetUserByIdWithRoleAsync(int userId);
         Task<int> UpdateAsync(User user);
         Task<bool> RemoveAsync(User user);
+        Task<User> UpdateProfileAsync(int userId, UpdateProfileDto dto);
     }
 }

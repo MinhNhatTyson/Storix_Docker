@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Storix_BE.Repository.DTO;
 using Storix_BE.Service.Interfaces;
 using CreateUserRequest = Storix_BE.Service.Interfaces.CreateUserRequest;
 using UpdateUserRequest = Storix_BE.Service.Interfaces.UpdateUserRequest;
@@ -20,6 +21,21 @@ namespace Storix_BE.API.Controllers
         public UsersController(IUserService userService)
         {
             _userService = userService;
+        }
+
+        [HttpPut("update-profile/{userId}")]
+        [Authorize(Roles = "2")]
+        public async Task<IActionResult> UpdateProfile(int userId, [FromBody] UpdateProfileDto dto)
+        {
+            try
+            {
+                var updatedUser = await _userService.UpdateProfileAsync(userId, dto);
+                return Ok(updatedUser);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ex.Message);
+            }
         }
 
         private int? GetCompanyIdFromToken()

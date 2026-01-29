@@ -1,4 +1,5 @@
 ﻿using Storix_BE.Domain.Models;
+using Storix_BE.Repository.DTO;
 using Storix_BE.Repository.Interfaces;
 using Storix_BE.Service.Interfaces;
 using System;
@@ -149,6 +150,11 @@ namespace Storix_BE.Service.Implementation
                 throw new InvalidOperationException("Cannot delete Company Administrator.");
             await _accRepository.RemoveAsync(user);
             return true;
+        }
+
+        public async Task<User> UpdateProfileAsync(int userId, UpdateProfileDto dto)
+        {
+            return await _accRepository.UpdateProfileAsync(userId, dto);
         }
     }
 }

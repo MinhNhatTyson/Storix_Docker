@@ -2,6 +2,7 @@
 using Storix_BE.Domain.Context;
 using Storix_BE.Domain.Exception;
 using Storix_BE.Domain.Models;
+using Storix_BE.Repository.DTO;
 using Storix_BE.Repository.Interfaces;
 using System;
 using System.Collections.Generic;
@@ -267,6 +268,33 @@ namespace Storix_BE.Repository.Implementation
             }
 
             throw new InvalidOperationException($"Unable to generate a unique user id after {maxAttempts} attempts.");
+        }
+
+        public async Task<User> UpdateProfileAsync(int userId, UpdateProfileDto dto)
+        {
+
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == userId);
+
+            if (user == null)
+            {
+                throw new Exception("User  not found.");
+            }
+
+            user.CompanyId = dto.CompanyId;
+            user.FullName = dto.FullName;
+            user.Email = dto.Email;
+            user.Phone = dto.Phone;
+            user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.PasswordHash);
+            user.UpdatedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
+
+            if (await _context.Users.AnyAsync(u => u.Email == dto.Email && u.Id != userId))
+            {
+                throw new Exception("Email already exists.");
+            }
+
+            await _context.SaveChangesAsync();
+
+            return user;
         }
     }
 }

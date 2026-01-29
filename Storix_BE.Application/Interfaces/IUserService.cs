@@ -1,9 +1,10 @@
 ﻿using Storix_BE.Domain.Models;
-using System;
-using System.Collections.Generic;
+using Storix_BE.Repository.DTO;
 using Storix_BE.Repository.Interfaces;
 using Storix_BE.Service.Interfaces;
 using System;
+using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Security.Claims;
 using System.Text;
@@ -32,6 +33,7 @@ namespace Storix_BE.Service.Interfaces
         Task<User> CreateUserAsync(int companyId, int callerRoleId, CreateUserRequest request);
         Task<User?> UpdateUserAsync(int userId, int companyId, int callerRoleId, UpdateUserRequest request);
         Task<bool> DeleteUserAsync(int userId, int companyId, int callerRoleId, int callerUserId);
+        Task<User> UpdateProfileAsync(int userId, UpdateProfileDto dto);
     }
 
     public sealed record CreateUserRequest(string FullName, string Email, string? Phone, string Password, string RoleName);
