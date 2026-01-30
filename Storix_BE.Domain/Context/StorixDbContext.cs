@@ -44,6 +44,8 @@ public partial class StorixDbContext : DbContext
 
     public virtual DbSet<Product> Products { get; set; }
 
+    public virtual DbSet<ProductType> ProductTypes { get; set; }
+
     public virtual DbSet<Role> Roles { get; set; }
 
     public virtual DbSet<Shelf> Shelves { get; set; }
@@ -69,8 +71,6 @@ public partial class StorixDbContext : DbContext
     public virtual DbSet<TransferOrder> TransferOrders { get; set; }
 
     public virtual DbSet<TransferOrderItem> TransferOrderItems { get; set; }
-
-    public virtual DbSet<ProductType> Types { get; set; }
 
     public virtual DbSet<User> Users { get; set; }
 
@@ -500,6 +500,20 @@ public partial class StorixDbContext : DbContext
                 .HasConstraintName("fk_products_type_id");
         });
 
+        modelBuilder.Entity<ProductType>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("types_pkey");
+
+            entity.ToTable("product_types");
+
+            entity.Property(e => e.Id)
+                .HasDefaultValueSql("nextval('types_id_seq'::regclass)")
+                .HasColumnName("id");
+            entity.Property(e => e.Name)
+                .HasColumnType("character varying")
+                .HasColumnName("name");
+        });
+
         modelBuilder.Entity<Role>(entity =>
         {
             entity.HasKey(e => e.Id).HasName("role_pkey");
@@ -836,18 +850,6 @@ public partial class StorixDbContext : DbContext
             entity.HasOne(d => d.TransferOrder).WithMany(p => p.TransferOrderItems)
                 .HasForeignKey(d => d.TransferOrderId)
                 .HasConstraintName("fk_transfer_order_items_transfer_order_id");
-        });
-
-        modelBuilder.Entity<ProductType >(entity =>
-        {
-            entity.HasKey(e => e.Id).HasName("types_pkey");
-
-            entity.ToTable("types");
-
-            entity.Property(e => e.Id).HasColumnName("id");
-            entity.Property(e => e.Name)
-                .HasColumnType("character varying")
-                .HasColumnName("name");
         });
 
         modelBuilder.Entity<User>(entity =>
