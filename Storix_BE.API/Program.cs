@@ -52,7 +52,7 @@ builder.Services.AddCors(opt =>
             .AllowAnyMethod()
             .AllowCredentials()
             .WithOrigins(
-                builder.Configuration["FrontendUrl"]
+                "http://localhost:5173"
             );
     });
 });
