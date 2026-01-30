@@ -1,4 +1,5 @@
-﻿using Storix_BE.Domain.Context;
+﻿using Microsoft.EntityFrameworkCore;
+using Storix_BE.Domain.Context;
 using Storix_BE.Domain.Models;
 using Storix_BE.Repository.Interfaces;
 using System;
