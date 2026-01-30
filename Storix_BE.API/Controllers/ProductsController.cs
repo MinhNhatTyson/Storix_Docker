@@ -15,6 +15,7 @@ namespace Storix_BE.API.Controllers
         {
             _service = service;
         }
+
         [HttpGet("get-all/{companyId:int}")]
         [Authorize(Roles = "2,3")]
         public async Task<IActionResult> GetAllProductsFromACompany(int companyid)
