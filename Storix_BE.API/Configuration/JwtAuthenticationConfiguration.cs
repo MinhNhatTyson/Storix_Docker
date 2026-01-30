@@ -40,13 +40,16 @@ namespace Storix_BE.API.Configuration
                     options.RequireHttpsMetadata = false;
                     options.SaveToken = true;
                     /*JwtSecurityTokenHandler.DefaultInboundClaimTypeMap.Clear();*/
+                    var signingKeyText = configuration["Jwt:Key"]
+                        ?? configuration.GetValue<string>("SECRET_KEY")
+                        ?? configuration["jwt:key"];
                     options.TokenValidationParameters = new TokenValidationParameters
                     {
-                        ValidateIssuerSigningKey = false,
+                        ValidateIssuerSigningKey = true,
                         ValidateIssuer = false,
                         ValidateAudience = false,
                         ValidateLifetime = true,
-                        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(configuration.GetValue<string>("SECRET_KEY") ?? (configuration["jwt:key"]))),
+                        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(signingKeyText ?? string.Empty)),
                         ClockSkew = TimeSpan.Zero,
                         ValidIssuer = configuration.GetValue<string>("SECRET_ISSUER") ?? configuration["jwt:issuer"],
                         ValidAudience = configuration.GetValue<string>("SECRET_AUDIENCE") ?? configuration["jwt:audience"]
