@@ -61,6 +61,7 @@ namespace Storix_BE.API.Controllers
         /// List all users in the current company. Company Administrator only.
         /// </summary>
         [HttpGet]
+        [Authorize(Roles = "2")]
         public async Task<IActionResult> GetUsers()
         {
             var companyId = GetCompanyIdFromToken();
@@ -83,6 +84,7 @@ namespace Storix_BE.API.Controllers
         /// Get a user by id (must belong to your company). Company Administrator only.
         /// </summary>
         [HttpGet("{id:int}")]
+        [Authorize(Roles = "2")]
         public async Task<IActionResult> GetUser(int id)
         {
             var companyId = GetCompanyIdFromToken();
@@ -108,6 +110,7 @@ namespace Storix_BE.API.Controllers
         /// Create a new user (Manager or Staff only). Company Administrator only.
         /// </summary>
         [HttpPost]
+        [Authorize(Roles = "2")]
         public async Task<IActionResult> CreateUser([FromBody] CreateUserRequest request)
         {
             var companyId = GetCompanyIdFromToken();
@@ -134,6 +137,7 @@ namespace Storix_BE.API.Controllers
         /// Update a user (Manager or Staff). Company Administrator only.
         /// </summary>
         [HttpPut("{id:int}")]
+        [Authorize(Roles = "2")]
         public async Task<IActionResult> UpdateUser(int id, [FromBody] UpdateUserRequest request)
         {
             var companyId = GetCompanyIdFromToken();
@@ -162,6 +166,7 @@ namespace Storix_BE.API.Controllers
         /// Delete a user (Manager or Staff only; cannot delete Company Administrator). Company Administrator only.
         /// </summary>
         [HttpDelete("{id:int}")]
+        [Authorize(Roles = "2")]
         public async Task<IActionResult> DeleteUser(int id)
         {
             var companyId = GetCompanyIdFromToken();
