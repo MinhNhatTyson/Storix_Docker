@@ -45,10 +45,15 @@ builder.Services.AddControllers().AddJsonOptions(options =>
 });
 builder.Services.AddCors(opt =>
 {
-   opt.AddPolicy("CorsPolicy", policy =>
+    opt.AddPolicy("CorsPolicy", policy =>
     {
-        //Set cors to accept Vite dev server
-        policy.AllowAnyHeader().AllowAnyMethod().AllowCredentials().WithOrigins("https://localhost:5173");
+        policy
+            .AllowAnyHeader()
+            .AllowAnyMethod()
+            .AllowCredentials()
+            .WithOrigins(
+                builder.Configuration["FrontendUrl"]
+            );
     });
 });
 builder.Services.AddEndpointsApiExplorer();
