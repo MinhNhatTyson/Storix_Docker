@@ -39,7 +39,7 @@ namespace Storix_BE.API.Configuration
                 {
                     options.RequireHttpsMetadata = false;
                     options.SaveToken = true;
-                    JwtSecurityTokenHandler.DefaultInboundClaimTypeMap.Clear();
+                    /*JwtSecurityTokenHandler.DefaultInboundClaimTypeMap.Clear();*/
                     options.TokenValidationParameters = new TokenValidationParameters
                     {
                         ValidateIssuerSigningKey = false,
