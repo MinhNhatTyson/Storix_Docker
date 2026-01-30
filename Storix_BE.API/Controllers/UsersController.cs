@@ -67,7 +67,7 @@ namespace Storix_BE.API.Controllers
             var companyId = GetCompanyIdFromToken();
             var roleId = GetRoleIdFromToken();
             if (companyId == null || roleId == null)
-                return Unauthorized();
+                return BadRequest();
 
             try
             {
