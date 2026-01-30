@@ -52,7 +52,8 @@ builder.Services.AddCors(opt =>
             .AllowAnyMethod()
             .AllowCredentials()
             .WithOrigins(
-                "http://localhost:5173"
+                "http://localhost:5173",
+                "http://127.0.0.1:5173"
             );
     });
 });
@@ -61,14 +62,14 @@ builder.Services.AddEndpointsApiExplorer();
 
 var app = builder.Build();
 app.UseSerilogRequestLogging();
-
+app.UseCors("CorsPolicy");
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment() || app.Environment.IsProduction())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
 }
-app.UseCors("CorsPolicy");
+
 
 app.UseAuthentication();
 app.UseAuthorization();
