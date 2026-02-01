@@ -200,5 +200,14 @@ namespace Storix_BE.Repository.Implementation
             await _context.SaveChangesAsync();
             return true;
         }
-    }
+        public async Task<int?> GetCompanyIdByUserIdAsync(int userId)
+        {
+            if (userId <= 0) return null;
+            var companyId = await _context.Users
+                .AsNoTracking()
+                .Where(u => u.Id == userId)
+                .Select(u => u.CompanyId)
+                .FirstOrDefaultAsync();
+            return companyId;
+        }
 }

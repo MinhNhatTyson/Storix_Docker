@@ -20,6 +20,6 @@ namespace Storix_BE.Repository.Interfaces
         Task<ProductType> CreateProductTypeAsync(ProductType type);
         Task<int> UpdateProductType(ProductType type);
         Task<bool> RemoveProductTypeAsync(ProductType type);
-
+        Task<int?> GetCompanyIdByUserIdAsync(int userId);
     }
 }

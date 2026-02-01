@@ -39,7 +39,8 @@ namespace Storix_BE.API.Controllers
             return Ok(new
             {
                 Token = token,
-                RoleId = user.Result.RoleId
+                RoleId = user.Result.RoleId,
+                CompanyId = user.Result.CompanyId
             });
         }
 

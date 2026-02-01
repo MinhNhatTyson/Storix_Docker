@@ -15,27 +15,69 @@ namespace Storix_BE.API.Controllers
         {
             _service = service;
         }
-
-        [HttpGet("get-all/{companyId:int}")]
+        [HttpGet("get-all/{userId:int}")]
         [Authorize(Roles = "2,3")]
-        public async Task<IActionResult> GetByCompany(int companyId)
+        public async Task<IActionResult> GetAllProductsFromACompany(int userId)
         {
+            if (userId <= 0) return BadRequest(new { message = "Invalid user id." });
+
+            int companyId;
+            try
+            {
+                companyId = await _service.GetCompanyIdByUserIdAsync(userId);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+
+            if (companyId <= 0) return NotFound("Cannot find company id with the provided user id");
             var items = await _service.GetByCompanyAsync(companyId);
             return Ok(items);
         }
-        [HttpGet("get-by-id/{companyId:int}/{id:int}")]
+        [HttpGet("get-by-id/{userId:int}/{id:int}")]
         [Authorize(Roles = "2,3")]
-        public async Task<IActionResult> GetById(int companyId, int id)
+        public async Task<IActionResult> GetById(int userId, int id)
         {
-            var item = await _service.GetByIdAsync(companyId, id);
+            if (userId <= 0) return BadRequest(new { message = "Invalid user id." });
+            if (id <= 0) return BadRequest(new { message = "Invalid product id." });
+
+            int companyId;
+            try
+            {
+                companyId = await _service.GetCompanyIdByUserIdAsync(userId);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+
+            if (companyId <= 0) return NotFound("Cannot find company id with the provided user id");
+
+            var item = await _service.GetByIdAsync(id, companyId);
             if (item == null) return NotFound();
             return Ok(item);
         }
 
-        [HttpGet("get-by-sku/{companyId:int}/sku/{sku}")]
+        [HttpGet("get-by-sku/{userId:int}/sku/{sku}")]
         [Authorize(Roles = "2,3")]
-        public async Task<IActionResult> GetBySku(int companyId, string sku)
+        public async Task<IActionResult> GetBySku(int userId, string sku)
         {
+            if (userId <= 0) return BadRequest(new { message = "Invalid user id." });
+            if (string.IsNullOrWhiteSpace(sku)) return BadRequest(new { message = "SKU is required." });
+
+            int companyId;
+            try
+            {
+                companyId = await _service.GetCompanyIdByUserIdAsync(userId);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+
+            if (companyId <= 0) return NotFound("Cannot find company id with the provided user id");
+
             var item = await _service.GetBySkuAsync(sku, companyId);
             if (item == null) return NotFound();
             return Ok(item);
@@ -72,21 +114,41 @@ namespace Storix_BE.API.Controllers
             }
         }
 
-        [HttpDelete("company/{companyId:int}/{id:int}")]
+        [HttpDelete("delete/{userId:int}/{id:int}")]
         [Authorize(Roles = "2")]
-        public async Task<IActionResult> Delete(int companyId, int id)
+        public async Task<IActionResult> Delete(int userId, int id)
         {
-            var deleted = await _service.DeleteAsync(companyId, id);
+            if (userId <= 0) return BadRequest(new { message = "Invalid user id." });
+            if (id <= 0) return BadRequest(new { message = "Invalid product id." });
+
+            int companyId;
+            try
+            {
+                companyId = await _service.GetCompanyIdByUserIdAsync(userId);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+
+            if (companyId <= 0) return NotFound("Cannot find company id with the provided user id");
+
+            var deleted = await _service.DeleteAsync(id, companyId);
             if (!deleted) return NotFound();
             return NoContent();
         }
 
-        [HttpGet("get-all-product-types/{companyId:int}")]
+        [HttpGet("get-all-product-types/{userId:int}")]
         [Authorize(Roles = "2,3")]
-        public async Task<IActionResult> GetAllProductTypes(int companyId)
+        public async Task<IActionResult> GetAllProductTypes(int userId)
         {
+            if (userId <= 0) return BadRequest(new { message = "Invalid user id." });
+
             try
             {
+                var companyId = await _service.GetCompanyIdByUserIdAsync(userId);
+                if (companyId <= 0) return NotFound("Cannot find company id with the provided user id");
+
                 var types = await _service.GetAllProductTypesAsync(companyId);
                 return Ok(types);
             }

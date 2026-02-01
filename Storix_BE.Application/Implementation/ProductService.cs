@@ -174,5 +174,13 @@ namespace Storix_BE.Service.Implementation
             var toDelete = new ProductType { Id = id };
             return await _repo.RemoveProductTypeAsync(toDelete);
         }
+        public async Task<int> GetCompanyIdByUserIdAsync(int userId)
+        {
+            if (userId <= 0) throw new InvalidOperationException("Invalid user id.");
+            var companyId = await _repo.GetCompanyIdByUserIdAsync(userId);
+            if (companyId == null || companyId <= 0)
+                throw new InvalidOperationException("User not found or not assigned to a company.");
+            return companyId.Value;
+        }
     }
 }
