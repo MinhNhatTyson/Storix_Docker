@@ -210,4 +210,5 @@ namespace Storix_BE.Repository.Implementation
                 .FirstOrDefaultAsync();
             return companyId;
         }
+    }
 }
