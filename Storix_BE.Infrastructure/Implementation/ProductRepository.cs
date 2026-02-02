@@ -128,19 +128,21 @@ namespace Storix_BE.Repository.Implementation
             return types;
         }
 
-        public async Task<ProductType> CreateProductTypeAsync(ProductType type)
+        public async Task<ProductType> CreateProductTypeAsync(ProductType type, int companyId)
         {
             if (type == null) throw new InvalidOperationException("Type cannot be null.");
             var name = type.Name?.Trim();
             if (string.IsNullOrWhiteSpace(name)) throw new InvalidOperationException("Product type name is required.");
 
             var nameLower = name.ToLowerInvariant();
-            var exists = await _context.ProductTypes
+            var existsForCompany = await _context.ProductTypes
                 .AsNoTracking()
-                .FirstOrDefaultAsync(t => t.Name != null && t.Name.ToLower() == nameLower);
+                .Where(t => t.Name != null && t.Name.ToLower() == nameLower)
+                .Where(t => t.Products.Any(p => p.CompanyId == companyId))
+                .FirstOrDefaultAsync();
 
-            if (exists != null)
-                throw new InvalidOperationException($"Product type with name '{name}' already exists.");
+            if (existsForCompany != null)
+                throw new InvalidOperationException($"Product type with name '{name}' already exists for this company.");
 
             var newType = new ProductType
             {

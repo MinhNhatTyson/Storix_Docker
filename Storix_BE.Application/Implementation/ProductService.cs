@@ -51,8 +51,9 @@ namespace Storix_BE.Service.Implementation
                     if (!(char.IsLetterOrDigit(c) || c == '-' || c == '_'))
                         throw new InvalidOperationException("SKU contains invalid characters. Only letters, digits, '-' and '_' are allowed.");
                 }
-
-
+                var exists = await _repo.GetBySkuAsync(request.Sku, request.CompanyId);
+                if (exists != null)
+                    throw new InvalidOperationException("SKU already exists.");
             }
 
             var product = new Product
@@ -135,6 +136,8 @@ namespace Storix_BE.Service.Implementation
         public async Task<ProductType> CreateProductTypeAsync(CreateProductTypeRequest request)
         {
             if (request == null) throw new InvalidOperationException("Request cannot be null.");
+            if (request.CompanyId <= 0) throw new InvalidOperationException("CompanyId must be a positive integer.");
+
             var name = request.Name?.Trim();
             if (string.IsNullOrWhiteSpace(name)) throw new InvalidOperationException("Product type name is required.");
 
@@ -143,8 +146,7 @@ namespace Storix_BE.Service.Implementation
                 Name = name
             };
 
-            // repository will validate uniqueness and persist
-            return await _repo.CreateProductTypeAsync(newType);
+            return await _repo.CreateProductTypeAsync(newType, request.CompanyId);
         }
 
         public async Task<ProductType?> UpdateProductTypeAsync(int id, UpdateProductTypeRequest request)
