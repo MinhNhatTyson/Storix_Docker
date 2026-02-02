@@ -114,5 +114,119 @@ namespace Storix_BE.Repository.Implementation
 
             return inbound;
         }
+
+        public async Task<InboundOrder> CreateInboundOrderFromRequestAsync(int inboundRequestId, int createdBy)
+        {
+            var inboundRequest = await _context.InboundRequests
+                .Include(r => r.InboundOrderItems)
+                .FirstOrDefaultAsync(r => r.Id == inboundRequestId)
+                .ConfigureAwait(false);
+
+            if (inboundRequest == null)
+                throw new InvalidOperationException($"InboundRequest with id {inboundRequestId} not found.");
+
+            if (!string.Equals(inboundRequest.Status, "Approved", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("InboundRequest must be in 'Approved' status to create an InboundOrder (ticket).");
+
+            // Build new InboundOrder inheriting fields except CreatedAt, Status, CreatedBy
+            var inboundOrder = new InboundOrder
+            {
+                WarehouseId = inboundRequest.WarehouseId,
+                SupplierId = inboundRequest.SupplierId,
+                CreatedBy = createdBy,
+                Status = "Created",
+                CreatedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified),
+                ReferenceCode = $"INB-{DateTime.UtcNow:yyyyMMddHHmmss}-{Random.Shared.Next(1000, 9999)}"
+            };
+
+            // Copy items: ExpectedQuantity from request items. Do not link InboundOrderId yet.
+            foreach (var reqItem in inboundRequest.InboundOrderItems)
+            {
+                var orderItem = new InboundOrderItem
+                {
+                    ProductId = reqItem.ProductId,
+                    ExpectedQuantity = reqItem.ExpectedQuantity,
+                    ReceivedQuantity = reqItem.ReceivedQuantity // usually null/0 initially
+                };
+                inboundOrder.InboundOrderItems.Add(orderItem);
+            }
+
+            await using var tx = await _context.Database.BeginTransactionAsync().ConfigureAwait(false);
+            try
+            {
+                _context.InboundOrders.Add(inboundOrder);
+                await _context.SaveChangesAsync().ConfigureAwait(false);
+
+                await tx.CommitAsync().ConfigureAwait(false);
+            }
+            catch
+            {
+                await tx.RollbackAsync().ConfigureAwait(false);
+                throw;
+            }
+
+            return inboundOrder;
+        }
+
+        public async Task<InboundOrder> UpdateInboundOrderItemsAsync(int inboundOrderId, IEnumerable<InboundOrderItem> items)
+        {
+            if (items == null) throw new ArgumentNullException(nameof(items));
+
+            var order = await _context.InboundOrders
+                .Include(o => o.InboundOrderItems)
+                .FirstOrDefaultAsync(o => o.Id == inboundOrderId)
+                .ConfigureAwait(false);
+
+            if (order == null)
+                throw new InvalidOperationException($"InboundOrder with id {inboundOrderId} not found.");
+
+            // Validate items: each must have ProductId and at least one quantity to update
+            foreach (var i in items)
+            {
+                if (i.ProductId == null || i.ProductId <= 0)
+                    throw new InvalidOperationException("Each item must have a valid ProductId.");
+            }
+
+            // Update existing items or add new ones. We will not remove items that are not present in the payload.
+            foreach (var incoming in items)
+            {
+                if (incoming.Id > 0)
+                {
+                    var existing = order.InboundOrderItems.FirstOrDefault(x => x.Id == incoming.Id);
+                    if (existing == null)
+                        throw new InvalidOperationException($"InboundOrderItem with id {incoming.Id} not found in order {inboundOrderId}.");
+
+                    // Update allowed fields
+                    existing.ExpectedQuantity = incoming.ExpectedQuantity;
+                    existing.ReceivedQuantity = incoming.ReceivedQuantity;
+                    existing.ProductId = incoming.ProductId;
+                }
+                else
+                {
+                    // Try to find by ProductId first
+                    var existingByProduct = order.InboundOrderItems.FirstOrDefault(x => x.ProductId == incoming.ProductId);
+                    if (existingByProduct != null)
+                    {
+                        existingByProduct.ExpectedQuantity = incoming.ExpectedQuantity;
+                        existingByProduct.ReceivedQuantity = incoming.ReceivedQuantity;
+                    }
+                    else
+                    {
+                        var newItem = new InboundOrderItem
+                        {
+                            ProductId = incoming.ProductId,
+                            ExpectedQuantity = incoming.ExpectedQuantity,
+                            ReceivedQuantity = incoming.ReceivedQuantity,
+                            InboundOrder = order
+                        };
+                        order.InboundOrderItems.Add(newItem);
+                    }
+                }
+            }
+
+            await _context.SaveChangesAsync().ConfigureAwait(false);
+
+            return order;
+        }
     }
 }

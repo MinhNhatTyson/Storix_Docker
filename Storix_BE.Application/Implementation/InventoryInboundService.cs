@@ -58,5 +58,31 @@ namespace Storix_BE.Service.Implementation
             var id = await _repo.UpdateInventoryInboundTicketRequestStatus(ticketRequestId, approverId, status);
             return id;
         }
+
+        public async Task<InboundOrder> CreateTicketFromRequestAsync(int inboundRequestId, int createdBy)
+        {
+            if (inboundRequestId <= 0) throw new ArgumentException("Invalid inboundRequestId.", nameof(inboundRequestId));
+            if (createdBy <= 0) throw new ArgumentException("Invalid createdBy.", nameof(createdBy));
+
+            return await _repo.CreateInboundOrderFromRequestAsync(inboundRequestId, createdBy);
+        }
+
+        public async Task<InboundOrder> UpdateTicketItemsAsync(int inboundOrderId, IEnumerable<UpdateInboundOrderItemRequest> items)
+        {
+            if (inboundOrderId <= 0) throw new ArgumentException("Invalid inboundOrderId.", nameof(inboundOrderId));
+            if (items == null) throw new ArgumentNullException(nameof(items));
+            if (!items.Any()) throw new InvalidOperationException("Items payload cannot be empty.");
+
+            // Map DTOs to domain InboundOrderItem objects (Id can be 0 for new items)
+            var domainItems = items.Select(i => new InboundOrderItem
+            {
+                Id = i.Id,
+                ProductId = i.ProductId,
+                ExpectedQuantity = i.ExpectedQuantity,
+                ReceivedQuantity = i.ReceivedQuantity
+            }).ToList();
+
+            return await _repo.UpdateInboundOrderItemsAsync(inboundOrderId, domainItems);
+        }
     }
 }
