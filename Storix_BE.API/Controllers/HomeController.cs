@@ -40,6 +40,7 @@ namespace Storix_BE.API.Controllers
             {
                 Token = token,
                 RoleId = user.Result.RoleId,
+                UserId = user.Result.Id,
                 CompanyId = user.Result.CompanyId
             });
         }
