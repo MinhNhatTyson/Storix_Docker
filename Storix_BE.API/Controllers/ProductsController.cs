@@ -165,7 +165,7 @@ namespace Storix_BE.API.Controllers
             try
             {
                 var created = await _service.CreateProductTypeAsync(request);
-                return CreatedAtAction(nameof(GetAllProductTypes), new { companyId = 0 }, created);
+                return Ok(created);
             }
             catch (InvalidOperationException ex)
             {
