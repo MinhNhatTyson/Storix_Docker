@@ -146,7 +146,8 @@ namespace Storix_BE.Repository.Implementation
 
             var newType = new ProductType
             {
-                Name = name
+                Name = name,
+                CompanyId = companyId
             };
 
             _context.ProductTypes.Add(newType);
