@@ -52,9 +52,7 @@ namespace Storix_BE.Service.Implementation
                         throw new InvalidOperationException("SKU contains invalid characters. Only letters, digits, '-' and '_' are allowed.");
                 }
 
-                var exists = await _repo.GetBySkuAsync(request.Sku, request.CompanyId);
-                if (exists != null)
-                    throw new InvalidOperationException("SKU already exists.");
+
             }
 
             var product = new Product

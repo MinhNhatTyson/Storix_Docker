@@ -90,7 +90,7 @@ namespace Storix_BE.API.Controllers
             try
             {
                 var product = await _service.CreateAsync(request);
-                return CreatedAtAction(nameof(GetById), new { companyId = product.CompanyId, id = product.Id }, product);
+                return Ok(product);
             }
             catch (InvalidOperationException ex)
             {
