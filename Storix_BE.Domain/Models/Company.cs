@@ -24,6 +24,7 @@ public partial class Company
     public DateTime? CreatedAt { get; set; }
 
     public DateTime? UpdatedAt { get; set; }
+    public virtual ICollection<ProductType> ProductTypes { get; set; } = new List<ProductType>();
 
     public virtual ICollection<Product> Products { get; set; } = new List<Product>();
 
