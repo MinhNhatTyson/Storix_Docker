@@ -29,10 +29,11 @@ namespace Storix_BE.Service.Interfaces
             string password);
 
         Task<User?> GetByEmailAsync(string email);
-        Task<List<User>> GetUsersByCompanyAsync(int companyId, int callerRoleId);
+        Task<User?> GetUserByIdAsync(int userId);
+        Task<List<User>> GetUsersForCallerAsync(int callerUserId, int callerRoleId);
         Task<User> CreateUserAsync(int companyId, int callerRoleId, CreateUserRequest request);
         Task<User?> UpdateUserAsync(int userId, int companyId, int callerRoleId, UpdateUserRequest request);
-        Task<bool> DeleteUserAsync(int userId, int companyId, int callerRoleId, int callerUserId);
+        Task<bool> DeleteUserAsync(int userId, int callerUserId, int callerRoleId);
         Task<User> UpdateProfileAsync(int userId, UpdateProfileDto dto);
         Task<UserProfileDto?> GetUser(int userId);
     }

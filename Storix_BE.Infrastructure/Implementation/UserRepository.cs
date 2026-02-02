@@ -17,6 +17,7 @@ namespace Storix_BE.Repository.Implementation
     public class UserRepository : GenericRepository<User>, IUserRepository
     {
         private readonly StorixDbContext _context;
+        private static readonly string[] InactiveStatuses = { "completed", "cancelled", "canceled", "done", "closed" };
         public UserRepository(StorixDbContext context) : base(context)
         {
             _context = context;
@@ -59,8 +60,8 @@ namespace Storix_BE.Repository.Implementation
                     Status = "Active",
                     CreatedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified),
                     RoleId = 2 //Mac dinh la Company admin
-                };                
-               
+                };
+
             }
 
             return user;
@@ -199,6 +200,55 @@ namespace Storix_BE.Repository.Implementation
                 .Where(u => u.CompanyId == companyId)
                 .OrderBy(u => u.Id)
                 .ToListAsync();
+        }
+
+        public async Task<Company?> GetCompanyByIdAsync(int companyId)
+        {
+            return await _context.Companies.FirstOrDefaultAsync(c => c.Id == companyId);
+        }
+
+        public async Task<int> CountUsersByCompanyAsync(int companyId)
+        {
+            return await _context.Users.CountAsync(u => u.CompanyId == companyId);
+        }
+
+        public async Task<int> CountCompanyAdminsAsync(int companyId)
+        {
+            return await _context.Users
+                .Include(u => u.Role)
+                .CountAsync(u => u.CompanyId == companyId && u.Role != null && u.Role.Name == "Company Administrator");
+        }
+
+        public async Task<bool> HasActiveOperationsAsync(int userId)
+        {
+            var hasInboundOrders = await _context.InboundOrders.AnyAsync(o =>
+                o.CreatedBy == userId &&
+                (o.Status == null || !InactiveStatuses.Contains(o.Status.ToLower())));
+            if (hasInboundOrders) return true;
+
+            var hasOutboundOrders = await _context.OutboundOrders.AnyAsync(o =>
+                (o.CreatedBy == userId || o.StaffId == userId) &&
+                (o.Status == null || !InactiveStatuses.Contains(o.Status.ToLower())));
+            if (hasOutboundOrders) return true;
+
+            var hasTransferOrders = await _context.TransferOrders.AnyAsync(o =>
+                o.CreatedBy == userId &&
+                (o.Status == null || !InactiveStatuses.Contains(o.Status.ToLower())));
+            if (hasTransferOrders) return true;
+
+            var hasInboundRequests = await _context.InboundRequests.AnyAsync(r =>
+                (r.RequestedBy == userId || r.ApprovedBy == userId) &&
+                (r.Status == null || !InactiveStatuses.Contains(r.Status.ToLower())));
+            if (hasInboundRequests) return true;
+
+            var hasOutboundRequests = await _context.OutboundRequests.AnyAsync(r =>
+                (r.RequestedBy == userId || r.ApprovedBy == userId) &&
+                (r.Status == null || !InactiveStatuses.Contains(r.Status.ToLower())));
+            if (hasOutboundRequests) return true;
+
+            return await _context.StockCountsTickets.AnyAsync(t =>
+                (t.AssignedTo == userId || t.PerformedBy == userId) &&
+                (t.Status == null || !InactiveStatuses.Contains(t.Status.ToLower())));
         }
 
         public async Task<User> CreateUserAsync(int companyId, string fullName, string email, string? phone, string password, string roleName)

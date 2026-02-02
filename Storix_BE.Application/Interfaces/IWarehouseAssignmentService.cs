@@ -13,6 +13,7 @@ namespace Storix_BE.Service.Interfaces
         Task<List<WarehouseAssignment>> GetAssignmentsByWarehouseAsync(int companyId, int callerRoleId, int warehouseId);
         Task<WarehouseAssignment> AssignWarehouseAsync(int companyId, int callerRoleId, AssignWarehouseRequest request);
         Task<bool> UnassignWarehouseAsync(int companyId, int callerRoleId, int userId, int warehouseId);
+        Task<int> UpdateRoleInAssignmentsAsync(int userId, string roleInWarehouse);
     }
 
     public sealed record AssignWarehouseRequest(int UserId, int WarehouseId, string? RoleInWarehouse);

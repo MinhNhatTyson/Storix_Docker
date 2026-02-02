@@ -7,6 +7,9 @@
   </PropertyGroup>
 	<ItemGroup>
 		<PackageReference Include="MailKit" Version="4.13.0" />
+		<PackageReference Include="Microsoft.Extensions.Configuration.Binder">
+			<Version>10.0.2</Version>
+		</PackageReference>
 	</ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Storix_BE.Infrastructure\Storix_BE.Repository.csproj" />

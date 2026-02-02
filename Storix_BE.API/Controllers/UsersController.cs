@@ -29,6 +29,19 @@ namespace Storix_BE.API.Controllers
         {
             try
             {
+                var email = GetEmailFromToken();
+                if (string.IsNullOrEmpty(email))
+                    return Unauthorized();
+                var caller = await _userService.GetByEmailAsync(email);
+                if (caller?.CompanyId == null)
+                    return Unauthorized();
+
+                var targetUser = await _userService.GetUserByIdAsync(userId);
+                if (targetUser == null)
+                    return NotFound();
+                if (targetUser.CompanyId != caller.CompanyId.Value)
+                    return Unauthorized();
+
                 var updatedUser = await _userService.UpdateProfileAsync(userId, dto);
                 return Ok(updatedUser);
             }
@@ -75,17 +88,19 @@ namespace Storix_BE.API.Controllers
         /// List all users in the current company. Company Administrator only.
         /// </summary>
         [HttpGet]
-        [Authorize(Roles = "2")]
         public async Task<IActionResult> GetUsers()
         {
-            var companyId = GetCompanyIdFromToken();
             var roleId = GetRoleIdFromToken();
-            if (companyId == null || roleId == null)
-                return BadRequest();
+            var email = GetEmailFromToken();
+            if (roleId == null || string.IsNullOrEmpty(email))
+                return Unauthorized();
 
             try
             {
-                var users = await _userService.GetUsersByCompanyAsync(companyId.Value, roleId.Value);
+                var caller = await _userService.GetByEmailAsync(email);
+                if (caller?.CompanyId == null)
+                    return Unauthorized();
+                var users = await _userService.GetUsersForCallerAsync(caller.Id, roleId.Value);
                 return Ok(users);
             }
             catch (UnauthorizedAccessException)
@@ -98,21 +113,24 @@ namespace Storix_BE.API.Controllers
         /// Get a user by id (must belong to your company). Company Administrator only.
         /// </summary>
         [HttpGet("{id:int}")]
-        [Authorize(Roles = "2")]
         public async Task<IActionResult> GetUser(int id)
         {
-            var companyId = GetCompanyIdFromToken();
             var roleId = GetRoleIdFromToken();
-            if (companyId == null || roleId == null)
+            var email = GetEmailFromToken();
+            if (roleId == null || string.IsNullOrEmpty(email))
                 return Unauthorized();
 
             try
             {
-                var users = await _userService.GetUsersByCompanyAsync(companyId.Value, roleId.Value);
-                var user = users.FirstOrDefault(u => u.Id == id);
-                if (user == null)
+                var caller = await _userService.GetByEmailAsync(email);
+                if (caller?.CompanyId == null)
+                    return Unauthorized();
+                var targetUser = await _userService.GetUserByIdAsync(id);
+                if (targetUser == null)
                     return NotFound();
-                return Ok(user);
+                if (targetUser.CompanyId != caller.CompanyId.Value)
+                    return Unauthorized();
+                return Ok(targetUser);
             }
             catch (UnauthorizedAccessException)
             {
@@ -124,17 +142,19 @@ namespace Storix_BE.API.Controllers
         /// Create a new user (Manager or Staff only). Company Administrator only.
         /// </summary>
         [HttpPost]
-        [Authorize(Roles = "2")]
         public async Task<IActionResult> CreateUser([FromBody] CreateUserRequest request)
         {
-            var companyId = GetCompanyIdFromToken();
             var roleId = GetRoleIdFromToken();
-            if (companyId == null || roleId == null)
+            var email = GetEmailFromToken();
+            if (roleId == null || string.IsNullOrEmpty(email))
                 return Unauthorized();
 
             try
             {
-                var user = await _userService.CreateUserAsync(companyId.Value, roleId.Value, request);
+                var caller = await _userService.GetByEmailAsync(email);
+                if (caller?.CompanyId == null)
+                    return Unauthorized();
+                var user = await _userService.CreateUserAsync(caller.Id, roleId.Value, request);
                 return Ok(user);
             }
             catch (UnauthorizedAccessException)
@@ -151,17 +171,25 @@ namespace Storix_BE.API.Controllers
         /// Update a user (Manager or Staff). Company Administrator only.
         /// </summary>
         [HttpPut("{id:int}")]
-        [Authorize(Roles = "2")]
         public async Task<IActionResult> UpdateUser(int id, [FromBody] UpdateUserRequest request)
         {
-            var companyId = GetCompanyIdFromToken();
             var roleId = GetRoleIdFromToken();
-            if (companyId == null || roleId == null)
+            var email = GetEmailFromToken();
+            if (roleId == null || string.IsNullOrEmpty(email))
                 return Unauthorized();
 
             try
             {
-                var user = await _userService.UpdateUserAsync(id, companyId.Value, roleId.Value, request);
+                var caller = await _userService.GetByEmailAsync(email);
+                if (caller?.CompanyId == null)
+                    return Unauthorized();
+                var targetUser = await _userService.GetUserByIdAsync(id);
+                if (targetUser == null)
+                    return NotFound();
+                if (targetUser.CompanyId != caller.CompanyId.Value)
+                    return Unauthorized();
+
+                var user = await _userService.UpdateUserAsync(id, caller.Id, roleId.Value, request);
                 if (user == null)
                     return NotFound();
                 return Ok(user);
@@ -180,22 +208,26 @@ namespace Storix_BE.API.Controllers
         /// Delete a user (Manager or Staff only; cannot delete Company Administrator). Company Administrator only.
         /// </summary>
         [HttpDelete("{id:int}")]
-        [Authorize(Roles = "2")]
         public async Task<IActionResult> DeleteUser(int id)
         {
-            var companyId = GetCompanyIdFromToken();
             var roleId = GetRoleIdFromToken();
             var email = GetEmailFromToken();
-            if (companyId == null || roleId == null || string.IsNullOrEmpty(email))
+            if (roleId == null || string.IsNullOrEmpty(email))
                 return Unauthorized();
 
             try
             {
                 var caller = await _userService.GetByEmailAsync(email);
-                if (caller == null)
+                if (caller?.CompanyId == null)
                     return Unauthorized();
 
-                var deleted = await _userService.DeleteUserAsync(id, companyId.Value, roleId.Value, caller.Id);
+                var targetUser = await _userService.GetUserByIdAsync(id);
+                if (targetUser == null)
+                    return NotFound();
+                if (targetUser.CompanyId != caller.CompanyId.Value)
+                    return Unauthorized();
+
+                var deleted = await _userService.DeleteUserAsync(id, caller.Id, roleId.Value);
                 if (!deleted)
                     return NotFound();
                 return NoContent();

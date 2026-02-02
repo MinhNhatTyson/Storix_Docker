@@ -28,6 +28,10 @@ namespace Storix_BE.Repository.Interfaces
         Task<User?> GetByEmailAsync(string email);
         Task<List<User>> GetUsersByCompanyIdAsync(int companyId);
         Task<User> CreateUserAsync(int companyId, string fullName, string email, string? phone, string password, string roleName);
+        Task<Company?> GetCompanyByIdAsync(int companyId);
+        Task<int> CountUsersByCompanyAsync(int companyId);
+        Task<int> CountCompanyAdminsAsync(int companyId);
+        Task<bool> HasActiveOperationsAsync(int userId);
         Task<Role?> GetRoleByIdAsync(int roleId);
         Task<Role?> GetRoleByNameAsync(string name);
         Task<User?> GetUserByIdWithRoleAsync(int userId);
