@@ -13,6 +13,8 @@ namespace Storix_BE.API.Configuration
             services.AddScoped<IWarehouseAssignmentService, WarehouseAssignmentService>();
             services.AddScoped<IProductService, ProductService>();
             services.AddScoped<IInventoryInboundService, InventoryInboundService>();
+            services.AddScoped<ISupplierService, SupplierService>();
+            services.AddScoped<IInventoryOutboundService, InventoryOutboundService>();
             services.AddTransient<IEmailService, EmailService>();
             return services;
         }
