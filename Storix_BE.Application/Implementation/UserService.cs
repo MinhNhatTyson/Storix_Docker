@@ -259,7 +259,8 @@ namespace Storix_BE.Service.Implementation
                 user.FullName,
                 user.Email,
                 user.Phone,
-                user.Role?.Name);
+                user.Role?.Name,
+                user.Status);
         }
     }
 }

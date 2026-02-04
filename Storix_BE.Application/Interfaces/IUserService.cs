@@ -46,6 +46,7 @@ namespace Storix_BE.Service.Interfaces
         string? FullName,
         string? Email,
         string? Phone,
-        string? RoleName);
+        string? RoleName, 
+        string? Status);
 }
 
