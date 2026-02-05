@@ -13,12 +13,12 @@ namespace Storix_BE.API.Controllers
         {
             _service = service;
         }
-        [HttpGet("get-all-inbound-requests")]
-        public async Task<IActionResult> GetAllRequests()
+        [HttpGet("get-all-inbound-requests/{companyId:int}")]
+        public async Task<IActionResult> GetAllRequests(int companyId)
         {
             try
             {
-                var items = await _service.GetAllInboundRequestsAsync();
+                var items = await _service.GetAllInboundRequestsAsync(companyId);
                 return Ok(items);
             }
             catch (InvalidOperationException ex)
@@ -35,12 +35,12 @@ namespace Storix_BE.API.Controllers
             }
         }
 
-        [HttpGet("get-all-inbound-tickets")]
-        public async Task<IActionResult> GetAllTickets()
+        [HttpGet("get-all-inbound-tickets/{companyId:int}")]
+        public async Task<IActionResult> GetAllTickets(int companyId)
         {
             try
             {
-                var items = await _service.GetAllInboundOrdersAsync();
+                var items = await _service.GetAllInboundOrdersAsync(companyId);
                 return Ok(items);
             }
             catch (InvalidOperationException ex)
@@ -56,14 +56,14 @@ namespace Storix_BE.API.Controllers
                 return StatusCode(500, new { message = ex.Message });
             }
         }
-        [HttpGet("get-inbound-request-by-id/{id:int}")]
-        public async Task<IActionResult> GetRequestById(int id)
+        [HttpGet("get-inbound-request-by-id/{companyId:int}/{id:int}")]
+        public async Task<IActionResult> GetRequestById(int companyId, int id)
         {
             if (id <= 0) return BadRequest(new { message = "Invalid request id." });
 
             try
             {
-                var item = await _service.GetInboundRequestByIdAsync(id);
+                var item = await _service.GetInboundRequestByIdAsync(companyId, id);
                 return Ok(item);
             }
             catch (InvalidOperationException ex)
@@ -80,14 +80,14 @@ namespace Storix_BE.API.Controllers
             }
         }
 
-        [HttpGet("get-inbound-ticket-by-id/{id:int}")]
-        public async Task<IActionResult> GetTicketById(int id)
+        [HttpGet("get-inbound-ticket-by-id/{companyId:int}/{id:int}")]
+        public async Task<IActionResult> GetTicketById(int companyId, int id)
         {
             if (id <= 0) return BadRequest(new { message = "Invalid ticket id." });
 
             try
             {
-                var item = await _service.GetInboundOrderByIdAsync(id);
+                var item = await _service.GetInboundOrderByIdAsync(companyId, id);
                 return Ok(item);
             }
             catch (InvalidOperationException ex)

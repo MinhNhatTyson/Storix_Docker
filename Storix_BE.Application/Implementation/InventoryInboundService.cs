@@ -84,25 +84,25 @@ namespace Storix_BE.Service.Implementation
 
             return await _repo.UpdateInboundOrderItemsAsync(inboundOrderId, domainItems);
         }
-        public async Task<List<InboundRequest>> GetAllInboundRequestsAsync()
+        public async Task<List<InboundRequest>> GetAllInboundRequestsAsync(int companyId)
         {
-            return await _repo.GetAllInboundRequestsAsync();
+            return await _repo.GetAllInboundRequestsAsync(companyId);
         }
 
-        public async Task<List<InboundOrder>> GetAllInboundOrdersAsync()
+        public async Task<List<InboundOrder>> GetAllInboundOrdersAsync(int companyId)
         {
-            return await _repo.GetAllInboundOrdersAsync();
+            return await _repo.GetAllInboundOrdersAsync(companyId);
         }
-        public async Task<InboundRequest> GetInboundRequestByIdAsync(int id)
+        public async Task<InboundRequest> GetInboundRequestByIdAsync(int companyId, int id)
         {
             if (id <= 0) throw new ArgumentException("Invalid inbound request id.", nameof(id));
-            return await _repo.GetInboundRequestByIdAsync(id);
+            return await _repo.GetInboundRequestByIdAsync(companyId, id);
         }
 
-        public async Task<InboundOrder> GetInboundOrderByIdAsync(int id)
+        public async Task<InboundOrder> GetInboundOrderByIdAsync(int companyId, int id)
         {
             if (id <= 0) throw new ArgumentException("Invalid inbound order id.", nameof(id));
-            return await _repo.GetInboundOrderByIdAsync(id);
+            return await _repo.GetInboundOrderByIdAsync(companyId, id);
         }
     }
 }

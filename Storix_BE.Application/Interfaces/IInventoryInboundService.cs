@@ -15,10 +15,10 @@ namespace Storix_BE.Service.Interfaces
         Task<InboundOrder> CreateTicketFromRequestAsync(int inboundRequestId, int createdBy);
 
         Task<InboundOrder> UpdateTicketItemsAsync(int inboundOrderId, IEnumerable<UpdateInboundOrderItemRequest> items);
-        Task<List<InboundRequest>> GetAllInboundRequestsAsync();
-        Task<List<InboundOrder>> GetAllInboundOrdersAsync();
-        Task<InboundRequest> GetInboundRequestByIdAsync(int id);
-        Task<InboundOrder> GetInboundOrderByIdAsync(int id);
+        Task<List<InboundRequest>> GetAllInboundRequestsAsync(int companyId);
+        Task<List<InboundOrder>> GetAllInboundOrdersAsync(int companyId);
+        Task<InboundRequest> GetInboundRequestByIdAsync(int companyId, int id);
+        Task<InboundOrder> GetInboundOrderByIdAsync(int companyId, int id);
     }
     public sealed record CreateInboundOrderItemRequest(int ProductId, int ExpectedQuantity);
 
