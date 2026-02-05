@@ -162,6 +162,8 @@ namespace Storix_BE.Service.Implementation
                 item.ProductId,
                 p?.Sku,
                 p?.Name,
+                item.Price,
+                item.Discount,
                 item.ExpectedQuantity,
                 p?.TypeId,
                 p?.Description);
@@ -201,6 +203,9 @@ namespace Storix_BE.Service.Implementation
                 o.StaffId,
                 o.ReferenceCode,
                 o.Status,
+                o.InboundRequest.TotalPrice,
+                o.InboundRequest.OrderDiscount,
+                o.InboundRequest.FinalPrice,
                 o.CreatedAt,
                 items,
                 MapSupplier(o.Supplier),
