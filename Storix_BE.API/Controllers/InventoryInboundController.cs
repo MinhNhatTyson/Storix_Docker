@@ -156,8 +156,8 @@ namespace Storix_BE.API.Controllers
         {
             try
             {
-                // payload contains CreatedBy
-                var ticket = await _service.CreateTicketFromRequestAsync(requestId, payload.CreatedBy);
+                // payload now contains CreatedBy and optional StaffId
+                var ticket = await _service.CreateTicketFromRequestAsync(requestId, payload.CreatedBy, payload.StaffId);
                 return Ok(ticket);
             }
             catch (InvalidOperationException ex)
@@ -199,5 +199,5 @@ namespace Storix_BE.API.Controllers
             }
         }
     }
-    public sealed record CreateTicketFromRequestRequest(int CreatedBy);
+    public sealed record CreateTicketFromRequestRequest(int CreatedBy, int StaffId);
 }
