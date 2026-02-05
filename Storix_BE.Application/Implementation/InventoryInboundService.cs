@@ -84,5 +84,25 @@ namespace Storix_BE.Service.Implementation
 
             return await _repo.UpdateInboundOrderItemsAsync(inboundOrderId, domainItems);
         }
+        public async Task<List<InboundRequest>> GetAllInboundRequestsAsync()
+        {
+            return await _repo.GetAllInboundRequestsAsync();
+        }
+
+        public async Task<List<InboundOrder>> GetAllInboundOrdersAsync()
+        {
+            return await _repo.GetAllInboundOrdersAsync();
+        }
+        public async Task<InboundRequest> GetInboundRequestByIdAsync(int id)
+        {
+            if (id <= 0) throw new ArgumentException("Invalid inbound request id.", nameof(id));
+            return await _repo.GetInboundRequestByIdAsync(id);
+        }
+
+        public async Task<InboundOrder> GetInboundOrderByIdAsync(int id)
+        {
+            if (id <= 0) throw new ArgumentException("Invalid inbound order id.", nameof(id));
+            return await _repo.GetInboundOrderByIdAsync(id);
+        }
     }
 }

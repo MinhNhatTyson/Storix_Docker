@@ -228,5 +228,66 @@ namespace Storix_BE.Repository.Implementation
 
             return order;
         }
+
+        public async Task<List<InboundRequest>> GetAllInboundRequestsAsync()
+        {
+            return await _context.InboundRequests
+                .Include(r => r.InboundOrderItems)
+                .Include(r => r.Supplier)
+                .Include(r => r.Warehouse)
+                .Include(r => r.RequestedByNavigation)
+                .Include(r => r.ApprovedByNavigation)
+                .OrderByDescending(r => r.CreatedAt)
+                .ToListAsync()
+                .ConfigureAwait(false);
+        }
+
+        public async Task<List<InboundOrder>> GetAllInboundOrdersAsync()
+        {
+            return await _context.InboundOrders
+                .Include(o => o.InboundOrderItems)
+                    .ThenInclude(i => i.Product)
+                .Include(o => o.Supplier)
+                .Include(o => o.Warehouse)
+                .Include(o => o.CreatedByNavigation)
+                .OrderByDescending(o => o.CreatedAt)
+                .ToListAsync()
+                .ConfigureAwait(false);
+        }
+        public async Task<InboundRequest> GetInboundRequestByIdAsync(int id)
+        {
+            var request = await _context.InboundRequests
+                .Include(r => r.InboundOrderItems)
+                    .ThenInclude(i => i.Product)
+                .Include(r => r.Supplier)
+                .Include(r => r.Warehouse)
+                .Include(r => r.RequestedByNavigation)
+                .Include(r => r.ApprovedByNavigation)
+                .FirstOrDefaultAsync(r => r.Id == id)
+                .ConfigureAwait(false);
+
+            if (request == null)
+                throw new InvalidOperationException($"InboundRequest with id {id} not found.");
+
+            return request;
+        }
+
+        public async Task<InboundOrder> GetInboundOrderByIdAsync(int id)
+        {
+            var order = await _context.InboundOrders
+                .Include(o => o.InboundOrderItems)
+                    .ThenInclude(i => i.Product)
+                .Include(o => o.Supplier)
+                .Include(o => o.Warehouse)
+                .Include(o => o.CreatedByNavigation)
+                .Include(o => o.InboundRequest)
+                .FirstOrDefaultAsync(o => o.Id == id)
+                .ConfigureAwait(false);
+
+            if (order == null)
+                throw new InvalidOperationException($"InboundOrder with id {id} not found.");
+
+            return order;
+        }
     }
 }

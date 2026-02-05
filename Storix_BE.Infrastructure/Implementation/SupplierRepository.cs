@@ -25,7 +25,7 @@ namespace Storix_BE.Repository.Implementation
 
             return await _context.Suppliers
                 .AsNoTracking()
-                .Where(s => s.CompanyId == companyId)
+                .Where(s => s.CompanyId == companyId && s.Status == "Active")
                 .OrderBy(s => s.Id)
                 .ToListAsync()
                 .ConfigureAwait(false);
@@ -38,7 +38,7 @@ namespace Storix_BE.Repository.Implementation
 
             return await _context.Suppliers
                 .AsNoTracking()
-                .FirstOrDefaultAsync(s => s.Id == id && s.CompanyId == companyId)
+                .FirstOrDefaultAsync(s => s.Id == id && s.CompanyId == companyId && s.Status == "Active")
                 .ConfigureAwait(false);
         }
 

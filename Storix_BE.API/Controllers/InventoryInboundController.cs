@@ -13,6 +13,96 @@ namespace Storix_BE.API.Controllers
         {
             _service = service;
         }
+        [HttpGet("get-all-inbound-requests")]
+        public async Task<IActionResult> GetAllRequests()
+        {
+            try
+            {
+                var items = await _service.GetAllInboundRequestsAsync();
+                return Ok(items);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = ex.Message });
+            }
+        }
+
+        [HttpGet("get-all-inbound-tickets")]
+        public async Task<IActionResult> GetAllTickets()
+        {
+            try
+            {
+                var items = await _service.GetAllInboundOrdersAsync();
+                return Ok(items);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = ex.Message });
+            }
+        }
+        [HttpGet("get-inbound-request-by-id/{id:int}")]
+        public async Task<IActionResult> GetRequestById(int id)
+        {
+            if (id <= 0) return BadRequest(new { message = "Invalid request id." });
+
+            try
+            {
+                var item = await _service.GetInboundRequestByIdAsync(id);
+                return Ok(item);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = ex.Message });
+            }
+        }
+
+        [HttpGet("get-inbound-ticket-by-id/{id:int}")]
+        public async Task<IActionResult> GetTicketById(int id)
+        {
+            if (id <= 0) return BadRequest(new { message = "Invalid ticket id." });
+
+            try
+            {
+                var item = await _service.GetInboundOrderByIdAsync(id);
+                return Ok(item);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = ex.Message });
+            }
+        }
         [HttpPost("create-inbound-request")]
         public async Task<IActionResult> CreateRequest([FromBody] CreateInboundRequestRequest request)
         {
