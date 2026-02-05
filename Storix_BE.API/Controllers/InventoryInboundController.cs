@@ -156,7 +156,7 @@ namespace Storix_BE.API.Controllers
         {
             try
             {
-                // payload now contains CreatedBy and optional StaffId
+                // payload contains CreatedBy
                 var ticket = await _service.CreateTicketFromRequestAsync(requestId, payload.CreatedBy, payload.StaffId);
                 return Ok(ticket);
             }
