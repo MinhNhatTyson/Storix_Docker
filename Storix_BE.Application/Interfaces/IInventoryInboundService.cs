@@ -70,6 +70,7 @@ namespace Storix_BE.Service.Interfaces
         int? WarehouseId,
         int? SupplierId,
         int RequestedBy,
+        double? OrderDiscount,
         IEnumerable<CreateInboundOrderItemRequest> Items);
 
     public sealed record UpdateInboundRequestStatusRequest(int ApproverId, string Status);
