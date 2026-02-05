@@ -13,100 +13,6 @@ namespace Storix_BE.API.Controllers
         {
             _service = service;
         }
-        [HttpGet("get-all-inbound-requests/{companyId:int}")]
-        public async Task<IActionResult> GetAllRequests(int companyId)
-        {
-            if (companyId <= 0) return BadRequest(new { message = "Invalid company id." });
-            try
-            {
-                var items = await _service.GetAllInboundRequestsAsync(companyId);
-                return Ok(items);
-            }
-            catch (InvalidOperationException ex)
-            {
-                return BadRequest(new { message = ex.Message });
-            }
-            catch (ArgumentException ex)
-            {
-                return BadRequest(new { message = ex.Message });
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, new { message = ex.Message });
-            }
-        }
-
-        [HttpGet("get-all-inbound-tickets/{companyId:int}")]
-        public async Task<IActionResult> GetAllTickets(int companyId)
-        {
-            if (companyId <= 0) return BadRequest(new { message = "Invalid company id." });
-            try
-            {
-                var items = await _service.GetAllInboundOrdersAsync(companyId);
-                return Ok(items);
-            }
-            catch (InvalidOperationException ex)
-            {
-                return BadRequest(new { message = ex.Message });
-            }
-            catch (ArgumentException ex)
-            {
-                return BadRequest(new { message = ex.Message });
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, new { message = ex.Message });
-            }
-        }
-        [HttpGet("get-inbound-request-by-id/{companyId:int}/{id:int}")]
-        public async Task<IActionResult> GetRequestById(int companyId, int id)
-        {
-            if (companyId <= 0) return BadRequest(new { message = "Invalid company id." });
-            if (id <= 0) return BadRequest(new { message = "Invalid request id." });
-
-            try
-            {
-                var item = await _service.GetInboundRequestByIdAsync(companyId, id);
-                return Ok(item);
-            }
-            catch (InvalidOperationException ex)
-            {
-                return NotFound(new { message = ex.Message });
-            }
-            catch (ArgumentException ex)
-            {
-                return BadRequest(new { message = ex.Message });
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, new { message = ex.Message });
-            }
-        }
-
-        [HttpGet("get-inbound-ticket-by-id/{companyId:int}/{id:int}")]
-        public async Task<IActionResult> GetTicketById(int companyId, int id)
-        {
-            if (companyId <= 0) return BadRequest(new { message = "Invalid company id." });
-            if (id <= 0) return BadRequest(new { message = "Invalid ticket id." });
-
-            try
-            {
-                var item = await _service.GetInboundOrderByIdAsync(companyId, id);
-                return Ok(item);
-            }
-            catch (InvalidOperationException ex)
-            {
-                return NotFound(new { message = ex.Message });
-            }
-            catch (ArgumentException ex)
-            {
-                return BadRequest(new { message = ex.Message });
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, new { message = ex.Message });
-            }
-        }
         [HttpPost("create-inbound-request")]
         public async Task<IActionResult> CreateRequest([FromBody] CreateInboundRequestRequest request)
         {
@@ -156,7 +62,7 @@ namespace Storix_BE.API.Controllers
         {
             try
             {
-                // payload contains CreatedBy
+                // payload now contains CreatedBy and optional StaffId
                 var ticket = await _service.CreateTicketFromRequestAsync(requestId, payload.CreatedBy, payload.StaffId);
                 return Ok(ticket);
             }
@@ -188,6 +94,104 @@ namespace Storix_BE.API.Controllers
             catch (InvalidOperationException ex)
             {
                 return BadRequest(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = ex.Message });
+            }
+        }
+
+        [HttpGet("requests/{companyId:int}")]
+        public async Task<IActionResult> GetAllRequests(int companyId)
+        {
+            if (companyId <= 0) return BadRequest(new { message = "Invalid company id." });
+
+            try
+            {
+                var items = await _service.GetAllInboundRequestsAsync(companyId);
+                return Ok(items);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = ex.Message });
+            }
+        }
+
+        [HttpGet("tickets/{companyId:int}")]
+        public async Task<IActionResult> GetAllTickets(int companyId)
+        {
+            if (companyId <= 0) return BadRequest(new { message = "Invalid company id." });
+
+            try
+            {
+                var items = await _service.GetAllInboundOrdersAsync(companyId);
+                return Ok(items);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = ex.Message });
+            }
+        }
+
+        [HttpGet("requests/{companyId:int}/{id:int}")]
+        public async Task<IActionResult> GetRequestById(int companyId, int id)
+        {
+            if (companyId <= 0) return BadRequest(new { message = "Invalid company id." });
+            if (id <= 0) return BadRequest(new { message = "Invalid request id." });
+
+            try
+            {
+                var item = await _service.GetInboundRequestByIdAsync(companyId, id);
+                return Ok(item);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = ex.Message });
+            }
+        }
+
+        [HttpGet("tickets/{companyId:int}/{id:int}")]
+        public async Task<IActionResult> GetTicketById(int companyId, int id)
+        {
+            if (companyId <= 0) return BadRequest(new { message = "Invalid company id." });
+            if (id <= 0) return BadRequest(new { message = "Invalid ticket id." });
+
+            try
+            {
+                var item = await _service.GetInboundOrderByIdAsync(companyId, id);
+                return Ok(item);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return NotFound(new { message = ex.Message });
             }
             catch (ArgumentException ex)
             {

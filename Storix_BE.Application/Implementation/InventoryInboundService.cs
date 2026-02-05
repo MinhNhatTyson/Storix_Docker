@@ -34,12 +34,12 @@ namespace Storix_BE.Service.Implementation
             if (invalidPrice != null)
                 throw new InvalidOperationException("Each item must have a non-negative Price.");
 
-            var invalidLineDiscount = request.Items.FirstOrDefault(i => double.IsNaN(i.LineDiscount) || i.LineDiscount < 0);
+            var invalidLineDiscount = request.Items.FirstOrDefault(i => double.IsNaN(i.LineDiscount) || i.LineDiscount < 0 || i.LineDiscount > 1);
             if (invalidLineDiscount != null)
-                throw new InvalidOperationException("Each item LineDiscount must be bigger than 0.");
+                throw new InvalidOperationException("Each item LineDiscount must be between 0 and 1 (fractional).");
 
-            if (request.OrderDiscount.HasValue && (double.IsNaN(request.OrderDiscount.Value) || request.OrderDiscount.Value < 0))
-                throw new InvalidOperationException("OrderDiscount must be bigger than 0 when provided.");
+            if (request.OrderDiscount.HasValue && (double.IsNaN(request.OrderDiscount.Value) || request.OrderDiscount.Value < 0 || request.OrderDiscount.Value > 1))
+                throw new InvalidOperationException("OrderDiscount must be between 0 and 1 (fractional) when provided.");
 
             var inboundRequest = new InboundRequest
             {
@@ -60,6 +60,7 @@ namespace Storix_BE.Service.Implementation
                 });
             }
 
+            // Calculate total price from items (apply line-level discounts) and FinalPrice after order discount
             double totalPrice = 0.0;
             foreach (var item in request.Items)
             {
@@ -67,7 +68,7 @@ namespace Storix_BE.Service.Implementation
                 var price = item.Price;
                 var lineDiscount = item.LineDiscount; // expected fractional (e.g. 0.1 = 10%)
 
-                var effectiveUnitPrice = price * (lineDiscount/100);
+                var effectiveUnitPrice = price * (1.0 - lineDiscount);
                 if (effectiveUnitPrice < 0) effectiveUnitPrice = 0; // safety
 
                 totalPrice += effectiveUnitPrice * qty;
@@ -77,7 +78,7 @@ namespace Storix_BE.Service.Implementation
 
             if (request.OrderDiscount.HasValue)
             {
-                var final = totalPrice * (request.OrderDiscount.Value/100);
+                var final = totalPrice * (1.0 - request.OrderDiscount.Value);
                 if (final < 0) final = 0;
                 inboundRequest.FinalPrice = final;
             }
@@ -124,7 +125,6 @@ namespace Storix_BE.Service.Implementation
             if (items == null) throw new ArgumentNullException(nameof(items));
             if (!items.Any()) throw new InvalidOperationException("Items payload cannot be empty.");
 
-            // Map DTOs to domain InboundOrderItem objects (Id can be 0 for new items)
             var domainItems = items.Select(i => new InboundOrderItem
             {
                 Id = i.Id,
@@ -162,7 +162,6 @@ namespace Storix_BE.Service.Implementation
                 item.ProductId,
                 p?.Sku,
                 p?.Name,
-                item.Price,
                 item.ExpectedQuantity,
                 p?.TypeId,
                 p?.Description);
@@ -177,10 +176,10 @@ namespace Storix_BE.Service.Implementation
                 r.SupplierId,
                 r.RequestedBy,
                 r.ApprovedBy,
+                r.Status,
                 r.TotalPrice,
                 r.OrderDiscount,
                 r.FinalPrice,
-                r.Status,
                 r.CreatedAt,
                 r.ApprovedAt,
                 items,
@@ -210,6 +209,7 @@ namespace Storix_BE.Service.Implementation
                 MapUser(o.Staff));
         }
 
+        // --- New service methods returning DTOs and scoping by companyId ---
         public async Task<List<InboundRequestDto>> GetAllInboundRequestsAsync(int companyId)
         {
             if (companyId <= 0) throw new ArgumentException("Invalid company id.", nameof(companyId));
@@ -239,5 +239,7 @@ namespace Storix_BE.Service.Implementation
             var o = await _repo.GetInboundOrderByIdAsync(companyId, id);
             return MapInboundOrderToDto(o);
         }
+
+
     }
 }

@@ -12,6 +12,7 @@ namespace Storix_BE.Service.Interfaces
         Task<InboundRequest> CreateInboundRequestAsync(CreateInboundRequestRequest request);
 
         Task<InboundRequest> UpdateInboundRequestStatusAsync(int ticketRequestId, int approverId, string status);
+
         Task<InboundOrder> CreateTicketFromRequestAsync(int inboundRequestId, int createdBy, int? staffId);
 
         Task<InboundOrder> UpdateTicketItemsAsync(int inboundOrderId, IEnumerable<UpdateInboundOrderItemRequest> items);
@@ -30,7 +31,6 @@ namespace Storix_BE.Service.Interfaces
         int? ProductId,
         string? Sku,
         string? Name,
-        double? Price,
         int? ExpectedQuantity,
         int? TypeId,
         string? Description);
@@ -40,10 +40,10 @@ namespace Storix_BE.Service.Interfaces
         int? SupplierId,
         int? RequestedBy,
         int? ApprovedBy,
+        string? Status,
         double? TotalPrice,
         double? OrderDiscount,
         double? FinalPrice,
-        string? Status,
         DateTime? CreatedAt,
         DateTime? ApprovedAt,
         IEnumerable<InboundOrderItemDto> InboundOrderItems,

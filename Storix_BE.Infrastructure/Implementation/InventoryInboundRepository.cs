@@ -247,7 +247,6 @@ namespace Storix_BE.Repository.Implementation
 
             return order;
         }
-
         public async Task<List<InboundRequest>> GetAllInboundRequestsAsync(int companyId)
         {
             return await _context.InboundRequests
@@ -270,7 +269,7 @@ namespace Storix_BE.Repository.Implementation
                 .Include(o => o.Supplier)
                 .Include(o => o.Warehouse)
                 .Include(o => o.CreatedByNavigation)
-                .Where(r => r.CreatedByNavigation.CompanyId == companyId)
+                .Where(o => o.CreatedByNavigation.CompanyId == companyId)
                 .OrderByDescending(o => o.CreatedAt)
                 .ToListAsync()
                 .ConfigureAwait(false);
@@ -302,7 +301,8 @@ namespace Storix_BE.Repository.Implementation
                 .Include(o => o.Supplier)
                 .Include(o => o.Warehouse)
                 .Include(o => o.CreatedByNavigation)
-                .Include(o => o.InboundRequest).Where(r => r.CreatedByNavigation.CompanyId == companyId)
+                .Include(o => o.InboundRequest)
+                .Where(o => o.CreatedByNavigation.CompanyId == companyId)
                 .FirstOrDefaultAsync(o => o.Id == id)
                 .ConfigureAwait(false);
 
