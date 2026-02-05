@@ -12,7 +12,7 @@ namespace Storix_BE.Service.Interfaces
         Task<InboundRequest> CreateInboundRequestAsync(CreateInboundRequestRequest request);
 
         Task<InboundRequest> UpdateInboundRequestStatusAsync(int ticketRequestId, int approverId, string status);
-        Task<InboundOrder> CreateTicketFromRequestAsync(int inboundRequestId, int createdBy);
+        Task<InboundOrder> CreateTicketFromRequestAsync(int inboundRequestId, int createdBy, int? staffId);
 
         Task<InboundOrder> UpdateTicketItemsAsync(int inboundOrderId, IEnumerable<UpdateInboundOrderItemRequest> items);
         Task<List<InboundRequestDto>> GetAllInboundRequestsAsync(int companyId);
@@ -58,13 +58,15 @@ namespace Storix_BE.Service.Interfaces
         int? WarehouseId,
         int? SupplierId,
         int? CreatedBy,
+        int? StaffId,
         string? ReferenceCode,
         string? Status,
         DateTime? CreatedAt,
         IEnumerable<InboundOrderItemDto> InboundOrderItems,
         SupplierDto? Supplier,
         WarehouseDto? Warehouse,
-        UserDto? CreatedByUser);
+        UserDto? CreatedByUser,
+        UserDto? StaffUser);
     public sealed record CreateInboundOrderItemRequest(int ProductId, int ExpectedQuantity, double Price, double LineDiscount);
 
     public sealed record CreateInboundRequestRequest(

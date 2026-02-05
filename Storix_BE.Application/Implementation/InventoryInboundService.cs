@@ -54,7 +54,9 @@ namespace Storix_BE.Service.Implementation
                 inboundRequest.InboundOrderItems.Add(new InboundOrderItem
                 {
                     ProductId = item.ProductId,
-                    ExpectedQuantity = item.ExpectedQuantity
+                    ExpectedQuantity = item.ExpectedQuantity,
+                    Price = item.Price,
+                    Discount = item.LineDiscount
                 });
             }
 
@@ -107,12 +109,13 @@ namespace Storix_BE.Service.Implementation
             return id;
         }
 
-        public async Task<InboundOrder> CreateTicketFromRequestAsync(int inboundRequestId, int createdBy)
+        public async Task<InboundOrder> CreateTicketFromRequestAsync(int inboundRequestId, int createdBy, int? staffId)
         {
             if (inboundRequestId <= 0) throw new ArgumentException("Invalid inboundRequestId.", nameof(inboundRequestId));
             if (createdBy <= 0) throw new ArgumentException("Invalid createdBy.", nameof(createdBy));
+            // staffId may be null (optional)
 
-            return await _repo.CreateInboundOrderFromRequestAsync(inboundRequestId, createdBy);
+            return await _repo.CreateInboundOrderFromRequestAsync(inboundRequestId, createdBy, staffId);
         }
 
         public async Task<InboundOrder> UpdateTicketItemsAsync(int inboundOrderId, IEnumerable<UpdateInboundOrderItemRequest> items)
@@ -196,15 +199,17 @@ namespace Storix_BE.Service.Implementation
                 o.WarehouseId,
                 o.SupplierId,
                 o.CreatedBy,
+                o.StaffId,
                 o.ReferenceCode,
                 o.Status,
                 o.CreatedAt,
                 items,
                 MapSupplier(o.Supplier),
                 MapWarehouse(o.Warehouse),
-                MapUser(o.CreatedByNavigation));
+                MapUser(o.CreatedByNavigation),
+                MapUser(o.Staff));
         }
-        
+
         public async Task<List<InboundRequestDto>> GetAllInboundRequestsAsync(int companyId)
         {
             if (companyId <= 0) throw new ArgumentException("Invalid company id.", nameof(companyId));

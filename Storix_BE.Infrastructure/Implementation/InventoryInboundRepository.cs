@@ -133,7 +133,7 @@ namespace Storix_BE.Repository.Implementation
             return inbound;
         }
 
-        public async Task<InboundOrder> CreateInboundOrderFromRequestAsync(int inboundRequestId, int createdBy)
+        public async Task<InboundOrder> CreateInboundOrderFromRequestAsync(int inboundRequestId, int createdBy, int? staffId)
         {
             var inboundRequest = await _context.InboundRequests
                 .Include(r => r.InboundOrderItems)
@@ -152,6 +152,7 @@ namespace Storix_BE.Repository.Implementation
                 WarehouseId = inboundRequest.WarehouseId,
                 SupplierId = inboundRequest.SupplierId,
                 CreatedBy = createdBy,
+                StaffId = staffId, // <- set StaffId here
                 Status = "Created",
                 CreatedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified),
                 ReferenceCode = $"INB-{DateTime.UtcNow:yyyyMMddHHmmss}-{Random.Shared.Next(1000, 9999)}"
