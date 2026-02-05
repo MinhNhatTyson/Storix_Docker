@@ -29,11 +29,14 @@ namespace Storix_BE.Repository.Implementation
                 throw new InvalidOperationException("InboundRequest must contain at least one InboundOrderItem describing product and expected quantity.");
             }
 
+            // Basic per-item validation
             var invalidItem = request.InboundOrderItems.FirstOrDefault(i => i.ProductId == null || i.ExpectedQuantity == null || i.ExpectedQuantity <= 0);
             if (invalidItem != null)
             {
                 throw new InvalidOperationException("All InboundOrderItems must specify a ProductId and ExpectedQuantity > 0.");
             }
+
+            // Verify products exist
             var productIds = request.InboundOrderItems.Select(i => i.ProductId!.Value).Distinct().ToList();
             var existingProductIds = await _context.Products
                 .Where(p => productIds.Contains(p.Id))
@@ -47,6 +50,7 @@ namespace Storix_BE.Repository.Implementation
                 throw new InvalidOperationException($"Products not found: {string.Join(',', missing)}");
             }
 
+            // Optional: validate referenced warehouse/supplier/requestedBy exist when provided
             if (request.WarehouseId.HasValue)
             {
                 var wh = await _context.Warehouses.FindAsync(request.WarehouseId.Value).ConfigureAwait(false);
@@ -57,6 +61,8 @@ namespace Storix_BE.Repository.Implementation
                 var sup = await _context.Suppliers.FindAsync(request.SupplierId.Value).ConfigureAwait(false);
                 if (sup == null) throw new InvalidOperationException($"Supplier with id {request.SupplierId.Value} not found.");
             }
+
+            // Set defaults
             request.CreatedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
             if (string.IsNullOrWhiteSpace(request.Status))
             {
