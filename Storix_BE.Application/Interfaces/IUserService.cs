@@ -36,6 +36,9 @@ namespace Storix_BE.Service.Interfaces
         Task<bool> DeleteUserAsync(int userId, int callerUserId, int callerRoleId);
         Task<User> UpdateProfileAsync(int userId, UpdateProfileDto dto);
         Task<UserProfileDto?> GetUser(int userId);
+        Task<LoginResponse> AuthenticateAsync(string email, string password);
+        Task<TokenResponse> RefreshTokenAsync(string refreshToken);
+        Task LogoutAsync(string refreshToken);
     }
 
     public sealed record CreateUserRequest(string FullName, string Email, string? Phone, string Password, string RoleName);

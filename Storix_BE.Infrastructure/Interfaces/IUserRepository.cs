@@ -38,5 +38,9 @@ namespace Storix_BE.Repository.Interfaces
         Task<int> UpdateAsync(User user);
         Task<bool> RemoveAsync(User user);
         Task<User> UpdateProfileAsync(int userId, UpdateProfileDto dto);
+        Task<RefreshToken> CreateRefreshTokenAsync(int userId, string token, DateTime expiresAt);
+        Task<RefreshToken?> GetRefreshTokenAsync(string token);
+        Task RevokeRefreshTokenAsync(string token);
+        Task RevokeAllRefreshTokensForUserAsync(int userId);
     }
 }

@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.Configuration;
+using Microsoft.IdentityModel.Tokens;
 using Storix_BE.Domain.Exception;
 using Storix_BE.Domain.Models;
 using Storix_BE.Repository.DTO;
@@ -6,8 +7,10 @@ using Storix_BE.Repository.Interfaces;
 using Storix_BE.Service.Interfaces;
 using System;
 using System.Collections.Generic;
+using System.IdentityModel.Tokens.Jwt;
 using System.Linq;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -261,6 +264,100 @@ namespace Storix_BE.Service.Implementation
                 user.Phone,
                 user.Role?.Name,
                 user.Status);
+        }
+
+        public async Task<LoginResponse> AuthenticateAsync(string email, string password)
+        {
+            var user = await _accRepository.Login(email, password);
+            if (user == null) throw new UnauthorizedAccessException("Invalid email or password.");
+
+            var accessToken = GenerateAccessToken(user);
+            var refreshTokenStr = GenerateRefreshTokenString();
+            var refreshDays = _configuration.GetValue<int?>("Jwt:RefreshTokenExpiryDays") ?? 7;
+            var expiresAt = DateTime.UtcNow.AddDays(refreshDays);
+
+            await _accRepository.CreateRefreshTokenAsync(user.Id, refreshTokenStr, expiresAt);
+
+            return new LoginResponse
+            {
+                AccessToken = accessToken,
+                RefreshToken = refreshTokenStr,
+                UserId = user.Id,
+                RoleId = user.RoleId,
+                CompanyId = user.CompanyId
+            };
+        }
+
+        public async Task<TokenResponse> RefreshTokenAsync(string refreshToken)
+        {
+            var existing = await _accRepository.GetRefreshTokenAsync(refreshToken);
+            if (existing == null || existing.IsRevoked == true || (existing.ExpiredAt != null && existing.ExpiredAt.Value.ToUniversalTime() < DateTime.UtcNow))
+            {
+                throw new InvalidOperationException("Refresh token invalid or expired.");
+            }
+
+            var user = await _accRepository.GetUserByIdWithRoleAsync(existing.UserId ?? 0);
+            if (user == null) throw new InvalidOperationException("User not found for refresh token.");
+
+            // revoke old refresh token (rotation)
+            await _accRepository.RevokeRefreshTokenAsync(refreshToken);
+
+            var newRefreshToken = GenerateRefreshTokenString();
+            var refreshDays = _configuration.GetValue<int?>("Jwt:RefreshTokenExpiryDays") ?? 7;
+            var expiresAt = DateTime.UtcNow.AddDays(refreshDays);
+            await _accRepository.CreateRefreshTokenAsync(user.Id, newRefreshToken, expiresAt);
+
+            var newAccessToken = GenerateAccessToken(user);
+
+            return new TokenResponse
+            {
+                AccessToken = newAccessToken,
+                RefreshToken = newRefreshToken
+            };
+        }
+
+        public async Task LogoutAsync(string refreshToken)
+        {
+            var existing = await _accRepository.GetRefreshTokenAsync(refreshToken);
+            if (existing == null) return;
+            await _accRepository.RevokeRefreshTokenAsync(refreshToken);
+        }
+
+        private string GenerateAccessToken(User user)
+        {
+            var key = _configuration.GetValue<string>("Jwt:Key") ?? _configuration.GetValue<string>("SECRET_KEY");
+            var issuer = _configuration.GetValue<string>("Jwt:Issuer") ?? _configuration.GetValue<string>("SECRET_ISSUER");
+            var audience = _configuration.GetValue<string>("Jwt:Audience") ?? _configuration.GetValue<string>("SECRET_AUDIENCE");
+
+            var expiryMinutes = _configuration.GetValue<int?>("Jwt:AccessTokenExpiryMinutes") ?? 120;
+
+            var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(key));
+            var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
+
+            var claims = new List<Claim>
+            {
+                new(ClaimTypes.Email, user.Email ?? string.Empty),
+                new(ClaimTypes.Role, user.RoleId?.ToString() ?? string.Empty),
+                new("CompanyId", user.CompanyId?.ToString() ?? string.Empty)
+            };
+
+            var token = new JwtSecurityToken(
+                issuer,
+                audience,
+                claims,
+                expires: DateTime.UtcNow.AddMinutes(expiryMinutes),
+                signingCredentials: credentials
+            );
+
+            return new JwtSecurityTokenHandler().WriteToken(token);
+        }
+
+        private static string GenerateRefreshTokenString()
+        {
+            var randomNumber = new byte[64];
+            using var rng = RandomNumberGenerator.Create();
+            rng.GetBytes(randomNumber);
+            return Convert.ToBase64String(randomNumber);
         }
     }
 }

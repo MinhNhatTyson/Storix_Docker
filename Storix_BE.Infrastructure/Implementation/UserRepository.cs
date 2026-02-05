@@ -320,6 +320,58 @@ namespace Storix_BE.Repository.Implementation
             throw new InvalidOperationException($"Unable to generate a unique user id after {maxAttempts} attempts.");
         }
 
+        private async Task<int> GenerateUniqueRandomRefreshTokenIdAsync()
+        {
+            const int min = 1000000;
+            const int max = int.MaxValue - 1;
+            const int maxAttempts = 200;
+            for (int attempt = 0; attempt < maxAttempts; attempt++)
+            {
+                int candidate = Random.Shared.Next(min, max);
+                bool exists = await _context.RefreshTokens.AnyAsync(r => r.Id == candidate);
+                if (!exists) return candidate;
+            }
+            throw new InvalidOperationException($"Unable to generate a unique refresh token id after {maxAttempts} attempts.");
+        }
+
+        public async Task<RefreshToken> CreateRefreshTokenAsync(int userId, string token, DateTime expiresAt)
+        {
+            var id = await GenerateUniqueRandomRefreshTokenIdAsync();
+            var rt = new RefreshToken
+            {
+                Id = id,
+                UserId = userId,
+                Token = token,
+                ExpiredAt = DateTime.SpecifyKind(expiresAt.ToUniversalTime(), DateTimeKind.Unspecified),
+                IsRevoked = false,
+                CreatedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified)
+            };
+            _context.RefreshTokens.Add(rt);
+            await _context.SaveChangesAsync();
+            return rt;
+        }
+
+        public async Task<RefreshToken?> GetRefreshTokenAsync(string token)
+        {
+            return await _context.RefreshTokens.FirstOrDefaultAsync(r => r.Token == token);
+        }
+
+        public async Task RevokeRefreshTokenAsync(string token)
+        {
+            var rt = await _context.RefreshTokens.FirstOrDefaultAsync(r => r.Token == token);
+            if (rt == null) return;
+            rt.IsRevoked = true;
+            await _context.SaveChangesAsync();
+        }
+
+        public async Task RevokeAllRefreshTokensForUserAsync(int userId)
+        {
+            var tokens = await _context.RefreshTokens.Where(r => r.UserId == userId && (r.IsRevoked == false || r.IsRevoked == null)).ToListAsync();
+            if (tokens.Count == 0) return;
+            foreach (var t in tokens) t.IsRevoked = true;
+            await _context.SaveChangesAsync();
+        }
+
         public async Task<User> UpdateProfileAsync(int userId, UpdateProfileDto dto)
         {
 

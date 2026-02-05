@@ -45,6 +45,7 @@ public partial class StorixDbContext : DbContext
     public virtual DbSet<Product> Products { get; set; }
 
     public virtual DbSet<ProductType> ProductTypes { get; set; }
+    public virtual DbSet<RefreshToken> RefreshTokens { get; set; }
 
     public virtual DbSet<Role> Roles { get; set; }
 
@@ -517,6 +518,32 @@ public partial class StorixDbContext : DbContext
             entity.HasOne(d => d.Company).WithMany(p => p.ProductTypes)
                 .HasForeignKey(d => d.CompanyId)
                 .HasConstraintName("fk_product_types_company_id");
+        });
+
+        modelBuilder.Entity<RefreshToken>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("refresh_tokens.id");
+
+            entity.ToTable("refresh_tokens");
+
+            entity.Property(e => e.Id)
+                .ValueGeneratedNever()
+                .HasColumnName("id");
+            entity.Property(e => e.CreatedAt)
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("created_at");
+            entity.Property(e => e.ExpiredAt)
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("expired_at");
+            entity.Property(e => e.IsRevoked).HasColumnName("is_revoked");
+            entity.Property(e => e.Token)
+                .HasColumnType("string")
+                .HasColumnName("token");
+            entity.Property(e => e.UserId).HasColumnName("user_id");
+
+            entity.HasOne(d => d.User).WithMany(p => p.RefreshTokens)
+                .HasForeignKey(d => d.UserId)
+                .HasConstraintName("fk_refresh_tokens.id");
         });
 
         modelBuilder.Entity<Role>(entity =>

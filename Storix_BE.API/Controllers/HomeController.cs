@@ -1,15 +1,16 @@
-﻿using Microsoft.AspNetCore.Identity.Data;
+﻿using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Google;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Identity.Data;
 using Microsoft.AspNetCore.Mvc;
-using Storix_BE.Service.Interfaces;
 using Microsoft.IdentityModel.Tokens;
+using Storix_BE.Domain.Models;
+using Storix_BE.Repository.DTO;
+using Storix_BE.Service.Interfaces;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
-using Storix_BE.Domain.Models;
-using Microsoft.AspNetCore.Identity;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Authentication;
-using Microsoft.AspNetCore.Authentication.Google;
 
 namespace Storix_BE.API.Controllers
 {
@@ -25,24 +26,59 @@ namespace Storix_BE.API.Controllers
             _accService = accService;
         }
         [HttpPost("Login")]
-        public IActionResult Login([FromBody] LoginRequest request)
+        public async Task<IActionResult> Login([FromBody] LoginRequest request)
         {
             if (!ModelState.IsValid)
                 return BadRequest(ModelState);
-            var user = _accService.Login(request.Email, request.Password);
-            
-            if (user == null || user.Result == null)
-                return Unauthorized(new { message = "Invalid email or password." });
 
-            var token = GenerateJSONWebToken(user.Result);
-
-            return Ok(new
+            try
             {
-                Token = token,
-                RoleId = user.Result.RoleId,
-                UserId = user.Result.Id,
-                CompanyId = user.Result.CompanyId
-            });
+                var result = await _accService.AuthenticateAsync(request.Email, request.Password);
+                return Ok(new
+                {
+                    AccessToken = result.AccessToken,
+                    RefreshToken = result.RefreshToken,
+                    RoleId = result.RoleId,
+                    UserId = result.UserId,
+                    CompanyId = result.CompanyId
+                });
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Unauthorized(new { message = "Invalid email or password." });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        [HttpPost("refresh")]
+        public async Task<IActionResult> Refresh([FromBody] RefreshTokenRequest request)
+        {
+            try
+            {
+                var tokenResponse = await _accService.RefreshTokenAsync(request.RefreshToken);
+                return Ok(tokenResponse);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        [HttpPost("logout")]
+        public async Task<IActionResult> Logout([FromBody] RefreshTokenRequest request)
+        {
+            try
+            {
+                await _accService.LogoutAsync(request.RefreshToken);
+                return NoContent();
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
         }
 
         [HttpPost("Signup")]
