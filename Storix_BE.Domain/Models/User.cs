@@ -29,8 +29,9 @@ public partial class User
     public virtual ICollection<ActivityLog> ActivityLogs { get; set; } = new List<ActivityLog>();
 
     public virtual Company? Company { get; set; }
+    public virtual ICollection<InboundOrder> InboundOrderCreatedByNavigations { get; set; } = new List<InboundOrder>();
 
-    public virtual ICollection<InboundOrder> InboundOrders { get; set; } = new List<InboundOrder>();
+    public virtual ICollection<InboundOrder> InboundOrderStaffs { get; set; } = new List<InboundOrder>();
 
     public virtual ICollection<InboundRequest> InboundRequestApprovedByNavigations { get; set; } = new List<InboundRequest>();
 
@@ -38,7 +39,9 @@ public partial class User
 
     public virtual ICollection<InventoryTransaction> InventoryTransactions { get; set; } = new List<InventoryTransaction>();
 
-    public virtual ICollection<OutboundOrder> OutboundOrders { get; set; } = new List<OutboundOrder>();
+    public virtual ICollection<OutboundOrder> OutboundOrderCreatedByNavigations { get; set; } = new List<OutboundOrder>();
+
+    public virtual ICollection<OutboundOrder> OutboundOrderStaffs { get; set; } = new List<OutboundOrder>();
 
     public virtual ICollection<OutboundRequest> OutboundRequestApprovedByNavigations { get; set; } = new List<OutboundRequest>();
 

@@ -14,6 +14,7 @@ public partial class InboundOrder
     public int? SupplierId { get; set; }
 
     public int? CreatedBy { get; set; }
+    public int? StaffId { get; set; }
 
     public string? ReferenceCode { get; set; }
 
@@ -26,6 +27,7 @@ public partial class InboundOrder
     public virtual ICollection<InboundOrderItem> InboundOrderItems { get; set; } = new List<InboundOrderItem>();
 
     public virtual InboundRequest? InboundRequest { get; set; }
+    public virtual User? Staff { get; set; }
 
     public virtual Supplier? Supplier { get; set; }
 

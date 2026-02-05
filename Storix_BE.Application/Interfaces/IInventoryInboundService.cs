@@ -30,6 +30,7 @@ namespace Storix_BE.Service.Interfaces
         int? ProductId,
         string? Sku,
         string? Name,
+        double? Price,
         int? ExpectedQuantity,
         int? TypeId,
         string? Description);

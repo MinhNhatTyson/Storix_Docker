@@ -17,6 +17,9 @@ public partial class InboundOrderItem
 
     public int? ReceivedQuantity { get; set; }
 
+    public double? Price { get; set; }
+
+    public double? Discount { get; set; }
     public virtual InboundOrder? InboundOrder { get; set; }
 
     public virtual InboundRequest? InboundRequest { get; set; }

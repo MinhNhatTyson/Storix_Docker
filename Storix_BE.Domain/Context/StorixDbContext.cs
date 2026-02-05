@@ -43,9 +43,11 @@ public partial class StorixDbContext : DbContext
     public virtual DbSet<OutboundRequest> OutboundRequests { get; set; }
 
     public virtual DbSet<Product> Products { get; set; }
+
     public virtual DbSet<ProductPrice> ProductPrices { get; set; }
 
     public virtual DbSet<ProductType> ProductTypes { get; set; }
+
     public virtual DbSet<RefreshToken> RefreshTokens { get; set; }
 
     public virtual DbSet<Role> Roles { get; set; }
@@ -158,19 +160,24 @@ public partial class StorixDbContext : DbContext
             entity.Property(e => e.ReferenceCode)
                 .HasColumnType("character varying")
                 .HasColumnName("reference_code");
+            entity.Property(e => e.StaffId).HasColumnName("staff_id");
             entity.Property(e => e.Status)
                 .HasColumnType("character varying")
                 .HasColumnName("status");
             entity.Property(e => e.SupplierId).HasColumnName("supplier_id");
             entity.Property(e => e.WarehouseId).HasColumnName("warehouse_id");
 
-            entity.HasOne(d => d.CreatedByNavigation).WithMany(p => p.InboundOrders)
+            entity.HasOne(d => d.CreatedByNavigation).WithMany(p => p.InboundOrderCreatedByNavigations)
                 .HasForeignKey(d => d.CreatedBy)
                 .HasConstraintName("fk_inbound_orders_created_by");
 
             entity.HasOne(d => d.InboundRequest).WithMany(p => p.InboundOrders)
                 .HasForeignKey(d => d.InboundRequestId)
                 .HasConstraintName("fk_inbound_orders_inbound_request_id");
+
+            entity.HasOne(d => d.Staff).WithMany(p => p.InboundOrderStaffs)
+                .HasForeignKey(d => d.StaffId)
+                .HasConstraintName("fk_inbound_orders_staff_id");
 
             entity.HasOne(d => d.Supplier).WithMany(p => p.InboundOrders)
                 .HasForeignKey(d => d.SupplierId)
@@ -188,9 +195,11 @@ public partial class StorixDbContext : DbContext
             entity.ToTable("inbound_order_items");
 
             entity.Property(e => e.Id).HasColumnName("id");
+            entity.Property(e => e.Discount).HasColumnName("discount");
             entity.Property(e => e.ExpectedQuantity).HasColumnName("expected_quantity");
             entity.Property(e => e.InboundOrderId).HasColumnName("inbound_order_id");
             entity.Property(e => e.InboundRequestId).HasColumnName("inbound_request_id");
+            entity.Property(e => e.Price).HasColumnName("price");
             entity.Property(e => e.ProductId).HasColumnName("product_id");
             entity.Property(e => e.ReceivedQuantity).HasColumnName("received_quantity");
 
@@ -394,9 +403,13 @@ public partial class StorixDbContext : DbContext
                 .HasColumnName("status");
             entity.Property(e => e.WarehouseId).HasColumnName("warehouse_id");
 
-            entity.HasOne(d => d.CreatedByNavigation).WithMany(p => p.OutboundOrders)
+            entity.HasOne(d => d.CreatedByNavigation).WithMany(p => p.OutboundOrderCreatedByNavigations)
                 .HasForeignKey(d => d.CreatedBy)
                 .HasConstraintName("fk_outbound_orders_created_by");
+
+            entity.HasOne(d => d.Staff).WithMany(p => p.OutboundOrderStaffs)
+                .HasForeignKey(d => d.StaffId)
+                .HasConstraintName("fk_outbound_orders_staff_id");
 
             entity.HasOne(d => d.Warehouse).WithMany(p => p.OutboundOrders)
                 .HasForeignKey(d => d.WarehouseId)
@@ -511,9 +524,7 @@ public partial class StorixDbContext : DbContext
 
             entity.ToTable("product_prices");
 
-            entity.Property(e => e.Id)
-                .ValueGeneratedOnAdd()
-                .HasColumnName("id");
+            entity.Property(e => e.Id).HasColumnName("id");
             entity.Property(e => e.Date).HasColumnName("date");
             entity.Property(e => e.LineDiscount).HasColumnName("line_discount");
             entity.Property(e => e.Price).HasColumnName("price");
@@ -559,9 +570,7 @@ public partial class StorixDbContext : DbContext
                 .HasColumnType("timestamp without time zone")
                 .HasColumnName("expired_at");
             entity.Property(e => e.IsRevoked).HasColumnName("is_revoked");
-            entity.Property(e => e.Token)
-                .HasColumnType("string")
-                .HasColumnName("token");
+            entity.Property(e => e.Token).HasColumnName("token");
             entity.Property(e => e.UserId).HasColumnName("user_id");
 
             entity.HasOne(d => d.User).WithMany(p => p.RefreshTokens)

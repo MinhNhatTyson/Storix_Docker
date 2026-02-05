@@ -34,12 +34,12 @@ namespace Storix_BE.Service.Implementation
             if (invalidPrice != null)
                 throw new InvalidOperationException("Each item must have a non-negative Price.");
 
-            var invalidLineDiscount = request.Items.FirstOrDefault(i => double.IsNaN(i.LineDiscount) || i.LineDiscount < 0 || i.LineDiscount > 1);
+            var invalidLineDiscount = request.Items.FirstOrDefault(i => double.IsNaN(i.LineDiscount) || i.LineDiscount < 0);
             if (invalidLineDiscount != null)
-                throw new InvalidOperationException("Each item LineDiscount must be between 0 and 1 (fractional).");
+                throw new InvalidOperationException("Each item LineDiscount must be bigger than 0.");
 
-            if (request.OrderDiscount.HasValue && (double.IsNaN(request.OrderDiscount.Value) || request.OrderDiscount.Value < 0 || request.OrderDiscount.Value > 1))
-                throw new InvalidOperationException("OrderDiscount must be between 0 and 1 (fractional) when provided.");
+            if (request.OrderDiscount.HasValue && (double.IsNaN(request.OrderDiscount.Value) || request.OrderDiscount.Value < 0))
+                throw new InvalidOperationException("OrderDiscount must be bigger than 0 when provided.");
 
             var inboundRequest = new InboundRequest
             {
@@ -65,7 +65,7 @@ namespace Storix_BE.Service.Implementation
                 var price = item.Price;
                 var lineDiscount = item.LineDiscount; // expected fractional (e.g. 0.1 = 10%)
 
-                var effectiveUnitPrice = price * (1.0 - lineDiscount);
+                var effectiveUnitPrice = price * (lineDiscount/100);
                 if (effectiveUnitPrice < 0) effectiveUnitPrice = 0; // safety
 
                 totalPrice += effectiveUnitPrice * qty;
@@ -75,7 +75,7 @@ namespace Storix_BE.Service.Implementation
 
             if (request.OrderDiscount.HasValue)
             {
-                var final = totalPrice * (1.0 - request.OrderDiscount.Value);
+                var final = totalPrice * (request.OrderDiscount.Value/100);
                 if (final < 0) final = 0;
                 inboundRequest.FinalPrice = final;
             }
@@ -159,6 +159,7 @@ namespace Storix_BE.Service.Implementation
                 item.ProductId,
                 p?.Sku,
                 p?.Name,
+                item.Price,
                 item.ExpectedQuantity,
                 p?.TypeId,
                 p?.Description);

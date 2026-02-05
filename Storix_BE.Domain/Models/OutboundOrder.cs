@@ -24,6 +24,7 @@ public partial class OutboundOrder
     public virtual User? CreatedByNavigation { get; set; }
 
     public virtual ICollection<OutboundOrderItem> OutboundOrderItems { get; set; } = new List<OutboundOrderItem>();
+    public virtual User? Staff { get; set; }
 
     public virtual Warehouse? Warehouse { get; set; }
 }
