@@ -16,6 +16,7 @@ namespace Storix_BE.API.Controllers
         [HttpGet("get-all-inbound-requests/{companyId:int}")]
         public async Task<IActionResult> GetAllRequests(int companyId)
         {
+            if (companyId <= 0) return BadRequest(new { message = "Invalid company id." });
             try
             {
                 var items = await _service.GetAllInboundRequestsAsync(companyId);
@@ -38,6 +39,7 @@ namespace Storix_BE.API.Controllers
         [HttpGet("get-all-inbound-tickets/{companyId:int}")]
         public async Task<IActionResult> GetAllTickets(int companyId)
         {
+            if (companyId <= 0) return BadRequest(new { message = "Invalid company id." });
             try
             {
                 var items = await _service.GetAllInboundOrdersAsync(companyId);
@@ -59,6 +61,7 @@ namespace Storix_BE.API.Controllers
         [HttpGet("get-inbound-request-by-id/{companyId:int}/{id:int}")]
         public async Task<IActionResult> GetRequestById(int companyId, int id)
         {
+            if (companyId <= 0) return BadRequest(new { message = "Invalid company id." });
             if (id <= 0) return BadRequest(new { message = "Invalid request id." });
 
             try
@@ -83,6 +86,7 @@ namespace Storix_BE.API.Controllers
         [HttpGet("get-inbound-ticket-by-id/{companyId:int}/{id:int}")]
         public async Task<IActionResult> GetTicketById(int companyId, int id)
         {
+            if (companyId <= 0) return BadRequest(new { message = "Invalid company id." });
             if (id <= 0) return BadRequest(new { message = "Invalid ticket id." });
 
             try

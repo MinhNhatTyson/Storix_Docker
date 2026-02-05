@@ -39,6 +39,9 @@ namespace Storix_BE.Service.Interfaces
         int? SupplierId,
         int? RequestedBy,
         int? ApprovedBy,
+        double? TotalPrice,
+        double? OrderDiscount,
+        double? FinalPrice,
         string? Status,
         DateTime? CreatedAt,
         DateTime? ApprovedAt,
@@ -61,7 +64,7 @@ namespace Storix_BE.Service.Interfaces
         SupplierDto? Supplier,
         WarehouseDto? Warehouse,
         UserDto? CreatedByUser);
-    public sealed record CreateInboundOrderItemRequest(int ProductId, int ExpectedQuantity);
+    public sealed record CreateInboundOrderItemRequest(int ProductId, int ExpectedQuantity, double Price, double LineDiscount);
 
     public sealed record CreateInboundRequestRequest(
         int? WarehouseId,

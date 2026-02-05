@@ -45,7 +45,16 @@ namespace Storix_BE.Service.Implementation
                 });
             }
 
-            var createdId = await _repo.CreateInventoryInboundTicketRequest(inboundRequest);
+            var nowDate = DateOnly.FromDateTime(DateTime.UtcNow);
+            var productPrices = request.Items.Select(i => new ProductPrice
+            {
+                ProductId = i.ProductId,
+                Price = i.Price,
+                LineDiscount = i.LineDiscount,
+                Date = nowDate
+            }).ToList();
+
+            var createdId = await _repo.CreateInventoryInboundTicketRequest(inboundRequest, productPrices);
             return createdId;
         }
 
@@ -125,6 +134,9 @@ namespace Storix_BE.Service.Implementation
                 r.SupplierId,
                 r.RequestedBy,
                 r.ApprovedBy,
+                r.TotalPrice,
+                r.OrderDiscount,
+                r.FinalPrice,
                 r.Status,
                 r.CreatedAt,
                 r.ApprovedAt,

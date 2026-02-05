@@ -19,7 +19,7 @@ namespace Storix_BE.Repository.Implementation
             _context = context;
         }
 
-        public async Task<InboundRequest> CreateInventoryInboundTicketRequest(InboundRequest request)
+        public async Task<InboundRequest> CreateInventoryInboundTicketRequest(InboundRequest request, IEnumerable<ProductPrice>? productPrices = null)
         {
             if (request == null) throw new ArgumentNullException(nameof(request));
 
@@ -29,14 +29,11 @@ namespace Storix_BE.Repository.Implementation
                 throw new InvalidOperationException("InboundRequest must contain at least one InboundOrderItem describing product and expected quantity.");
             }
 
-            // Basic per-item validation
             var invalidItem = request.InboundOrderItems.FirstOrDefault(i => i.ProductId == null || i.ExpectedQuantity == null || i.ExpectedQuantity <= 0);
             if (invalidItem != null)
             {
                 throw new InvalidOperationException("All InboundOrderItems must specify a ProductId and ExpectedQuantity > 0.");
             }
-
-            // Verify products exist
             var productIds = request.InboundOrderItems.Select(i => i.ProductId!.Value).Distinct().ToList();
             var existingProductIds = await _context.Products
                 .Where(p => productIds.Contains(p.Id))
@@ -50,7 +47,6 @@ namespace Storix_BE.Repository.Implementation
                 throw new InvalidOperationException($"Products not found: {string.Join(',', missing)}");
             }
 
-            // Optional: validate referenced warehouse/supplier/requestedBy exist when provided
             if (request.WarehouseId.HasValue)
             {
                 var wh = await _context.Warehouses.FindAsync(request.WarehouseId.Value).ConfigureAwait(false);
@@ -61,8 +57,6 @@ namespace Storix_BE.Repository.Implementation
                 var sup = await _context.Suppliers.FindAsync(request.SupplierId.Value).ConfigureAwait(false);
                 if (sup == null) throw new InvalidOperationException($"Supplier with id {request.SupplierId.Value} not found.");
             }
-
-            // Set defaults
             request.CreatedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
             if (string.IsNullOrWhiteSpace(request.Status))
             {
@@ -75,12 +69,30 @@ namespace Storix_BE.Repository.Implementation
                 item.InboundRequest = request;
             }
 
-            // Persist within a transaction
+            // Persist within a transaction — also persist productPrices if provided
             await using var tx = await _context.Database.BeginTransactionAsync().ConfigureAwait(false);
             try
             {
                 _context.InboundRequests.Add(request);
                 await _context.SaveChangesAsync().ConfigureAwait(false);
+
+                if (productPrices != null)
+                {
+                    var pricesList = productPrices.ToList();
+                    if (pricesList.Any())
+                    {
+                        // Ensure Date is set
+                        var nowDate = DateOnly.FromDateTime(DateTime.UtcNow);
+                        foreach (var p in pricesList)
+                        {
+                            if (p.Date == null)
+                                p.Date = nowDate;
+                        }
+
+                        _context.ProductPrices.AddRange(pricesList);
+                        await _context.SaveChangesAsync().ConfigureAwait(false);
+                    }
+                }
 
                 await tx.CommitAsync().ConfigureAwait(false);
             }

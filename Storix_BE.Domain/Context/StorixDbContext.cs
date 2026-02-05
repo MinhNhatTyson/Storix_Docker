@@ -43,6 +43,7 @@ public partial class StorixDbContext : DbContext
     public virtual DbSet<OutboundRequest> OutboundRequests { get; set; }
 
     public virtual DbSet<Product> Products { get; set; }
+    public virtual DbSet<ProductPrice> ProductPrices { get; set; }
 
     public virtual DbSet<ProductType> ProductTypes { get; set; }
     public virtual DbSet<RefreshToken> RefreshTokens { get; set; }
@@ -220,11 +221,14 @@ public partial class StorixDbContext : DbContext
             entity.Property(e => e.CreatedAt)
                 .HasColumnType("timestamp without time zone")
                 .HasColumnName("created_at");
+            entity.Property(e => e.FinalPrice).HasColumnName("final_price");
+            entity.Property(e => e.OrderDiscount).HasColumnName("order_discount");
             entity.Property(e => e.RequestedBy).HasColumnName("requested_by");
             entity.Property(e => e.Status)
                 .HasColumnType("character varying")
                 .HasColumnName("status");
             entity.Property(e => e.SupplierId).HasColumnName("supplier_id");
+            entity.Property(e => e.TotalPrice).HasColumnName("total_price");
             entity.Property(e => e.WarehouseId).HasColumnName("warehouse_id");
 
             entity.HasOne(d => d.ApprovedByNavigation).WithMany(p => p.InboundRequestApprovedByNavigations)
@@ -499,6 +503,25 @@ public partial class StorixDbContext : DbContext
             entity.HasOne(d => d.Type).WithMany(p => p.Products)
                 .HasForeignKey(d => d.TypeId)
                 .HasConstraintName("fk_products_type_id");
+        });
+
+        modelBuilder.Entity<ProductPrice>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("pk_product_prices");
+
+            entity.ToTable("product_prices");
+
+            entity.Property(e => e.Id)
+                .ValueGeneratedOnAdd()
+                .HasColumnName("id");
+            entity.Property(e => e.Date).HasColumnName("date");
+            entity.Property(e => e.LineDiscount).HasColumnName("line_discount");
+            entity.Property(e => e.Price).HasColumnName("price");
+            entity.Property(e => e.ProductId).HasColumnName("product_id");
+
+            entity.HasOne(d => d.Product).WithMany(p => p.ProductPrices)
+                .HasForeignKey(d => d.ProductId)
+                .HasConstraintName("fk_product_prices.product_id");
         });
 
         modelBuilder.Entity<ProductType>(entity =>

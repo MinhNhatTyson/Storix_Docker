@@ -20,6 +20,11 @@ public partial class InboundRequest
     public DateTime? CreatedAt { get; set; }
 
     public DateTime? ApprovedAt { get; set; }
+    public double? TotalPrice { get; set; }
+
+    public double? OrderDiscount { get; set; }
+
+    public double? FinalPrice { get; set; }
 
     public virtual User? ApprovedByNavigation { get; set; }
 
