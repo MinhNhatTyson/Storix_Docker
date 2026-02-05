@@ -15,6 +15,7 @@ namespace Storix_BE.API.Configuration
             services.AddScoped<IInventoryInboundService, InventoryInboundService>();
             services.AddScoped<ISupplierService, SupplierService>();
             services.AddScoped<IInventoryOutboundService, InventoryOutboundService>();
+            services.AddTransient<IImageService, ImageService>();
             services.AddTransient<IEmailService, EmailService>();
             return services;
         }

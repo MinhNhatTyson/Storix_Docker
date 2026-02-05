@@ -1,4 +1,5 @@
 using CarServ.API.Configuration;
+using CloudinaryDotNet;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
 using Storix_BE.API.Configuration;
@@ -11,7 +12,13 @@ builder.WebHost.UseUrls("http://0.0.0.0:8080");
 builder.Configuration
     .AddJsonFile("appsettings.json", optional: true)
     .AddEnvironmentVariables();
+var cloudinarySettings = builder.Configuration.GetSection("Cloudinary");
 
+var account = new Account(
+    cloudinarySettings["CloudName"],
+    cloudinarySettings["ApiKey"],
+    cloudinarySettings["ApiSecret"]
+);
 
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 builder.Services.AddDbContext<StorixDbContext>(options =>
