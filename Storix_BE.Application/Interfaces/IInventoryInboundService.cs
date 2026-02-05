@@ -15,11 +15,52 @@ namespace Storix_BE.Service.Interfaces
         Task<InboundOrder> CreateTicketFromRequestAsync(int inboundRequestId, int createdBy);
 
         Task<InboundOrder> UpdateTicketItemsAsync(int inboundOrderId, IEnumerable<UpdateInboundOrderItemRequest> items);
-        Task<List<InboundRequest>> GetAllInboundRequestsAsync(int companyId);
-        Task<List<InboundOrder>> GetAllInboundOrdersAsync(int companyId);
-        Task<InboundRequest> GetInboundRequestByIdAsync(int companyId, int id);
-        Task<InboundOrder> GetInboundOrderByIdAsync(int companyId, int id);
+        Task<List<InboundRequestDto>> GetAllInboundRequestsAsync(int companyId);
+        Task<List<InboundOrderDto>> GetAllInboundOrdersAsync(int companyId);
+        Task<InboundRequestDto> GetInboundRequestByIdAsync(int companyId, int id);
+        Task<InboundOrderDto> GetInboundOrderByIdAsync(int companyId, int id);
     }
+    public sealed record SupplierDto(int Id, string? Name, string? Phone, string? Email);
+
+    public sealed record WarehouseDto(int Id, string? Name, string? Address, string? Description, int? Width, int? Height, int? Length);
+
+    public sealed record UserDto(int Id, string? FullName, string? Email, string? Phone);
+    public sealed record InboundOrderItemDto(
+        int Id,
+        int? ProductId,
+        string? Sku,
+        string? Name,
+        int? ExpectedQuantity,
+        int? TypeId,
+        string? Description);
+    public sealed record InboundRequestDto(
+        int Id,
+        int? WarehouseId,
+        int? SupplierId,
+        int? RequestedBy,
+        int? ApprovedBy,
+        string? Status,
+        DateTime? CreatedAt,
+        DateTime? ApprovedAt,
+        IEnumerable<InboundOrderItemDto> InboundOrderItems,
+        SupplierDto? Supplier,
+        WarehouseDto? Warehouse,
+        UserDto? RequestedByUser,
+        UserDto? ApprovedByUser);
+
+    public sealed record InboundOrderDto(
+        int Id,
+        int? InboundRequestId,
+        int? WarehouseId,
+        int? SupplierId,
+        int? CreatedBy,
+        string? ReferenceCode,
+        string? Status,
+        DateTime? CreatedAt,
+        IEnumerable<InboundOrderItemDto> InboundOrderItems,
+        SupplierDto? Supplier,
+        WarehouseDto? Warehouse,
+        UserDto? CreatedByUser);
     public sealed record CreateInboundOrderItemRequest(int ProductId, int ExpectedQuantity);
 
     public sealed record CreateInboundRequestRequest(
