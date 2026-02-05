@@ -19,6 +19,7 @@ var account = new Account(
     cloudinarySettings["ApiKey"],
     cloudinarySettings["ApiSecret"]
 );
+builder.Services.AddSingleton(new Cloudinary(account));
 
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 builder.Services.AddDbContext<StorixDbContext>(options =>
