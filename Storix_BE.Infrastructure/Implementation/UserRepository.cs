@@ -374,31 +374,36 @@ namespace Storix_BE.Repository.Implementation
             await _context.SaveChangesAsync();
         }
 
-        public async Task<User> UpdateProfileAsync(int userId, UpdateProfileDto dto)
+        public async Task<User> UpdateProfileAsync(User user)
         {
 
-            var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == userId);
+            var existedUser = await _context.Users.FirstOrDefaultAsync(u => u.Id == user.Id);
 
-            if (user == null)
+            if (existedUser == null)
             {
-                throw new Exception("User  not found.");
+                throw new InvalidOperationException("User not found.");
             }
 
-            user.CompanyId = dto.CompanyId;
-            user.FullName = dto.FullName;
-            user.Email = dto.Email;
-            user.Phone = dto.Phone;
-            user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.PasswordHash);
-            user.UpdatedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
-
-            if (await _context.Users.AnyAsync(u => u.Email == dto.Email && u.Id != userId))
+            if (await _context.Users.AnyAsync(u => u.Email == user.Email && u.Id != user.Id))
             {
                 throw new Exception("Email already exists.");
             }
 
+            existedUser.CompanyId = user.CompanyId;
+            existedUser.FullName = user.FullName;
+            existedUser.Email = user.Email;
+            existedUser.Phone = user.Phone;
+            if (!string.IsNullOrWhiteSpace(user.PasswordHash))
+            {
+                existedUser.PasswordHash = BCrypt.Net.BCrypt.HashPassword(user.PasswordHash);
+            }
+            existedUser.Avatar = user.Avatar;
+            existedUser.UpdatedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
+
+            _context.Users.Update(existedUser);
             await _context.SaveChangesAsync();
 
-            return user;
+            return existedUser;
         }
     }
 }

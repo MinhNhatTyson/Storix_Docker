@@ -109,6 +109,7 @@ namespace Storix_BE.Repository.Implementation
             existing.Unit = product.Unit;
             existing.Weight = product.Weight;
             existing.Description = product.Description;
+            existing.Image = product.Image;
             existing.UpdatedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
 
             _context.Products.Update(existing);

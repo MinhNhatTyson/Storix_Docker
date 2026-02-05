@@ -27,6 +27,8 @@ public partial class Product
 
     public DateTime? UpdatedAt { get; set; }
 
+    public string? Image { get; set; }
+
     public virtual Company? Company { get; set; }
 
     public virtual ICollection<InboundOrderItem> InboundOrderItems { get; set; } = new List<InboundOrderItem>();
@@ -36,6 +38,7 @@ public partial class Product
     public virtual ICollection<InventoryTransaction> InventoryTransactions { get; set; } = new List<InventoryTransaction>();
 
     public virtual ICollection<OutboundOrderItem> OutboundOrderItems { get; set; } = new List<OutboundOrderItem>();
+
     public virtual ICollection<ProductPrice> ProductPrices { get; set; } = new List<ProductPrice>();
 
     public virtual ICollection<StockCountItem> StockCountItems { get; set; } = new List<StockCountItem>();

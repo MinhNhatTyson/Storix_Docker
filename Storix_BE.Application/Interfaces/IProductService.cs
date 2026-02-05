@@ -1,4 +1,5 @@
-﻿using Storix_BE.Domain.Models;
+﻿using Microsoft.AspNetCore.Http;
+using Storix_BE.Domain.Models;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -35,7 +36,8 @@ namespace Storix_BE.Service.Interfaces
         string? Category,
         string? Unit,
         double? Weight,
-        string? Description);
+        string? Description,
+        IFormFile? Image);
 
     public sealed record UpdateProductRequest(
         int CompanyId,
@@ -45,5 +47,6 @@ namespace Storix_BE.Service.Interfaces
         string? Category,
         string? Unit,
         double? Weight,
-        string? Description);
+        string? Description,
+        IFormFile? Image);
 }

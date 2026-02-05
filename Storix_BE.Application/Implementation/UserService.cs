@@ -24,12 +24,14 @@ namespace Storix_BE.Service.Implementation
         private readonly IUserRepository _accRepository;
         private readonly IWarehouseAssignmentService _assignmentService;
         private readonly IConfiguration _configuration;
-        public UserService(IUserRepository accRepository, IEmailService emailService, IWarehouseAssignmentService assignmentService, IConfiguration configuration)
+        private readonly IImageService _imageService;
+        public UserService(IUserRepository accRepository, IEmailService emailService, IWarehouseAssignmentService assignmentService, IConfiguration configuration, IImageService imageService)
         {
             _accRepository = accRepository;
             _emailService = emailService;
             _assignmentService = assignmentService;
             _configuration = configuration;
+            _imageService = imageService;
         }
         public async Task<User> Login(string email, string password)
         {
@@ -156,7 +158,7 @@ namespace Storix_BE.Service.Implementation
 
         public async Task<User?> UpdateUserAsync(int userId, int callerUserId, int callerRoleId, UpdateUserRequest request)
         {
-            await EnsureCompanyAdministratorAsync(callerRoleId);
+            EnsureCompanyAdministratorAsync(callerRoleId);
             var caller = await _accRepository.GetUserByIdWithRoleAsync(callerUserId);
             if (caller?.CompanyId == null)
                 throw new InvalidOperationException("Caller is not assigned to a company.");
@@ -181,11 +183,7 @@ namespace Storix_BE.Service.Implementation
                 throw new InvalidOperationException("Cannot edit Super Admin.");
             if (currentRole?.Name == "Company Administrator")
                 throw new InvalidOperationException("Cannot edit Company Administrator.");
-            if (request.FullName != null) user.FullName = request.FullName;
-            if (request.Email != null) user.Email = request.Email;
-            if (request.Phone != null) user.Phone = request.Phone;
             if (request.Status != null) user.Status = request.Status;
-            if (request.Password != null) user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password);
             if (request.RoleName != null)
             {
                 if (userId == callerUserId)
@@ -249,7 +247,24 @@ namespace Storix_BE.Service.Implementation
 
         public async Task<User> UpdateProfileAsync(int userId, UpdateProfileDto dto)
         {
-            return await _accRepository.UpdateProfileAsync(userId, dto);
+            string? imageUrl = null;
+
+            if (dto.Avatar != null)
+            {
+                imageUrl = await _imageService.UploadProductImageAsync(dto.Avatar);
+            }
+
+            var user = new User
+            {
+                Id = userId,
+                CompanyId = dto.CompanyId,
+                FullName = dto.FullName,
+                Email = dto.Email,
+                Phone = dto.Phone,
+                PasswordHash = dto.Password,
+                Avatar = imageUrl
+            };
+            return await _accRepository.UpdateProfileAsync(user);
         }
 
         public async Task<UserProfileDto?> GetUser(int userId)
@@ -265,7 +280,8 @@ namespace Storix_BE.Service.Implementation
                 user.Email,
                 user.Phone,
                 user.Role?.Name,
-                user.Status);
+                user.Status,
+                user.Avatar);
         }
 
         public async Task<LoginResponse> AuthenticateAsync(string email, string password)

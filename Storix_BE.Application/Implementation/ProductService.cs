@@ -12,10 +12,12 @@ namespace Storix_BE.Service.Implementation
     public class ProductService : IProductService
     {
         private readonly IProductRepository _repo;
+        private readonly IImageService _imageService;
 
-        public ProductService(IProductRepository repo)
+        public ProductService(IProductRepository repo, IImageService imageService)
         {
             _repo = repo;
+            _imageService = imageService;
         }
 
         public async Task<List<Product>> GetAllAsync()
@@ -44,16 +46,25 @@ namespace Storix_BE.Service.Implementation
 
             if (!string.IsNullOrWhiteSpace(request.Sku))
             {
-                // basic SKU format validation (alphanumeric, dash, underscore)
-                if (request.Sku.Length > 100) throw new InvalidOperationException("SKU is too long (max 100 chars).");
+                if (request.Sku.Length > 100)
+                    throw new InvalidOperationException("SKU is too long (max 100 chars).");
+
                 foreach (char c in request.Sku)
                 {
                     if (!(char.IsLetterOrDigit(c) || c == '-' || c == '_'))
-                        throw new InvalidOperationException("SKU contains invalid characters. Only letters, digits, '-' and '_' are allowed.");
+                        throw new InvalidOperationException("SKU contains invalid characters.");
                 }
+
                 var exists = await _repo.GetBySkuAsync(request.Sku, request.CompanyId);
                 if (exists != null)
                     throw new InvalidOperationException("SKU already exists.");
+            }
+
+            string? imageUrl = null;
+
+            if (request.Image != null)
+            {
+                imageUrl = await _imageService.UploadProductImageAsync(request.Image);
             }
 
             var product = new Product
@@ -65,10 +76,10 @@ namespace Storix_BE.Service.Implementation
                 Category = request.Category,
                 Unit = request.Unit,
                 Weight = request.Weight,
-                Description = request.Description
+                Description = request.Description,
+                Image = imageUrl
             };
 
-            // repository will validate TypeId (will throw InvalidOperationException if type not found)
             return await _repo.CreateAsync(product);
         }
 
@@ -87,11 +98,18 @@ namespace Storix_BE.Service.Implementation
                     throw new InvalidOperationException("SKU contains invalid characters. Only letters, digits, '-' and '_' are allowed.");
             }
 
-            // Get product scoped to company
+
             var existing = await _repo.GetByIdAsync(id, request.CompanyId);
             if (existing == null) return null;
 
-            // SKU uniqueness check
+            string? imageUrl = null;
+
+            if (request.Image != null)
+            {
+                imageUrl = await _imageService.UploadProductImageAsync(request.Image);
+                existing.Image = imageUrl;
+            }
+
             if (!string.IsNullOrWhiteSpace(request.Sku) && request.Sku != existing.Sku)
             {
                 var skuCollision = await _repo.GetBySkuAsync(request.Sku, request.CompanyId);

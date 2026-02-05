@@ -1,4 +1,5 @@
-﻿using Storix_BE.Domain.Models;
+﻿using Microsoft.AspNetCore.Http;
+using Storix_BE.Domain.Models;
 using Storix_BE.Repository.DTO;
 using Storix_BE.Repository.Interfaces;
 using Storix_BE.Service.Interfaces;
@@ -31,8 +32,8 @@ namespace Storix_BE.Service.Interfaces
         Task<User?> GetByEmailAsync(string email);
         Task<User?> GetUserByIdAsync(int userId);
         Task<List<User>> GetUsersForCallerAsync(int callerUserId, int callerRoleId);
-        Task<User> CreateUserAsync(int companyId, int callerRoleId, CreateUserRequest request);
-        Task<User?> UpdateUserAsync(int userId, int companyId, int callerRoleId, UpdateUserRequest request);
+        Task<User> CreateUserAsync(int callerUserId, int callerRoleId, CreateUserRequest request);
+        Task<User?> UpdateUserAsync(int userId, int callerUserId, int callerRoleId, UpdateUserRequest request);
         Task<bool> DeleteUserAsync(int userId, int callerUserId, int callerRoleId);
         Task<User> UpdateProfileAsync(int userId, UpdateProfileDto dto);
         Task<UserProfileDto?> GetUser(int userId);
@@ -42,14 +43,22 @@ namespace Storix_BE.Service.Interfaces
     }
 
     public sealed record CreateUserRequest(string FullName, string Email, string? Phone, string Password, string RoleName);
-    public sealed record UpdateUserRequest(string? FullName, string? Email, string? Phone, string? Password, string? RoleName, string? Status);
+    public sealed record UpdateUserRequest(string? RoleName, string? Status);
     public sealed record UserProfileDto(
         int Id,
         int? CompanyId,
         string? FullName,
         string? Email,
         string? Phone,
-        string? RoleName, 
-        string? Status);
+        string? RoleName,
+        string? Status,
+        string? Avatar);
+    public sealed record UpdateProfileDto(
+        int? CompanyId,
+        string? FullName,
+        string? Email,
+        string? Phone,
+        string? Password,
+        IFormFile? Avatar);
 }
 

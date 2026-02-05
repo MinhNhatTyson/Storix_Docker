@@ -15,7 +15,7 @@ public partial class User
     public string? Email { get; set; }
 
     public string? Phone { get; set; }
-    [JsonIgnore]
+
     public string? PasswordHash { get; set; }
 
     public int? RoleId { get; set; }
@@ -26,9 +26,12 @@ public partial class User
 
     public DateTime? UpdatedAt { get; set; }
 
+    public string? Avatar { get; set; }
+
     public virtual ICollection<ActivityLog> ActivityLogs { get; set; } = new List<ActivityLog>();
 
     public virtual Company? Company { get; set; }
+
     public virtual ICollection<InboundOrder> InboundOrderCreatedByNavigations { get; set; } = new List<InboundOrder>();
 
     public virtual ICollection<InboundOrder> InboundOrderStaffs { get; set; } = new List<InboundOrder>();
@@ -46,6 +49,7 @@ public partial class User
     public virtual ICollection<OutboundRequest> OutboundRequestApprovedByNavigations { get; set; } = new List<OutboundRequest>();
 
     public virtual ICollection<OutboundRequest> OutboundRequestRequestedByNavigations { get; set; } = new List<OutboundRequest>();
+
     public virtual ICollection<RefreshToken> RefreshTokens { get; set; } = new List<RefreshToken>();
 
     public virtual Role? Role { get; set; }
