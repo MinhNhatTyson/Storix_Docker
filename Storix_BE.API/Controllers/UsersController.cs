@@ -244,6 +244,10 @@ namespace Storix_BE.API.Controllers
 
         private static UserResponseDto MapUser(User user)
         {
+            var assignment = user.WarehouseAssignments?
+                .OrderByDescending(a => a.AssignedAt)
+                .FirstOrDefault();
+
             return new UserResponseDto(
                 user.Id,
                 user.CompanyId,
@@ -252,6 +256,8 @@ namespace Storix_BE.API.Controllers
                 user.Phone,
                 user.RoleId,
                 user.Role?.Name,
+                assignment?.WarehouseId,
+                assignment?.Warehouse?.Name,
                 user.Status,
                 user.CreatedAt,
                 user.UpdatedAt

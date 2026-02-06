@@ -103,5 +103,93 @@ namespace Storix_BE.Service.Implementation
 
             return await _repo.ConfirmOutboundOrderAsync(outboundOrderId, performedBy);
         }
+        private static OutboundWarehouseDto? MapWarehouse(Warehouse? w)
+        {
+            if (w == null) return null;
+            return new OutboundWarehouseDto(w.Id, w.Name);
+        }
+
+        private static OutboundUserDto? MapUser(User? u)
+        {
+            if (u == null) return null;
+            return new OutboundUserDto(u.Id, u.FullName, u.Email, u.Phone);
+        }
+
+        private static OutboundOrderItemDto MapOutboundOrderItem(OutboundOrderItem item)
+        {
+            var p = item.Product;
+            return new OutboundOrderItemDto(
+                item.Id,
+                item.ProductId,
+                p?.Name,
+                item.Quantity,
+                item.Price);
+        }
+
+        private static OutboundRequestDto MapOutboundRequestToDto(OutboundRequest r)
+        {
+            var items = (r.OutboundOrderItems ?? Enumerable.Empty<OutboundOrderItem>()).Select(MapOutboundOrderItem).ToList();
+            return new OutboundRequestDto(
+                r.Id,
+                r.WarehouseId,
+                r.RequestedBy,
+                r.ApprovedBy,
+                r.Destination,
+                r.Status,
+                r.TotalPrice,
+                r.CreatedAt,
+                r.ApprovedAt,
+                items,
+                MapWarehouse(r.Warehouse),
+                MapUser(r.RequestedByNavigation),
+                MapUser(r.ApprovedByNavigation));
+        }
+
+        private static OutboundOrderDto MapOutboundOrderToDto(OutboundOrder o)
+        {
+            var items = (o.OutboundOrderItems ?? Enumerable.Empty<OutboundOrderItem>()).Select(MapOutboundOrderItem).ToList();
+            return new OutboundOrderDto(
+                o.Id,
+                o.WarehouseId,
+                o.CreatedBy,
+                o.StaffId,
+                o.Destination,
+                o.Status,
+                o.Note,
+                o.CreatedAt,
+                items,
+                MapWarehouse(o.Warehouse),
+                MapUser(o.CreatedByNavigation));
+        }
+
+        public async Task<List<OutboundRequestDto>> GetAllOutboundRequestsAsync(int companyId, int? warehouseId)
+        {
+            if (companyId <= 0) throw new ArgumentException("Invalid company id.", nameof(companyId));
+            var items = await _repo.GetAllOutboundRequestsAsync(companyId, warehouseId);
+            return items.Select(MapOutboundRequestToDto).ToList();
+        }
+
+        public async Task<OutboundRequestDto> GetOutboundRequestByIdAsync(int companyId, int id)
+        {
+            if (companyId <= 0) throw new ArgumentException("Invalid company id.", nameof(companyId));
+            if (id <= 0) throw new ArgumentException("Invalid outbound request id.", nameof(id));
+            var request = await _repo.GetOutboundRequestByIdAsync(companyId, id);
+            return MapOutboundRequestToDto(request);
+        }
+
+        public async Task<List<OutboundOrderDto>> GetAllOutboundOrdersAsync(int companyId, int? warehouseId)
+        {
+            if (companyId <= 0) throw new ArgumentException("Invalid company id.", nameof(companyId));
+            var items = await _repo.GetAllOutboundOrdersAsync(companyId, warehouseId);
+            return items.Select(MapOutboundOrderToDto).ToList();
+        }
+
+        public async Task<OutboundOrderDto> GetOutboundOrderByIdAsync(int companyId, int id)
+        {
+            if (companyId <= 0) throw new ArgumentException("Invalid company id.", nameof(companyId));
+            if (id <= 0) throw new ArgumentException("Invalid outbound order id.", nameof(id));
+            var order = await _repo.GetOutboundOrderByIdAsync(companyId, id);
+            return MapOutboundOrderToDto(order);
+        }
     }
 }

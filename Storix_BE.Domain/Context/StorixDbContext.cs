@@ -430,6 +430,7 @@ public partial class StorixDbContext : DbContext
             entity.Property(e => e.OutboundRequestId).HasColumnName("outbound_request_id");
             entity.Property(e => e.ProductId).HasColumnName("product_id");
             entity.Property(e => e.Quantity).HasColumnName("quantity");
+            entity.Property(e => e.Price).HasColumnName("price");
 
             entity.HasOne(d => d.OutboundOrder).WithMany(p => p.OutboundOrderItems)
                 .HasForeignKey(d => d.OutboundOrderId)
@@ -465,6 +466,7 @@ public partial class StorixDbContext : DbContext
             entity.Property(e => e.Status)
                 .HasColumnType("character varying")
                 .HasColumnName("status");
+            entity.Property(e => e.TotalPrice).HasColumnName("total_price");
             entity.Property(e => e.WarehouseId).HasColumnName("warehouse_id");
 
             entity.HasOne(d => d.ApprovedByNavigation).WithMany(p => p.OutboundRequestApprovedByNavigations)

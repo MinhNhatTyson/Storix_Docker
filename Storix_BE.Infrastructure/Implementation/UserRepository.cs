@@ -30,7 +30,9 @@ namespace Storix_BE.Repository.Implementation
             if (user != null && BCrypt.Net.BCrypt.Verify(password, user.PasswordHash))
             {
                 if (user.Status != "Active")
-                    throw new InvalidOperationException("This user's account has been banned");
+                {
+                    throw new Exception("This account has been banned");
+                }
                 return user;
             }
             return null;
@@ -52,18 +54,16 @@ namespace Storix_BE.Repository.Implementation
 
             if (user == null)
             {
-                var newUser = new User();
-                var newId = await GenerateUniqueRandomIdAsync();
-                newUser = new User
+                return null;
+                /*var newUser = new User
                 {
-                    Id = newId,
-                    FullName = claimsPrincipal?.FindFirst(ClaimTypes.GivenName)?.Value ?? String.Empty,
                     Email = email,
+                    FullName = claimsPrincipal?.FindFirst(ClaimTypes.GivenName)?.Value ?? String.Empty,
                     Status = "Active",
-                    CreatedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified),
-                    RoleId = 2 //Mac dinh la Company admin
-                };
-
+                    CreatedAt = DateTime.UtcNow,
+                    PasswordHash = BCrypt.Net.BCrypt.HashPassword("123")
+                };*/
+                //Add user sau
             }
 
             return user;
@@ -192,6 +192,8 @@ namespace Storix_BE.Repository.Implementation
         {
             return await _context.Users
                 .Include(u => u.Role)
+                .Include(u => u.WarehouseAssignments)
+                    .ThenInclude(a => a.Warehouse)
                 .FirstOrDefaultAsync(u => u.Email == email);
         }
 
@@ -199,6 +201,8 @@ namespace Storix_BE.Repository.Implementation
         {
             return await _context.Users
                 .Include(u => u.Role)
+                .Include(u => u.WarehouseAssignments)
+                    .ThenInclude(a => a.Warehouse)
                 .Where(u => u.CompanyId == companyId)
                 .OrderBy(u => u.Id)
                 .ToListAsync();
@@ -293,13 +297,14 @@ namespace Storix_BE.Repository.Implementation
         {
             return await _context.Users
                 .Include(u => u.Role)
+                .Include(u => u.WarehouseAssignments)
+                    .ThenInclude(a => a.Warehouse)
                 .FirstOrDefaultAsync(u => u.Id == userId);
         }
 
         public async Task<Role?> GetRoleByNameAsync(string name)
         {
             return await _context.Roles.FirstOrDefaultAsync(r => r.Name == name);
-
         }
         private string HashPassword(string password)
         {
@@ -405,5 +410,6 @@ namespace Storix_BE.Repository.Implementation
 
             return existedUser;
         }
+
     }
 }

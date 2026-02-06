@@ -458,6 +458,86 @@ namespace Storix_BE.Repository.Implementation
                 throw new InvalidOperationException("Only Company Administrator can approve outbound requests.");
         }
 
+        public async Task<List<OutboundRequest>> GetAllOutboundRequestsAsync(int companyId, int? warehouseId)
+        {
+            var query = _context.OutboundRequests
+                .Include(r => r.OutboundOrderItems)
+                    .ThenInclude(i => i.Product)
+                .Include(r => r.Warehouse)
+                .Include(r => r.RequestedByNavigation)
+                .Include(r => r.ApprovedByNavigation)
+                .Where(r => r.Warehouse != null && r.Warehouse.CompanyId == companyId);
+
+            if (warehouseId.HasValue && warehouseId.Value > 0)
+            {
+                query = query.Where(r => r.WarehouseId == warehouseId.Value);
+            }
+
+            return await query
+                .OrderByDescending(r => r.CreatedAt)
+                .ToListAsync()
+                .ConfigureAwait(false);
+        }
+
+        public async Task<OutboundRequest> GetOutboundRequestByIdAsync(int companyId, int id)
+        {
+            var request = await _context.OutboundRequests
+                .Include(r => r.OutboundOrderItems)
+                    .ThenInclude(i => i.Product)
+                .Include(r => r.Warehouse)
+                .Include(r => r.RequestedByNavigation)
+                .Include(r => r.ApprovedByNavigation)
+                .FirstOrDefaultAsync(r =>
+                    r.Id == id &&
+                    r.Warehouse != null &&
+                    r.Warehouse.CompanyId == companyId)
+                .ConfigureAwait(false);
+
+            if (request == null)
+                throw new InvalidOperationException($"OutboundRequest with id {id} not found.");
+
+            return request;
+        }
+
+        public async Task<List<OutboundOrder>> GetAllOutboundOrdersAsync(int companyId, int? warehouseId)
+        {
+            var query = _context.OutboundOrders
+                .Include(o => o.OutboundOrderItems)
+                    .ThenInclude(i => i.Product)
+                .Include(o => o.Warehouse)
+                .Include(o => o.CreatedByNavigation)
+                .Where(o => o.Warehouse != null && o.Warehouse.CompanyId == companyId);
+
+            if (warehouseId.HasValue && warehouseId.Value > 0)
+            {
+                query = query.Where(o => o.WarehouseId == warehouseId.Value);
+            }
+
+            return await query
+                .OrderByDescending(o => o.CreatedAt)
+                .ToListAsync()
+                .ConfigureAwait(false);
+        }
+
+        public async Task<OutboundOrder> GetOutboundOrderByIdAsync(int companyId, int id)
+        {
+            var order = await _context.OutboundOrders
+                .Include(o => o.OutboundOrderItems)
+                    .ThenInclude(i => i.Product)
+                .Include(o => o.Warehouse)
+                .Include(o => o.CreatedByNavigation)
+                .FirstOrDefaultAsync(o =>
+                    o.Id == id &&
+                    o.Warehouse != null &&
+                    o.Warehouse.CompanyId == companyId)
+                .ConfigureAwait(false);
+
+            if (order == null)
+                throw new InvalidOperationException($"OutboundOrder with id {id} not found.");
+
+            return order;
+        }
+
 
         private async Task EnsureStaffAssignedToWarehouseAsync(int warehouseId, int staffId)
         {
