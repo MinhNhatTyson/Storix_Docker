@@ -311,5 +311,10 @@ namespace Storix_BE.Repository.Implementation
 
             return order;
         }
+        public async Task<bool> InboundRequestCodeExistsAsync(string code)
+        {
+            if (string.IsNullOrWhiteSpace(code)) return false;
+            return await _context.InboundRequests.AnyAsync(r => r.Code == code).ConfigureAwait(false);
+        }
     }
 }

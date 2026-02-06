@@ -46,6 +46,9 @@ namespace Storix_BE.Service.Interfaces
         double? TotalPrice,
         double? OrderDiscount,
         double? FinalPrice,
+        string? Code,
+        string? Note,
+        DateOnly? ExpectedArrivalDate,
         DateTime? CreatedAt,
         DateTime? ApprovedAt,
         IEnumerable<InboundOrderItemDto> InboundOrderItems,
@@ -78,6 +81,8 @@ namespace Storix_BE.Service.Interfaces
         int? WarehouseId,
         int? SupplierId,
         int RequestedBy,
+        string? Note,
+        DateOnly? ExpectedArrivalDate,
         double? OrderDiscount,
         IEnumerable<CreateInboundOrderItemRequest> Items);
 

@@ -26,6 +26,12 @@ public partial class InboundRequest
 
     public double? FinalPrice { get; set; }
 
+    public string? Code { get; set; }
+
+    public DateOnly? ExpectedDate { get; set; }
+
+    public string? Note { get; set; }
+
     public virtual User? ApprovedByNavigation { get; set; }
 
     public virtual ICollection<InboundOrderItem> InboundOrderItems { get; set; } = new List<InboundOrderItem>();

@@ -227,10 +227,13 @@ public partial class StorixDbContext : DbContext
                 .HasColumnType("timestamp without time zone")
                 .HasColumnName("approved_at");
             entity.Property(e => e.ApprovedBy).HasColumnName("approved_by");
+            entity.Property(e => e.Code).HasColumnName("code");
             entity.Property(e => e.CreatedAt)
                 .HasColumnType("timestamp without time zone")
                 .HasColumnName("created_at");
+            entity.Property(e => e.ExpectedDate).HasColumnName("expected_date");
             entity.Property(e => e.FinalPrice).HasColumnName("final_price");
+            entity.Property(e => e.Note).HasColumnName("note");
             entity.Property(e => e.OrderDiscount).HasColumnName("order_discount");
             entity.Property(e => e.RequestedBy).HasColumnName("requested_by");
             entity.Property(e => e.Status)

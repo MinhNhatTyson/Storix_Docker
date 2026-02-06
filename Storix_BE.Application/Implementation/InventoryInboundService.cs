@@ -36,10 +36,21 @@ namespace Storix_BE.Service.Implementation
 
             var invalidLineDiscount = request.Items.FirstOrDefault(i => double.IsNaN(i.LineDiscount) || i.LineDiscount < 0);
             if (invalidLineDiscount != null)
-                throw new InvalidOperationException("Each item LineDiscount must be bigger than 0.");
+                throw new InvalidOperationException("Each item LineDiscount must not less than 0");
 
             if (request.OrderDiscount.HasValue && (double.IsNaN(request.OrderDiscount.Value) || request.OrderDiscount.Value < 0))
-                throw new InvalidOperationException("OrderDiscount must be must be bigger than 0.");
+                throw new InvalidOperationException("OrderDiscount must not less than 0.");
+
+            if (string.IsNullOrWhiteSpace(request.Note))
+                throw new InvalidOperationException("Note is required.");
+
+            if (!request.ExpectedArrivalDate.HasValue)
+                throw new InvalidOperationException("ExpectedArrivalDate is required.");
+            var today = DateOnly.FromDateTime(DateTime.UtcNow);
+            if (request.ExpectedArrivalDate.Value < today)
+                throw new InvalidOperationException("ExpectedArrivalDate cannot be in the past.");
+
+            var code = await GenerateUniqueCodeAsync();
 
             var inboundRequest = new InboundRequest
             {
@@ -47,6 +58,9 @@ namespace Storix_BE.Service.Implementation
                 SupplierId = request.SupplierId,
                 RequestedBy = request.RequestedBy,
                 OrderDiscount = request.OrderDiscount,
+                Note = request.Note,
+                ExpectedDate = request.ExpectedArrivalDate,
+                Code = code
             };
 
             foreach (var item in request.Items)
@@ -60,16 +74,15 @@ namespace Storix_BE.Service.Implementation
                 });
             }
 
-            // Calculate total price from items (apply line-level discounts) and FinalPrice after order discount
             double totalPrice = 0.0;
             foreach (var item in request.Items)
             {
                 var qty = item.ExpectedQuantity;
                 var price = item.Price;
-                var lineDiscount = item.LineDiscount; // expected fractional (e.g. 0.1 = 10%)
+                var lineDiscount = item.LineDiscount;
 
-                var effectiveUnitPrice = price * (lineDiscount/100);
-                if (effectiveUnitPrice < 0) effectiveUnitPrice = 0; // safety
+                var effectiveUnitPrice = price - (price * (lineDiscount / 100));
+                if (effectiveUnitPrice < 0) effectiveUnitPrice = 0;
 
                 totalPrice += effectiveUnitPrice * qty;
             }
@@ -78,7 +91,7 @@ namespace Storix_BE.Service.Implementation
 
             if (request.OrderDiscount.HasValue)
             {
-                var final = totalPrice * (request.OrderDiscount.Value/100);
+                var final = totalPrice - (totalPrice * (request.OrderDiscount.Value / 100));
                 if (final < 0) final = 0;
                 inboundRequest.FinalPrice = final;
             }
@@ -98,6 +111,26 @@ namespace Storix_BE.Service.Implementation
 
             var createdRequest = await _repo.CreateInventoryInboundTicketRequest(inboundRequest, productPrices);
             return createdRequest;
+        }
+
+        private async Task<string> GenerateUniqueCodeAsync()
+        {
+            const string prefix = "PO";
+            const int digits = 6;
+
+            var attempt = 0;
+            var counter = 1;
+            while (attempt < 1_000_000)
+            {
+                var candidate = prefix + counter.ToString($"D{digits}");
+                var exists = await _repo.InboundRequestCodeExistsAsync(candidate).ConfigureAwait(false);
+                if (!exists) return candidate;
+
+                counter++;
+                attempt++;
+            }
+
+            throw new InvalidOperationException("Unable to generate a unique inbound request code.");
         }
 
         public async Task<InboundRequest> UpdateInboundRequestStatusAsync(int ticketRequestId, int approverId, string status)
@@ -182,6 +215,9 @@ namespace Storix_BE.Service.Implementation
                 r.TotalPrice,
                 r.OrderDiscount,
                 r.FinalPrice,
+                r.Code,
+                r.Note,
+                r.ExpectedDate,
                 r.CreatedAt,
                 r.ApprovedAt,
                 items,
