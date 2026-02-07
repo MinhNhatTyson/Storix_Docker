@@ -152,8 +152,9 @@ namespace Storix_BE.Repository.Implementation
                 WarehouseId = inboundRequest.WarehouseId,
                 SupplierId = inboundRequest.SupplierId,
                 CreatedBy = createdBy,
-                StaffId = staffId, // <- set StaffId here
+                StaffId = staffId, 
                 Status = "Created",
+                InboundRequestId = inboundRequest.Id,
                 CreatedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified),
                 ReferenceCode = $"INB-{DateTime.UtcNow:yyyyMMddHHmmss}-{Random.Shared.Next(1000, 9999)}"
             };
