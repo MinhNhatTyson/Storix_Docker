@@ -27,6 +27,7 @@ namespace Storix_BE.Repository.Interfaces
 
         Task<User?> GetByEmailAsync(string email);
         Task<List<User>> GetUsersByCompanyIdAsync(int companyId);
+        Task<List<User>> GetUsersByWarehouseIdAsync(int companyId);
         Task<User> CreateUserAsync(int companyId, string fullName, string email, string? phone, string password, string roleName);
         Task<Company?> GetCompanyByIdAsync(int companyId);
         Task<int> CountUsersByCompanyAsync(int companyId);

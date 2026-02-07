@@ -377,5 +377,19 @@ namespace Storix_BE.Service.Implementation
             rng.GetBytes(randomNumber);
             return Convert.ToBase64String(randomNumber);
         }
+        public async Task<List<User>> GetUsersByWarehouseAsync(int warehouseId)
+        {
+            var users = await _accRepository.GetUsersByWarehouseIdAsync(warehouseId);
+
+            var result = new List<User>();
+            foreach (var u in users)
+            {
+                var role = await _accRepository.GetRoleByIdAsync(u.RoleId ?? 0);
+                if (role?.Name == "Manager" || role?.Name == "Staff")
+                    result.Add(u);
+            }
+
+            return result;
+        }
     }
 }

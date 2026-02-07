@@ -96,6 +96,43 @@ namespace Storix_BE.API.Controllers
                 return Forbid();
             }
         }
+        [HttpGet("get-users-by-warehouse/{warehouseId:int}")]
+        public async Task<IActionResult> GetUsersByWarehouse(int warehouseId)
+        {
+            var roleId = GetRoleIdFromToken();
+            var email = GetEmailFromToken();
+            if (roleId == null || string.IsNullOrEmpty(email))
+                return Unauthorized();
+
+            if (warehouseId <= 0)
+                return BadRequest(new { message = "WarehouseId is required." });
+
+            try
+            {
+                var caller = await _userService.GetByEmailAsync(email);
+                if (caller?.CompanyId == null)
+                    return Unauthorized();
+
+                var users = await _userService.GetUsersByWarehouseAsync(warehouseId);
+                return Ok(users.Select(MapUser));
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Forbid();
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (BusinessRuleException ex)
+            {
+                return BadRequest(new { code = ex.Code, message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
 
         /// <summary>
         /// Get a user by id (must belong to your company). Company Administrator only.

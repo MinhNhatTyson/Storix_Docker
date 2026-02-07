@@ -40,6 +40,7 @@ namespace Storix_BE.Service.Interfaces
         Task<LoginResponse> AuthenticateAsync(string email, string password);
         Task<TokenResponse> RefreshTokenAsync(string refreshToken);
         Task LogoutAsync(string refreshToken);
+        Task<List<User>> GetUsersByWarehouseAsync(int warehouseId);
     }
 
     public sealed record CreateUserRequest(string FullName, string Email, string? Phone, string Password, string RoleName);
