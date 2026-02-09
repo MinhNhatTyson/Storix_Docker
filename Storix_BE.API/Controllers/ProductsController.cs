@@ -138,7 +138,7 @@ namespace Storix_BE.API.Controllers
 
             var deleted = await _service.DeleteAsync(id, companyId);
             if (!deleted) return NotFound();
-            return NoContent();
+            return Ok("Succesfully deleted the product with id: " + id);
         }
 
         [HttpGet("get-all-product-types/{userId:int}")]

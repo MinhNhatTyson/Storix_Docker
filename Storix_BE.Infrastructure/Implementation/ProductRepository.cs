@@ -118,7 +118,58 @@ namespace Storix_BE.Repository.Implementation
 
         public async Task<bool> RemoveAsync(Product product)
         {
-            _context.Products.Remove(product);
+            if (product == null) throw new InvalidOperationException("Product cannot be null.");
+            if (product.Id <= 0) throw new InvalidOperationException("Invalid product id.");
+
+            var inboundItems = await _context.InboundOrderItems
+                .AsNoTracking()
+                .Where(i => i.ProductId == product.Id)
+                .Select(i => new { i.Id, i.InboundOrderId, i.InboundRequestId })
+                .ToListAsync();
+
+            var outboundItems = await _context.OutboundOrderItems
+                .AsNoTracking()
+                .Where(i => i.ProductId == product.Id)
+                .Select(i => new { i.Id, i.OutboundOrderId, i.OutboundRequestId })
+                .ToListAsync();
+
+            if (inboundItems.Any() || outboundItems.Any())
+            {
+                var messages = new List<string>();
+
+                if (inboundItems.Any())
+                {
+                    var inboundOrderIds = inboundItems.Where(x => x.InboundOrderId.HasValue).Select(x => x.InboundOrderId!.Value).Distinct().ToList();
+                    var inboundRequestIds = inboundItems.Where(x => x.InboundRequestId.HasValue).Select(x => x.InboundRequestId!.Value).Distinct().ToList();
+
+                    if (inboundOrderIds.Any())
+                        messages.Add($"Inbound orders: {string.Join(',', inboundOrderIds)}");
+                    if (inboundRequestIds.Any())
+                        messages.Add($"Inbound requests: {string.Join(',', inboundRequestIds)}");
+                    if (!inboundOrderIds.Any() && !inboundRequestIds.Any())
+                        messages.Add("Inbound order items exist referencing this product.");
+                }
+
+                if (outboundItems.Any())
+                {
+                    var outboundOrderIds = outboundItems.Where(x => x.OutboundOrderId.HasValue).Select(x => x.OutboundOrderId!.Value).Distinct().ToList();
+                    var outboundRequestIds = outboundItems.Where(x => x.OutboundRequestId.HasValue).Select(x => x.OutboundRequestId!.Value).Distinct().ToList();
+
+                    if (outboundOrderIds.Any())
+                        messages.Add($"Outbound orders: {string.Join(',', outboundOrderIds)}");
+                    if (outboundRequestIds.Any())
+                        messages.Add($"Outbound requests: {string.Join(',', outboundRequestIds)}");
+                    if (!outboundOrderIds.Any() && !outboundRequestIds.Any())
+                        messages.Add("Outbound order items exist referencing this product.");
+                }
+
+                var detail = string.Join("; ", messages);
+                throw new InvalidOperationException($"Cannot remove product with id {product.Id} because it is referenced by existing order items. {detail}");
+            }
+            var existingProduct = await _context.Products.FindAsync(product.Id);
+            if (existingProduct == null) return false;
+
+            _context.Products.Remove(existingProduct);
             await _context.SaveChangesAsync();
             return true;
         }
