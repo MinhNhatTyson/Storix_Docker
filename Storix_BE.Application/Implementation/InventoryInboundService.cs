@@ -41,11 +41,6 @@ namespace Storix_BE.Service.Implementation
             if (request.OrderDiscount.HasValue && (double.IsNaN(request.OrderDiscount.Value) || request.OrderDiscount.Value < 0 || request.OrderDiscount.Value > 100))
                 throw new InvalidOperationException("OrderDiscount must be in the range of 0 - 100");
 
-            if (string.IsNullOrWhiteSpace(request.Note))
-                throw new InvalidOperationException("Note is required.");
-
-            if (!request.ExpectedArrivalDate.HasValue)
-                throw new InvalidOperationException("ExpectedArrivalDate is required.");
             var today = DateOnly.FromDateTime(DateTime.UtcNow);
             if (request.ExpectedArrivalDate.Value < today)
                 throw new InvalidOperationException("ExpectedArrivalDate cannot be in the past.");
