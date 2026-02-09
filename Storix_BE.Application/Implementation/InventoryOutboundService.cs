@@ -191,5 +191,13 @@ namespace Storix_BE.Service.Implementation
             var order = await _repo.GetOutboundOrderByIdAsync(companyId, id);
             return MapOutboundOrderToDto(order);
         }
+        public async Task<List<OutboundOrderDto>> GetOutboundOrdersByStaffAsync(int companyId, int staffId)
+        {
+            if (companyId <= 0) throw new ArgumentException("Invalid company id.", nameof(companyId));
+            if (staffId <= 0) throw new ArgumentException("Invalid staff id.", nameof(staffId));
+
+            var items = await _repo.GetOutboundOrdersByStaffAsync(companyId, staffId);
+            return items.Select(MapOutboundOrderToDto).ToList();
+        }
     }
 }

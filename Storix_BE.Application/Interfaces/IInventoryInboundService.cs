@@ -20,6 +20,7 @@ namespace Storix_BE.Service.Interfaces
         Task<List<InboundOrderDto>> GetAllInboundOrdersAsync(int companyId);
         Task<InboundRequestDto> GetInboundRequestByIdAsync(int companyId, int id);
         Task<InboundOrderDto> GetInboundOrderByIdAsync(int companyId, int id);
+        Task<List<InboundOrderDto>> GetInboundOrdersByStaffAsync(int companyId, int staffId);
     }
     public sealed record SupplierDto(int Id, string? Name, string? Phone, string? Email);
 

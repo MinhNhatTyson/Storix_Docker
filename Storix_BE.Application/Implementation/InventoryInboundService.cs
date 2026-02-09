@@ -34,12 +34,12 @@ namespace Storix_BE.Service.Implementation
             if (invalidPrice != null)
                 throw new InvalidOperationException("Each item must have a non-negative Price.");
 
-            var invalidLineDiscount = request.Items.FirstOrDefault(i => double.IsNaN(i.LineDiscount) || i.LineDiscount < 0);
+            var invalidLineDiscount = request.Items.FirstOrDefault(i => double.IsNaN(i.LineDiscount) || i.LineDiscount < 0 || i.LineDiscount > 100);
             if (invalidLineDiscount != null)
-                throw new InvalidOperationException("Each item LineDiscount must not less than 0");
+                throw new InvalidOperationException("Each item LineDiscount be in the interval of 0 - 100 ");
 
-            if (request.OrderDiscount.HasValue && (double.IsNaN(request.OrderDiscount.Value) || request.OrderDiscount.Value < 0))
-                throw new InvalidOperationException("OrderDiscount must not less than 0.");
+            if (request.OrderDiscount.HasValue && (double.IsNaN(request.OrderDiscount.Value) || request.OrderDiscount.Value < 0 || request.OrderDiscount.Value > 100))
+                throw new InvalidOperationException("OrderDiscount must be in the range of 0 - 100");
 
             if (string.IsNullOrWhiteSpace(request.Note))
                 throw new InvalidOperationException("Note is required.");
@@ -230,6 +230,8 @@ namespace Storix_BE.Service.Implementation
         private static InboundOrderDto MapInboundOrderToDto(InboundOrder o)
         {
             var items = (o.InboundOrderItems ?? Enumerable.Empty<InboundOrderItem>()).Select(MapInboundOrderItem).ToList();
+            var inboundRequest = o.InboundRequest;
+
             return new InboundOrderDto(
                 o.Id,
                 o.InboundRequestId,
@@ -239,9 +241,9 @@ namespace Storix_BE.Service.Implementation
                 o.StaffId,
                 o.ReferenceCode,
                 o.Status,
-                o.InboundRequest.TotalPrice,
-                o.InboundRequest.OrderDiscount,
-                o.InboundRequest.FinalPrice,
+                inboundRequest?.TotalPrice,
+                inboundRequest?.OrderDiscount,
+                inboundRequest?.FinalPrice,
                 o.CreatedAt,
                 items,
                 MapSupplier(o.Supplier),
@@ -280,7 +282,14 @@ namespace Storix_BE.Service.Implementation
             var o = await _repo.GetInboundOrderByIdAsync(companyId, id);
             return MapInboundOrderToDto(o);
         }
+        public async Task<List<InboundOrderDto>> GetInboundOrdersByStaffAsync(int companyId, int staffId)
+        {
+            if (companyId <= 0) throw new ArgumentException("Invalid company id.", nameof(companyId));
+            if (staffId <= 0) throw new ArgumentException("Invalid staff id.", nameof(staffId));
 
+            var items = await _repo.GetInboundOrdersByStaffAsync(companyId, staffId);
+            return items.Select(MapInboundOrderToDto).ToList();
+        }
 
     }
 }

@@ -18,5 +18,6 @@ namespace Storix_BE.Repository.Interfaces
         Task<InboundOrder> CreateInboundOrderFromRequestAsync(int inboundRequestId, int createdBy, int? staffId);
         Task<InboundOrder> UpdateInboundOrderItemsAsync(int inboundOrderId, IEnumerable<InboundOrderItem> items);
         Task<bool> InboundRequestCodeExistsAsync(string code);
+        Task<List<InboundOrder>> GetInboundOrdersByStaffAsync(int companyId, int staffId);
     }
 }

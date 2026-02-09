@@ -26,6 +26,7 @@ namespace Storix_BE.Service.Interfaces
         Task<OutboundRequestDto> GetOutboundRequestByIdAsync(int companyId, int id);
         Task<List<OutboundOrderDto>> GetAllOutboundOrdersAsync(int companyId, int? warehouseId);
         Task<OutboundOrderDto> GetOutboundOrderByIdAsync(int companyId, int id);
+        Task<List<OutboundOrderDto>> GetOutboundOrdersByStaffAsync(int companyId, int staffId);
     }
 
     public sealed record CreateOutboundOrderItemRequest(int ProductId, int Quantity);

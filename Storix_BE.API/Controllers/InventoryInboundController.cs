@@ -202,6 +202,30 @@ namespace Storix_BE.API.Controllers
                 return StatusCode(500, new { message = ex.Message });
             }
         }
+        [HttpGet("get-inbound-orders-for-staff/{companyId:int}/{staffId:int}")]
+        public async Task<IActionResult> GetInboundTasksByStaff(int companyId, int staffId)
+        {
+            if (companyId <= 0) return BadRequest(new { message = "Invalid company id." });
+            if (staffId <= 0) return BadRequest(new { message = "Invalid staff id." });
+
+            try
+            {
+                var items = await _service.GetInboundOrdersByStaffAsync(companyId, staffId);
+                return Ok(items);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = ex.Message });
+            }
+        }
     }
     public sealed record CreateTicketFromRequestRequest(int CreatedBy, int StaffId);
 }

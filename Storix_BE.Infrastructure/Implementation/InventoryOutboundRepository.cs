@@ -537,7 +537,22 @@ namespace Storix_BE.Repository.Implementation
 
             return order;
         }
+        public async Task<List<OutboundOrder>> GetOutboundOrdersByStaffAsync(int companyId, int staffId)
+        {
+            if (companyId <= 0) throw new ArgumentException("Invalid company id.", nameof(companyId));
+            if (staffId <= 0) throw new ArgumentException("Invalid staff id.", nameof(staffId));
 
+            var query = _context.OutboundOrders
+                .Include(o => o.OutboundOrderItems)
+                    .ThenInclude(i => i.Product)
+                .Include(o => o.Warehouse)
+                .Include(o => o.CreatedByNavigation)
+                .Include(o => o.Staff)
+                .Where(o => o.StaffId == staffId && o.Warehouse != null && o.Warehouse.CompanyId == companyId)
+                .OrderByDescending(o => o.CreatedAt);
+
+            return await query.ToListAsync().ConfigureAwait(false);
+        }
 
         private async Task EnsureStaffAssignedToWarehouseAsync(int warehouseId, int staffId)
         {

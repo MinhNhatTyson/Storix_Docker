@@ -317,5 +317,22 @@ namespace Storix_BE.Repository.Implementation
             if (string.IsNullOrWhiteSpace(code)) return false;
             return await _context.InboundRequests.AnyAsync(r => r.Code == code).ConfigureAwait(false);
         }
+        public async Task<List<InboundOrder>> GetInboundOrdersByStaffAsync(int companyId, int staffId)
+        {
+            if (companyId <= 0) throw new ArgumentException("Invalid company id.", nameof(companyId));
+            if (staffId <= 0) throw new ArgumentException("Invalid staff id.", nameof(staffId));
+
+            var query = _context.InboundOrders
+                .Include(o => o.InboundOrderItems)
+                    .ThenInclude(i => i.Product)
+                .Include(o => o.Supplier)
+                .Include(o => o.Warehouse)
+                .Include(o => o.CreatedByNavigation)
+                .Include(o => o.Staff)
+                .Where(o => o.StaffId == staffId && o.Warehouse != null && o.Warehouse.CompanyId == companyId)
+                .OrderByDescending(o => o.CreatedAt);
+
+            return await query.ToListAsync().ConfigureAwait(false);
+        }
     }
 }

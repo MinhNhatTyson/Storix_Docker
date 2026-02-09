@@ -26,5 +26,6 @@ namespace Storix_BE.Repository.Interfaces
         Task<OutboundRequest> GetOutboundRequestByIdAsync(int companyId, int id);
         Task<List<OutboundOrder>> GetAllOutboundOrdersAsync(int companyId, int? warehouseId);
         Task<OutboundOrder> GetOutboundOrderByIdAsync(int companyId, int id);
+        Task<List<OutboundOrder>> GetOutboundOrdersByStaffAsync(int companyId, int staffId);
     }
 }
