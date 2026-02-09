@@ -136,9 +136,16 @@ namespace Storix_BE.API.Controllers
 
             if (companyId <= 0) return NotFound("Cannot find company id with the provided user id");
 
-            var deleted = await _service.DeleteAsync(id, companyId);
-            if (!deleted) return NotFound();
-            return Ok("Succesfully deleted the product with id: " + id);
+            try
+            {
+                var deleted = await _service.DeleteAsync(id, companyId);
+                if (!deleted) return NotFound();
+                return Ok("Successfully deleted the product with id: " + id);
+            }
+            catch (InvalidOperationException ex)
+            {                
+                return BadRequest(new { message = ex.Message });
+            }
         }
 
         [HttpGet("get-all-product-types/{userId:int}")]
