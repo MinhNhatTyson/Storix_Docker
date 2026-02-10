@@ -1,9 +1,12 @@
-﻿using Storix_BE.Domain.Context;
+﻿using Microsoft.EntityFrameworkCore;
+using Storix_BE.Domain.Context;
 using Storix_BE.Domain.Models;
+using Storix_BE.Repository.DTO;
 using Storix_BE.Repository.Interfaces;
-using Microsoft.EntityFrameworkCore;
 using System;
 using System.Collections.Generic;
+using System.Formats.Asn1;
+using System.Globalization;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -268,6 +271,80 @@ namespace Storix_BE.Repository.Implementation
                 .Select(u => u.CompanyId)
                 .FirstOrDefaultAsync();
             return companyId;
+        }
+        public async Task<List<ProductExportDto>> GetProductsForExportAsync()
+        {
+            return await _context.Products
+                .Include(p => p.Company)
+                .Include(p => p.Type)
+                .Select(p => new ProductExportDto
+                {
+                    Id = p.Id,
+                    Sku = p.Sku,
+                    Name = p.Name,
+                    Category = p.Category,
+                    Unit = p.Unit,
+                    Weight = p.Weight,
+                    CompanyName = p.Company != null ? p.Company.Name : null,
+                    ProductType = p.Type != null ? p.Type.Name : null,
+                    CreatedAt = p.CreatedAt
+                })
+                .ToListAsync();
+        }
+        public byte[] ExportProductsToCsv(List<ProductExportDto> products)
+        {
+            using var memoryStream = new MemoryStream();
+
+            // Use a block to ensure disposal happens before ToArray()
+            using (var writer = new StreamWriter(memoryStream, new UTF8Encoding(true)))
+            using (var csv = new CsvWriter(writer, CultureInfo.InvariantCulture))
+            {
+                csv.WriteRecords(products);
+                // Explicitly flush to be safe
+                writer.Flush();
+            }
+
+            // Accessing the array AFTER the writer is disposed ensures all data is present
+            return memoryStream.ToArray();
+        }
+        public byte[] ExportProductsToExcel(List<ProductExportDto> products)
+        {
+            using var workbook = new XLWorkbook();
+            var worksheet = workbook.Worksheets.Add("Products");
+
+            // Headers
+            worksheet.Cell(1, 1).Value = "ID";
+            worksheet.Cell(1, 2).Value = "SKU";
+            worksheet.Cell(1, 3).Value = "Name";
+            worksheet.Cell(1, 4).Value = "Category";
+            worksheet.Cell(1, 5).Value = "Unit";
+            worksheet.Cell(1, 6).Value = "Weight";
+            worksheet.Cell(1, 7).Value = "Company";
+            worksheet.Cell(1, 8).Value = "Type";
+            worksheet.Cell(1, 9).Value = "Created At";
+
+            // Data
+            for (int i = 0; i < products.Count; i++)
+            {
+                var row = i + 2;
+                var p = products[i];
+
+                worksheet.Cell(row, 1).Value = p.Id;
+                worksheet.Cell(row, 2).Value = p.Sku;
+                worksheet.Cell(row, 3).Value = p.Name;
+                worksheet.Cell(row, 4).Value = p.Category;
+                worksheet.Cell(row, 5).Value = p.Unit;
+                worksheet.Cell(row, 6).Value = p.Weight;
+                worksheet.Cell(row, 7).Value = p.CompanyName;
+                worksheet.Cell(row, 8).Value = p.ProductType;
+                worksheet.Cell(row, 9).Value = p.CreatedAt;
+            }
+
+            worksheet.Columns().AdjustToContents();
+
+            using var stream = new MemoryStream();
+            workbook.SaveAs(stream);
+            return stream.ToArray();
         }
     }
 }

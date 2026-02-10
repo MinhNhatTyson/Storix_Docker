@@ -1,4 +1,5 @@
 ﻿using Storix_BE.Domain.Models;
+using Storix_BE.Repository.DTO;
 using Storix_BE.Repository.Interfaces;
 using Storix_BE.Service.Interfaces;
 using System;
@@ -285,6 +286,40 @@ namespace Storix_BE.Service.Implementation
             var items = await _repo.GetInboundOrdersByStaffAsync(companyId, staffId);
             return items.Select(MapInboundOrderToDto).ToList();
         }
+        public async Task<InboundRequestExportDto> GetInboundRequestForExportAsync(int inboundRequestId)
+        {
+            if (inboundRequestId <= 0) throw new ArgumentException("Invalid inbound request id.", nameof(inboundRequestId));
+            var dto = await _repo.GetInboundRequestForExportAsync(inboundRequestId);
+            if (dto == null) throw new InvalidOperationException($"InboundRequest with id {inboundRequestId} not found.");
+            return dto;
+        }
 
+        public async Task<InboundOrderExportDto> GetInboundOrderForExportAsync(int inboundOrderId)
+        {
+            if (inboundOrderId <= 0) throw new ArgumentException("Invalid inbound order id.", nameof(inboundOrderId));
+            var dto = await _repo.GetInboundOrderForExportAsync(inboundOrderId);
+            if (dto == null) throw new InvalidOperationException($"InboundOrder with id {inboundOrderId} not found.");
+            return dto;
+        }
+
+        public byte[] ExportInboundRequestToCsv(InboundRequestExportDto request)
+        {
+            return _repo.ExportInboundRequestToCsv(request);
+        }
+
+        public byte[] ExportInboundRequestToExcel(InboundRequestExportDto request)
+        {
+            return _repo.ExportInboundRequestToExcel(request);
+        }
+
+        public byte[] ExportInboundOrderToCsv(InboundOrderExportDto order)
+        {
+            return _repo.ExportInboundOrderToCsv(order);
+        }
+
+        public byte[] ExportInboundOrderToExcel(InboundOrderExportDto order)
+        {
+            return _repo.ExportInboundOrderToExcel(order);
+        }
     }
 }

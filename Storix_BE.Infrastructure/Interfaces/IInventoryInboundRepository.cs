@@ -1,4 +1,5 @@
 ﻿using Storix_BE.Domain.Models;
+using Storix_BE.Repository.DTO;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -19,5 +20,13 @@ namespace Storix_BE.Repository.Interfaces
         Task<InboundOrder> UpdateInboundOrderItemsAsync(int inboundOrderId, IEnumerable<InboundOrderItem> items);
         Task<bool> InboundRequestCodeExistsAsync(string code);
         Task<List<InboundOrder>> GetInboundOrdersByStaffAsync(int companyId, int staffId);
+        Task<InboundRequestExportDto?> GetInboundRequestForExportAsync(int inboundRequestId);
+        Task<InboundOrderExportDto?> GetInboundOrderForExportAsync(int inboundOrderId);
+
+        byte[] ExportInboundRequestToCsv(InboundRequestExportDto request);
+        byte[] ExportInboundRequestToExcel(InboundRequestExportDto request);
+
+        byte[] ExportInboundOrderToCsv(InboundOrderExportDto order);
+        byte[] ExportInboundOrderToExcel(InboundOrderExportDto order);
     }
 }

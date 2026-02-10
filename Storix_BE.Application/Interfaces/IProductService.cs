@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Http;
 using Storix_BE.Domain.Models;
+using Storix_BE.Repository.DTO;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -25,6 +26,9 @@ namespace Storix_BE.Service.Interfaces
         Task<ProductType?> UpdateProductTypeAsync(int id, UpdateProductTypeRequest request);
         Task<bool> DeleteProductTypeAsync(int id);
         Task<int> GetCompanyIdByUserIdAsync(int userId);
+        Task<List<ProductExportDto>> GetProductsForExportAsync();
+        byte[] ExportProductsToCsv(List<ProductExportDto> products);
+        byte[] ExportProductsToExcel(List<ProductExportDto> products);
     }
     public sealed record CreateProductTypeRequest(int CompanyId, string Name);
     public sealed record UpdateProductTypeRequest(string Name);

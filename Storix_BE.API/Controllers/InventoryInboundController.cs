@@ -226,6 +226,125 @@ namespace Storix_BE.API.Controllers
                 return StatusCode(500, new { message = ex.Message });
             }
         }
+        [HttpGet("export/inbound-request/{requestId:int}/csv")]
+        public async Task<IActionResult> ExportInboundRequestCsv(int requestId)
+        {
+            if (requestId <= 0) return BadRequest(new { message = "Invalid inbound request id." });
+
+            try
+            {
+                var dto = await _service.GetInboundRequestForExportAsync(requestId);
+                var fileBytes = _service.ExportInboundRequestToCsv(dto);
+
+                return File(
+                    fileBytes,
+                    "text/csv",
+                    $"inbound_request_{requestId}_{DateTime.UtcNow:yyyyMMddHHmmss}.csv"
+                );
+            }
+            catch (InvalidOperationException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = ex.Message });
+            }
+        }
+
+        [HttpGet("export/inbound-request/{requestId:int}/excel")]
+        public async Task<IActionResult> ExportInboundRequestExcel(int requestId)
+        {
+            if (requestId <= 0) return BadRequest(new { message = "Invalid inbound request id." });
+
+            try
+            {
+                var dto = await _service.GetInboundRequestForExportAsync(requestId);
+                var fileBytes = _service.ExportInboundRequestToExcel(dto);
+
+                return File(
+                    fileBytes,
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    $"inbound_request_{requestId}_{DateTime.UtcNow:yyyyMMddHHmmss}.xlsx"
+                );
+            }
+            catch (InvalidOperationException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = ex.Message });
+            }
+        }
+
+        [HttpGet("export/inbound-ticket/{orderId:int}/csv")]
+        public async Task<IActionResult> ExportInboundOrderCsv(int orderId)
+        {
+            if (orderId <= 0) return BadRequest(new { message = "Invalid inbound order id." });
+
+            try
+            {
+                var dto = await _service.GetInboundOrderForExportAsync(orderId);
+                var fileBytes = _service.ExportInboundOrderToCsv(dto);
+
+                return File(
+                    fileBytes,
+                    "text/csv",
+                    $"inbound_ticket_{orderId}_{DateTime.UtcNow:yyyyMMddHHmmss}.csv"
+                );
+            }
+            catch (InvalidOperationException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = ex.Message });
+            }
+        }
+
+        [HttpGet("export/inbound-ticket/{orderId:int}/excel")]
+        public async Task<IActionResult> ExportInboundOrderExcel(int orderId)
+        {
+            if (orderId <= 0) return BadRequest(new { message = "Invalid inbound order id." });
+
+            try
+            {
+                var dto = await _service.GetInboundOrderForExportAsync(orderId);
+                var fileBytes = _service.ExportInboundOrderToExcel(dto);
+
+                return File(
+                    fileBytes,
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    $"inbound_ticket_{orderId}_{DateTime.UtcNow:yyyyMMddHHmmss}.xlsx"
+                );
+            }
+            catch (InvalidOperationException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = ex.Message });
+            }
+        }
     }
     public sealed record CreateTicketFromRequestRequest(int CreatedBy, int StaffId);
 }
