@@ -10,6 +10,7 @@ namespace Storix_BE.Repository.Interfaces
     public interface IWarehouseAssignmentRepository
     {
         Task<Warehouse?> GetWarehouseByIdAsync(int warehouseId);
+        Task<List<Warehouse>> GetWarehousesByCompanyIdAsync(int companyId);
         Task<WarehouseAssignment?> GetAssignmentAsync(int userId, int warehouseId);
         Task<List<WarehouseAssignment>> GetAssignmentsByCompanyIdAsync(int companyId);
         Task<List<WarehouseAssignment>> GetAssignmentsByWarehouseIdAsync(int warehouseId);

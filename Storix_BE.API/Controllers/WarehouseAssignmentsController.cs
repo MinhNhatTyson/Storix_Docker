@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Storix_BE.Repository.DTO;
 using Storix_BE.Service.Interfaces;
 
 namespace Storix_BE.API.Controllers
@@ -36,7 +37,49 @@ namespace Storix_BE.API.Controllers
             if (string.IsNullOrEmpty(companyIdStr)) return null;
             return int.TryParse(companyIdStr, out var id) ? id : null;
         }
+        /// <summary>
+        /// List all warehouses within the current company. Company Administrator only.
+        /// </summary>
+        [HttpGet("/api/company-warehouses/{companyId:int}/warehouses")]
+        [Authorize(Roles = "2")]
+        public async Task<IActionResult> GetWarehouses(int companyId)
+        {
+            if (companyId <= 0)
+                return BadRequest(new { message = "CompanyId is required." });
+            var roleId = GetRoleIdFromToken();
+            var email = GetEmailFromToken();
+            if (roleId == null || string.IsNullOrEmpty(email))
+                return Unauthorized();
 
+            try
+            {
+                var caller = await _userService.GetByEmailAsync(email);
+                if (caller?.CompanyId == null)
+                    return Unauthorized();
+                if (caller.CompanyId.Value != companyId)
+                    return Forbid();
+
+                var warehouses = await _assignmentService.GetWarehousesByCompanyAsync(companyId, roleId.Value);
+                return Ok(warehouses.Select(w => new WarehouseSummaryDto(
+                    w.Id,
+                    w.CompanyId,
+                    w.Name,
+                    w.Status
+                )));
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Forbid();
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
         /// <summary>
         /// List all warehouse assignments within the current company. Company Administrator only.
         /// </summary>
