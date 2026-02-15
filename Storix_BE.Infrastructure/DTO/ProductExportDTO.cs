@@ -16,6 +16,7 @@ namespace Storix_BE.Repository.DTO
         public double? Weight { get; set; }
         public string? CompanyName { get; set; }
         public string? ProductType { get; set; }
+        public string? Description { get; set; }
         public DateTime? CreatedAt { get; set; }
     }
 }

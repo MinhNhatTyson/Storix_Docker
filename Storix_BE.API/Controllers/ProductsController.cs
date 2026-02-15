@@ -239,5 +239,28 @@ namespace Storix_BE.API.Controllers
                 $"products_{DateTime.UtcNow:yyyyMMddHHmmss}.xlsx"
             );
         }
+        [HttpPost("import/csv")]
+        public async Task<IActionResult> ImportCsv(IFormFile file)
+        {
+            if (file == null || file.Length == 0)
+                return BadRequest("File is required");
+
+            var products = _service.ParseProductsFromCsv(file);
+            await _service.ImportProductsAsync(products);
+
+            return Ok(new { message = "CSV import successful" });
+        }
+
+        [HttpPost("import/excel")]
+        public async Task<IActionResult> ImportExcel(IFormFile file)
+        {
+            if (file == null || file.Length == 0)
+                return BadRequest("File is required");
+
+            var products = _service.ParseProductsFromExcel(file);
+            await _service.ImportProductsAsync(products);
+
+            return Ok(new { message = "Excel import successful" });
+        }
     }
 }

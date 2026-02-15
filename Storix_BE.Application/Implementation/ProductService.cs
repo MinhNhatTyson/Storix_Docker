@@ -1,4 +1,5 @@
-﻿using Storix_BE.Domain.Models;
+﻿using Microsoft.AspNetCore.Http;
+using Storix_BE.Domain.Models;
 using Storix_BE.Repository.DTO;
 using Storix_BE.Repository.Interfaces;
 using Storix_BE.Service.Interfaces;
@@ -213,6 +214,20 @@ namespace Storix_BE.Service.Implementation
         public byte[] ExportProductsToExcel(List<ProductExportDto> products)
         {
             return _repo.ExportProductsToExcel(products);
+        }
+        public List<ProductExportDto> ParseProductsFromCsv(IFormFile file)
+        {
+            return _repo.ParseProductsFromCsv(file);
+        }
+
+        public List<ProductExportDto> ParseProductsFromExcel(IFormFile file)
+        {
+            return _repo.ParseProductsFromExcel(file);
+        }
+
+        public Task ImportProductsAsync(List<ProductExportDto> dtos)
+        {
+            return _repo.ImportProductsAsync(dtos);
         }
     }
 }

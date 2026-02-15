@@ -1,5 +1,6 @@
 ﻿using ClosedXML.Excel;
 using CsvHelper;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Storix_BE.Domain.Context;
 using Storix_BE.Domain.Models;
@@ -347,6 +348,100 @@ namespace Storix_BE.Repository.Implementation
             using var stream = new MemoryStream();
             workbook.SaveAs(stream);
             return stream.ToArray();
+        }
+        public List<ProductExportDto> ParseProductsFromCsv(IFormFile file)
+        {
+            using var stream = file.OpenReadStream();
+            using var reader = new StreamReader(stream, Encoding.UTF8);
+            using var csv = new CsvReader(reader, CultureInfo.InvariantCulture);
+
+            return csv.GetRecords<ProductExportDto>().ToList();
+        }
+        public List<ProductExportDto> ParseProductsFromExcel(IFormFile file)
+        {
+            var products = new List<ProductExportDto>();
+
+            using var stream = file.OpenReadStream();
+            using var workbook = new XLWorkbook(stream);
+            var worksheet = workbook.Worksheet(1);
+
+            var rows = worksheet.RangeUsed().RowsUsed().Skip(1);
+
+            foreach (var row in rows)
+            {
+                products.Add(new ProductExportDto
+                {
+                    Sku = row.Cell(2).GetString(),
+                    Name = row.Cell(3).GetString(),
+                    Category = row.Cell(4).GetString(),
+                    Unit = row.Cell(5).GetString(),
+                    Weight = row.Cell(6).GetDouble(),
+                    CompanyName = row.Cell(7).GetString(),
+                    ProductType = row.Cell(8).GetString(),
+                    Description = row.Cell(9).GetString()
+                });
+            }
+
+            return products;
+        }
+        public async Task ImportProductsAsync(List<ProductExportDto> dtos)
+        {
+            using var transaction = await _context.Database.BeginTransactionAsync();
+
+            foreach (var dto in dtos)
+            {
+                if (string.IsNullOrWhiteSpace(dto.Sku))
+                    continue; // or log error
+
+                var product = await _context.Products
+                    .FirstOrDefaultAsync(p => p.Sku == dto.Sku);
+
+                var companyId = await ResolveCompanyId(dto.CompanyName);
+                var typeId = await ResolveProductTypeId(dto.ProductType);
+
+                if (product == null)
+                {
+                    // INSERT
+                    product = new Product
+                    {
+                        Sku = dto.Sku,
+                        CreatedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified)
+                    };
+
+                    _context.Products.Add(product);
+                }
+
+                // UPDATE (shared)
+                product.Name = dto.Name;
+                product.Category = dto.Category;
+                product.Unit = dto.Unit;
+                product.Weight = dto.Weight;
+                product.CompanyId = companyId;
+                product.TypeId = typeId;
+                product.Description = dto.Description;
+                product.UpdatedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
+            }
+
+            await _context.SaveChangesAsync();
+            await transaction.CommitAsync();
+        }
+        private async Task<int?> ResolveCompanyId(string? companyName)
+        {
+            if (string.IsNullOrWhiteSpace(companyName)) return null;
+
+            return await _context.Companies
+                .Where(c => c.Name == companyName)
+                .Select(c => (int?)c.Id)
+                .FirstOrDefaultAsync();
+        }
+        private async Task<int?> ResolveProductTypeId(string? typeName)
+        {
+            if (string.IsNullOrWhiteSpace(typeName)) return null;
+
+            return await _context.ProductTypes
+                .Where(c => c.Name == typeName)
+                .Select(c => (int?)c.Id)
+                .FirstOrDefaultAsync();
         }
     }
 }

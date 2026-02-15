@@ -29,6 +29,9 @@ namespace Storix_BE.Service.Interfaces
         Task<List<ProductExportDto>> GetProductsForExportAsync();
         byte[] ExportProductsToCsv(List<ProductExportDto> products);
         byte[] ExportProductsToExcel(List<ProductExportDto> products);
+        List<ProductExportDto> ParseProductsFromCsv(IFormFile file);
+        List<ProductExportDto> ParseProductsFromExcel(IFormFile file);
+        Task ImportProductsAsync(List<ProductExportDto> dtos);
     }
     public sealed record CreateProductTypeRequest(int CompanyId, string Name);
     public sealed record UpdateProductTypeRequest(string Name);

@@ -1,4 +1,5 @@
-﻿using Storix_BE.Domain.Models;
+﻿using Microsoft.AspNetCore.Http;
+using Storix_BE.Domain.Models;
 using Storix_BE.Repository.DTO;
 using System;
 using System.Collections.Generic;
@@ -25,5 +26,8 @@ namespace Storix_BE.Repository.Interfaces
         Task<List<ProductExportDto>> GetProductsForExportAsync();
         byte[] ExportProductsToCsv(List<ProductExportDto> products);
         byte[] ExportProductsToExcel(List<ProductExportDto> products);
+        List<ProductExportDto> ParseProductsFromCsv(IFormFile file);
+        List<ProductExportDto> ParseProductsFromExcel(IFormFile file);
+        Task ImportProductsAsync(List<ProductExportDto> dtos);
     }
 }
