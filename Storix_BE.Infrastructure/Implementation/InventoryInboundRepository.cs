@@ -169,6 +169,8 @@ namespace Storix_BE.Repository.Implementation
                 var orderItem = new InboundOrderItem
                 {
                     InboundRequestId = inboundRequest.Id,
+                    Price = reqItem.Price,
+                    Discount = reqItem.Discount,
                     ProductId = reqItem.ProductId,
                     ExpectedQuantity = reqItem.ExpectedQuantity,
                     ReceivedQuantity = reqItem.ReceivedQuantity // usually null/0 initially
