@@ -241,6 +241,8 @@ namespace Storix_BE.Service.Implementation
                 inboundRequest?.OrderDiscount,
                 inboundRequest?.FinalPrice,
                 o.CreatedAt,
+                inboundRequest?.Note,
+                inboundRequest?.ExpectedDate,
                 items,
                 MapSupplier(o.Supplier),
                 MapWarehouse(o.Warehouse),

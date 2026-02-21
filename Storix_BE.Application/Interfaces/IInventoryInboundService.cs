@@ -80,6 +80,8 @@ namespace Storix_BE.Service.Interfaces
         double? OrderDiscount,
         double? FinalPrice,
         DateTime? CreatedAt,
+        string? Note,
+        DateOnly? ExpectedArrivalDate,
         IEnumerable<InboundOrderItemDto> InboundOrderItems,
         SupplierDto? Supplier,
         WarehouseDto? Warehouse,
