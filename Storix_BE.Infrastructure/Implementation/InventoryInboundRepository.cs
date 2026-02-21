@@ -271,6 +271,7 @@ namespace Storix_BE.Repository.Implementation
             return await _context.InboundOrders
                 .Include(o => o.InboundOrderItems)
                     .ThenInclude(i => i.Product)
+                .Include(o => o.InboundRequest)
                 .Include(o => o.Supplier)
                 .Include(o => o.Warehouse)
                 .Include(o => o.CreatedByNavigation)
@@ -303,6 +304,7 @@ namespace Storix_BE.Repository.Implementation
             var order = await _context.InboundOrders
                 .Include(o => o.InboundOrderItems)
                     .ThenInclude(i => i.Product)
+                .Include(o => o.InboundRequest)
                 .Include(o => o.Supplier)
                 .Include(o => o.Warehouse)
                 .Include(o => o.CreatedByNavigation)
