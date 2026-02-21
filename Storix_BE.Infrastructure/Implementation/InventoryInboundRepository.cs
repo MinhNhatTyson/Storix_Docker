@@ -174,11 +174,12 @@ namespace Storix_BE.Repository.Implementation
                 };
                 inboundOrder.InboundOrderItems.Add(orderItem);
             }
-
+            
             await using var tx = await _context.Database.BeginTransactionAsync().ConfigureAwait(false);
             try
             {
                 _context.InboundOrders.Add(inboundOrder);
+                inboundRequest.Status = "Transported";
                 await _context.SaveChangesAsync().ConfigureAwait(false);
 
                 await tx.CommitAsync().ConfigureAwait(false);
