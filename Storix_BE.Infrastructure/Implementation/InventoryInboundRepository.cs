@@ -250,7 +250,7 @@ namespace Storix_BE.Repository.Implementation
                     }
                     else
                     {
-                        // try find by ProductId
+                       
                         existing = order.InboundOrderItems.FirstOrDefault(x => x.ProductId == incoming.ProductId);
                     }
 
