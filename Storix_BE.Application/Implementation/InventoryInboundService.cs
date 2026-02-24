@@ -143,7 +143,7 @@ namespace Storix_BE.Service.Implementation
         {
             if (inboundRequestId <= 0) throw new ArgumentException("Invalid inboundRequestId.", nameof(inboundRequestId));
             if (createdBy <= 0) throw new ArgumentException("Invalid createdBy.", nameof(createdBy));
-            // staffId may be null (optional)
+            if(staffId.HasValue && staffId.Value <= 0) throw new ArgumentException("Invalid staffId.", nameof(staffId));
 
             return await _repo.CreateInboundOrderFromRequestAsync(inboundRequestId, createdBy, staffId);
         }
