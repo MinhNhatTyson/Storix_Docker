@@ -410,7 +410,6 @@ namespace Storix_BE.Repository.Implementation
                 .Include(o => o.Supplier)
                 .Include(o => o.Warehouse)
                 .Include(o => o.CreatedByNavigation)
-                .Include(o => o.InboundRequest)
                 .Where(o => o.CreatedByNavigation.CompanyId == companyId)
                 .FirstOrDefaultAsync(o => o.Id == id)
                 .ConfigureAwait(false);
@@ -437,6 +436,7 @@ namespace Storix_BE.Repository.Implementation
                 .Include(o => o.Warehouse)
                 .Include(o => o.CreatedByNavigation)
                 .Include(o => o.Staff)
+                .Include(o => o.InboundRequest)
                 .Where(o => o.StaffId == staffId && o.Warehouse != null && o.Warehouse.CompanyId == companyId)
                 .OrderByDescending(o => o.CreatedAt);
 
