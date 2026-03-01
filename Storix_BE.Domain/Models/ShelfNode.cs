@@ -11,6 +11,8 @@ public partial class ShelfNode
 
     public int? NodeId { get; set; }
 
+    public string? IdCode { get; set; }
+
     public virtual NavNode? Node { get; set; }
 
     public virtual Shelf? Shelf { get; set; }

@@ -11,6 +11,8 @@ public partial class ShelfLevel
 
     public string? Code { get; set; }
 
+    public string? IdCode { get; set; }
+
     public virtual Shelf? Shelf { get; set; }
 
     public virtual ICollection<ShelfLevelBin> ShelfLevelBins { get; set; } = new List<ShelfLevelBin>();

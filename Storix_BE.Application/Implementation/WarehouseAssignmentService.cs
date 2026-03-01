@@ -52,14 +52,14 @@ namespace Storix_BE.Service.Implementation
         public async Task<List<WarehouseAssignment>> GetAssignmentsByCompanyAsync(int companyId, int callerRoleId)
         {
             if (companyId <= 0) throw new InvalidOperationException("Invalid company id.");
-            await EnsureCompanyAdministratorAsync(callerRoleId);
+            EnsureCompanyAdministratorAsync(callerRoleId);
             return await _assignmentRepository.GetAssignmentsByCompanyIdAsync(companyId);
         }
 
         public async Task<List<WarehouseAssignment>> GetAssignmentsByWarehouseAsync(int companyId, int callerRoleId, int warehouseId)
         {
             if (companyId <= 0) throw new InvalidOperationException("Invalid company id.");
-            await EnsureCompanyAdministratorAsync(callerRoleId);
+            EnsureCompanyAdministratorAsync(callerRoleId);
 
             var warehouse = await _assignmentRepository.GetWarehouseByIdAsync(warehouseId);
             if (warehouse == null)
@@ -84,7 +84,7 @@ namespace Storix_BE.Service.Implementation
         public async Task<WarehouseAssignment> AssignWarehouseAsync(int companyId, int callerRoleId, AssignWarehouseRequest request)
         {
             if (companyId <= 0) throw new InvalidOperationException("Invalid company id.");
-            await EnsureCompanyAdministratorAsync(callerRoleId);
+            EnsureCompanyAdministratorAsync(callerRoleId);
 
             var user = await _userRepository.GetUserByIdWithRoleAsync(request.UserId);
             if (user == null)
@@ -124,7 +124,7 @@ namespace Storix_BE.Service.Implementation
             {
                 UserId = request.UserId,
                 WarehouseId = request.WarehouseId,
-                RoleInWarehouse = request.RoleInWarehouse ?? userRole?.Name,
+                RoleInWarehouse = userRole?.Name,
                 AssignedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified)
             };
 
@@ -135,7 +135,7 @@ namespace Storix_BE.Service.Implementation
         public async Task<bool> UnassignWarehouseAsync(int companyId, int callerRoleId, int userId, int warehouseId)
         {
             if (companyId <= 0) throw new InvalidOperationException("Invalid company id.");
-            await EnsureCompanyAdministratorAsync(callerRoleId);
+            EnsureCompanyAdministratorAsync(callerRoleId);
 
             var assignment = await _assignmentRepository.GetAssignmentAsync(userId, warehouseId);
             if (assignment == null)
@@ -163,6 +163,12 @@ namespace Storix_BE.Service.Implementation
             return true;
         }
 
+        public async Task<int> CountAssignmentsByUserAsync(int userId)
+        {
+            if (userId <= 0) throw new InvalidOperationException("Invalid user id.");
+            return await _assignmentRepository.CountAssignmentsByUserIdAsync(userId);
+        }
+
         public async Task<int> UpdateRoleInAssignmentsAsync(int userId, string roleInWarehouse)
         {
             if (userId <= 0) throw new InvalidOperationException("Invalid user id.");
@@ -170,6 +176,169 @@ namespace Storix_BE.Service.Implementation
                 throw new InvalidOperationException("Role in warehouse is required.");
 
             return await _assignmentRepository.UpdateRoleInAssignmentsAsync(userId, roleInWarehouse);
+        }
+        public async Task<Warehouse> CreateWarehouseAsync(int companyId, CreateWarehouseRequest request)
+        {
+            if (companyId <= 0) throw new InvalidOperationException("Invalid company id.");
+            if (request == null) throw new InvalidOperationException("Request is required.");
+
+            var warehouse = new Warehouse
+            {
+                CompanyId = companyId,
+                Name = request.Name,
+                Description = request.Description,
+                Width = request.Width.HasValue ? Convert.ToInt32(Math.Round(request.Width.Value)) : null,
+                Height = request.Height.HasValue ? Convert.ToInt32(Math.Round(request.Height.Value)) : null,
+                Status = "Active",
+                CreatedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified)
+            };
+
+            var nodeDict = new Dictionary<string, NavNode?>(StringComparer.OrdinalIgnoreCase);
+
+            if (request.Nodes != null)
+            {
+                foreach (var n in request.Nodes)
+                {
+                    if (string.IsNullOrWhiteSpace(n?.Id)) continue;
+                    if (!nodeDict.ContainsKey(n.Id))
+                    {
+                        var navNode = new NavNode
+                        {
+                            IdCode = n.Id,
+                            XCoordinate = n.X.HasValue ? Convert.ToInt32(Math.Round(n.X.Value)) : null,
+                            YCoordinate = n.Y.HasValue ? Convert.ToInt32(Math.Round(n.Y.Value)) : null,
+                            Radius = n.Radius,
+                            Side = n.Side,
+                            Type = n.Type,
+                            Warehouse = warehouse
+                        };
+                        nodeDict[n.Id] = navNode;
+                        warehouse.NavNodes.Add(navNode);
+                    }
+                }
+            }
+
+            if (request.Zones != null)
+            {
+                foreach (var z in request.Zones)
+                {
+                    var zone = new StorageZone
+                    {
+                        IdCode = z?.Id,
+                        Code = z?.Code,
+                        Width = z?.Width,
+                        Height = z?.Height,
+                        Warehouse = warehouse,
+                        CreatedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified)
+                    };
+                    warehouse.StorageZones.Add(zone);
+
+                    if (z?.Shelves != null)
+                    {
+                        foreach (var s in z.Shelves)
+                        {
+                            var shelf = new Shelf
+                            {
+                                IdCode = s?.Id,
+                                Code = s?.Code,
+                                XCoordinate = (bool)(s?.X.HasValue) ? Convert.ToInt32(Math.Round(s.X.Value)) : null,
+                                YCoordinate = (bool)s?.Y.HasValue ? Convert.ToInt32(Math.Round(s.Y.Value)) : null,
+                                Width = (bool)s?.Width.HasValue ? Convert.ToInt32(Math.Round(s.Width.Value)) : null,
+                                Height = (bool)s?.Height.HasValue ? Convert.ToInt32(Math.Round(s.Height.Value)) : null,
+                                Zone = zone,
+                                CreatedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified)
+                            };
+                            zone.Shelves.Add(shelf);
+
+                            if (s?.AccessNodes != null)
+                            {
+                                foreach (var acc in s.AccessNodes)
+                                {
+                                    if (string.IsNullOrWhiteSpace(acc?.Id)) continue;
+                                    if (!nodeDict.TryGetValue(acc.Id, out var existingNode) || existingNode == null)
+                                    {
+                                        var accessNode = new NavNode
+                                        {
+                                            IdCode = acc.Id,
+                                            XCoordinate = acc.X.HasValue ? Convert.ToInt32(Math.Round(acc.X.Value)) : null,
+                                            YCoordinate = acc.Y.HasValue ? Convert.ToInt32(Math.Round(acc.Y.Value)) : null,
+                                            Radius = acc.Radius,
+                                            Side = acc.Side,
+                                            Warehouse = warehouse
+                                        };
+                                        nodeDict[acc.Id] = accessNode;
+                                        warehouse.NavNodes.Add(accessNode);
+                                        existingNode = accessNode;
+                                    }
+
+                                    var shelfNode = new ShelfNode
+                                    {
+                                        Shelf = shelf,
+                                        Node = existingNode,
+                                        IdCode = acc.Id
+                                    };
+                                    shelf.ShelfNodes.Add(shelfNode);
+                                }
+                            }
+
+                            if (s?.Levels != null)
+                            {
+                                foreach (var lvl in s.Levels)
+                                {
+                                    var level = new ShelfLevel
+                                    {
+                                        IdCode = lvl?.Id,
+                                        Code = lvl?.Code,
+                                        Shelf = shelf
+                                    };
+                                    shelf.ShelfLevels.Add(level);
+
+                                    if (lvl?.Bins != null)
+                                    {
+                                        foreach (var b in lvl.Bins)
+                                        {
+                                            var bin = new ShelfLevelBin
+                                            {
+                                                IdCode = b?.Id,
+                                                Code = b?.Code,
+                                                Level = level
+                                            };
+                                            level.ShelfLevelBins.Add(bin);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (request.Edges != null)
+            {
+                foreach (var e in request.Edges)
+                {
+                    if (string.IsNullOrWhiteSpace(e?.From) || string.IsNullOrWhiteSpace(e?.To)) continue;
+
+                    if (!nodeDict.TryGetValue(e.From, out var fromNode) || fromNode == null)
+                        continue;
+                    if (!nodeDict.TryGetValue(e.To, out var toNode) || toNode == null)
+                        continue;
+
+                    var edge = new NavEdge
+                    {
+                        IdCode = e.Id,
+                        Distance = e.Distance,
+                        NodeFromNavigation = fromNode,
+                        NodeToNavigation = toNode,
+                        Warehouse = warehouse
+                    };
+
+                    warehouse.NavEdges.Add(edge);
+                }
+            }
+
+            var created = await _assignmentRepository.CreateWarehouseAsync(warehouse);
+            return created;
         }
     }
 }

@@ -25,6 +25,8 @@ public partial class Shelf
 
     public DateTime? CreatedAt { get; set; }
 
+    public string? IdCode { get; set; }
+
     public virtual ICollection<InventoryLocation> InventoryLocations { get; set; } = new List<InventoryLocation>();
 
     public virtual ICollection<ShelfLevel> ShelfLevels { get; set; } = new List<ShelfLevel>();

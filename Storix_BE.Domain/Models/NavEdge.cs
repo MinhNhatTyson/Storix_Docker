@@ -15,6 +15,8 @@ public partial class NavEdge
 
     public int? WarehouseId { get; set; }
 
+    public string? IdCode { get; set; }
+
     public virtual NavNode? NodeFromNavigation { get; set; }
 
     public virtual NavNode? NodeToNavigation { get; set; }

@@ -17,6 +17,12 @@ public partial class StorageZone
 
     public DateTime? CreatedAt { get; set; }
 
+    public double? Width { get; set; }
+
+    public double? Height { get; set; }
+
+    public string? IdCode { get; set; }
+
     public virtual ICollection<Shelf> Shelves { get; set; } = new List<Shelf>();
 
     public virtual ProductType? Type { get; set; }

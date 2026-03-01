@@ -20,5 +20,6 @@ namespace Storix_BE.Repository.Interfaces
         Task<int> UpdateRoleInAssignmentsAsync(int userId, string roleInWarehouse);
         Task<int> AddAssignmentAsync(WarehouseAssignment assignment);
         Task<bool> RemoveAssignmentAsync(WarehouseAssignment assignment);
+        Task<Warehouse> CreateWarehouseAsync(Warehouse warehouse);
     }
 }

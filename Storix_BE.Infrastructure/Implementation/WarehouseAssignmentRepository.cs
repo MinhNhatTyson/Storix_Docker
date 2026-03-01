@@ -135,5 +135,42 @@ namespace Storix_BE.Repository.Implementation
             await _context.SaveChangesAsync();
             return true;
         }
+        public async Task<Warehouse> CreateWarehouseAsync(Warehouse warehouse)
+        {
+            if (warehouse == null) throw new ArgumentNullException(nameof(warehouse));
+
+            // Set timestamps for warehouse and related entities where applicable
+            var now = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
+            warehouse.CreatedAt = now;
+            if (warehouse.StorageZones != null)
+            {
+                foreach (var z in warehouse.StorageZones)
+                {
+                    z.CreatedAt = now;
+                    if (z.Shelves != null)
+                    {
+                        foreach (var s in z.Shelves)
+                        {
+                            s.CreatedAt = now;
+                            // shelf levels/bins do not have CreatedAt in model, but set IdCode if available
+                        }
+                    }
+                }
+            }
+
+            await using var tx = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                _context.Warehouses.Add(warehouse);
+                await _context.SaveChangesAsync();
+                await tx.CommitAsync();
+                return warehouse;
+            }
+            catch
+            {
+                await tx.RollbackAsync();
+                throw;
+            }
+        }
     }
 }

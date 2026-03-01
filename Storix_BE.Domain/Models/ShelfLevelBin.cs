@@ -19,6 +19,8 @@ public partial class ShelfLevelBin
 
     public int? InventoryId { get; set; }
 
+    public string? IdCode { get; set; }
+
     public virtual Inventory? Inventory { get; set; }
 
     public virtual ShelfLevel? Level { get; set; }
