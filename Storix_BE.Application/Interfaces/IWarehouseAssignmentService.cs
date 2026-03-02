@@ -16,19 +16,25 @@ namespace Storix_BE.Service.Interfaces
         Task<bool> UnassignWarehouseAsync(int companyId, int callerRoleId, int userId, int warehouseId);
         Task<int> CountAssignmentsByUserAsync(int userId);
         Task<int> UpdateRoleInAssignmentsAsync(int userId, string roleInWarehouse);
-        Task<Warehouse> CreateWarehouseAsync(int companyId, CreateWarehouseRequest request);
+        Task<Warehouse> CreateSimpleWarehouseAsync(int companyId, CreateSimpleWarehouseRequest request);
+        Task<Warehouse> UpdateWarehouseStructureAsync(int companyId, int warehouseId, CreateWarehouseRequest request);
+
         Task<Warehouse> GetWarehouseStructureAsync(int companyId, int warehouseId);
     }
 
     public sealed record AssignWarehouseRequest(int UserId, int WarehouseId);
     public sealed record CreateWarehouseRequest(
-        string? Name,
-        string? Description,
         double? Width,
         double? Height,
         IEnumerable<ZoneDto>? Zones,
         IEnumerable<NodeDto>? Nodes,
         IEnumerable<EdgeDto>? Edges);
+    public sealed record CreateSimpleWarehouseRequest(
+        string? Name,
+        string? Address,
+        string? Description,
+        string? Status,
+        int? AssignedManagerUserId);
 
     public sealed record ZoneDto(
         string? Id,

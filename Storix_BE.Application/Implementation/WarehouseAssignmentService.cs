@@ -177,17 +177,81 @@ namespace Storix_BE.Service.Implementation
 
             return await _assignmentRepository.UpdateRoleInAssignmentsAsync(userId, roleInWarehouse);
         }
-        public async Task<Warehouse> CreateWarehouseAsync(int companyId, CreateWarehouseRequest request)
+        public async Task<Warehouse> CreateSimpleWarehouseAsync(int companyId, CreateSimpleWarehouseRequest request)
         {
             if (companyId <= 0) throw new InvalidOperationException("Invalid company id.");
             if (request == null) throw new InvalidOperationException("Request is required.");
-            if (string.IsNullOrWhiteSpace(request.Name))
-                throw new InvalidOperationException("Warehouse Name is required.");
+
+            var warehouse = new Warehouse
+            {
+                CompanyId = companyId,
+                Name = string.IsNullOrWhiteSpace(request.Name) ? null : request.Name,
+                Address = string.IsNullOrWhiteSpace(request.Address) ? null : request.Address,
+                Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description,
+                Status = string.IsNullOrWhiteSpace(request.Status) ? "Active" : request.Status,
+                CreatedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified)
+            };
+
+            var created = await _assignmentRepository.CreateWarehouseAsync(warehouse);
+
+            // If assigned manager provided, validate and create assignment
+            if (request.AssignedManagerUserId.HasValue && request.AssignedManagerUserId.Value > 0)
+            {
+                var user = await _userRepository.GetUserByIdWithRoleAsync(request.AssignedManagerUserId.Value);
+                if (user == null) throw new InvalidOperationException("Assigned manager user not found.");
+                if (user.CompanyId != companyId) throw new BusinessRuleException("BR-WH-08", "Cross-company assignment is not allowed.");
+
+                var userRole = await _userRepository.GetRoleByIdAsync(user.RoleId ?? 0);
+                if (userRole?.Name == "Super Admin")
+                    throw new InvalidOperationException("Cannot assign warehouse to Super Admin.");
+                if (userRole?.Name == "Company Administrator")
+                    throw new InvalidOperationException("Cannot assign warehouse to Company Administrator.");
+                if (userRole?.Name != "Manager" && userRole?.Name != "Staff")
+                    throw new BusinessRuleException("BR-WH-03", "Role not eligible for warehouse assignment.");
+
+                // Optional policy check: Max users per warehouse
+                var maxUsers = GetMaxUsersPerWarehouse();
+                if (maxUsers.HasValue)
+                {
+                    var currentCount = await _assignmentRepository.CountAssignmentsByWarehouseIdAsync(created.Id);
+                    if (currentCount >= maxUsers.Value)
+                        throw new BusinessRuleException("BR-WH-05", "Warehouse capacity policy exceeded.");
+                }
+
+                var assignment = new WarehouseAssignment
+                {
+                    UserId = request.AssignedManagerUserId.Value,
+                    WarehouseId = created.Id,
+                    RoleInWarehouse = userRole?.Name,
+                    AssignedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified)
+                };
+
+                await _assignmentRepository.AddAssignmentAsync(assignment);
+            }
+
+            return created;
+        }
+
+        public async Task<Warehouse> UpdateWarehouseStructureAsync(int companyId, int warehouseId, CreateWarehouseRequest request)
+        {
+            if (companyId <= 0) throw new InvalidOperationException("Invalid company id.");
+            if (warehouseId <= 0) throw new InvalidOperationException("Invalid warehouse id.");
+            if (request == null) throw new InvalidOperationException("Request is required.");
             if (request.Width.HasValue && request.Width.Value < 0)
                 throw new InvalidOperationException("Warehouse Width must be >= 0.");
             if (request.Height.HasValue && request.Height.Value < 0)
                 throw new InvalidOperationException("Warehouse Height must be >= 0.");
 
+            // Fetch existing warehouse
+            var existingWarehouse = await _assignmentRepository.GetWarehouseByIdAsync(warehouseId);
+            if (existingWarehouse == null)
+                throw new BusinessRuleException("BR-WH-01", "Warehouse not found.");
+            if (existingWarehouse.CompanyId != companyId)
+                throw new BusinessRuleException("BR-WH-08", "Cross-company access is not allowed.");
+            if (IsInactiveStatus(existingWarehouse.Status))
+                throw new BusinessRuleException("BR-WH-02", "Warehouse is inactive.");
+
+            // Validate & build in-memory structure (similar validations from previous create flow)
             var zoneIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var shelfIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var levelIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -195,18 +259,15 @@ namespace Storix_BE.Service.Implementation
             var nodeIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var edgeIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-            var warehouse = new Warehouse
+            var warehouseStructure = new Warehouse
             {
-                CompanyId = companyId,
-                Name = request.Name,
-                Description = request.Description,
                 Width = request.Width.HasValue ? Convert.ToInt32(Math.Round(request.Width.Value)) : null,
                 Height = request.Height.HasValue ? Convert.ToInt32(Math.Round(request.Height.Value)) : null,
-                Status = "Active",
-                CreatedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified)
+                // keep CompanyId null here — repository update will attach to existing warehouse
             };
 
             var nodeDict = new Dictionary<string, NavNode?>(StringComparer.OrdinalIgnoreCase);
+            var now = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
 
             if (request.Nodes != null)
             {
@@ -227,10 +288,9 @@ namespace Storix_BE.Service.Implementation
                         Radius = n.Radius,
                         Side = n.Side,
                         Type = n.Type,
-                        Warehouse = warehouse
                     };
                     nodeDict[n.Id] = navNode;
-                    warehouse.NavNodes.Add(navNode);
+                    warehouseStructure.NavNodes.Add(navNode);
                 }
             }
 
@@ -243,7 +303,6 @@ namespace Storix_BE.Service.Implementation
                     if (!zoneIds.Add(z.Id)) throw new InvalidOperationException($"Duplicate Zone IdCode detected: '{z.Id}'");
                     if (z.Width.HasValue && z.Width.Value < 0) throw new InvalidOperationException($"Zone '{z.Id}' width must be >= 0.");
                     if (z.Height.HasValue && z.Height.Value < 0) throw new InvalidOperationException($"Zone '{z.Id}' height must be >= 0.");
-                    // X/Y optional in DTO sample; if provided validate
                     if (z.X.HasValue && z.X.Value < 0) throw new InvalidOperationException($"Zone '{z.Id}' X must be >= 0.");
                     if (z.Y.HasValue && z.Y.Value < 0) throw new InvalidOperationException($"Zone '{z.Id}' Y must be >= 0.");
 
@@ -253,10 +312,9 @@ namespace Storix_BE.Service.Implementation
                         Code = z.Code,
                         Width = z.Width,
                         Height = z.Height,
-                        Warehouse = warehouse,
-                        CreatedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified)
+                        CreatedAt = now
                     };
-                    warehouse.StorageZones.Add(zone);
+                    warehouseStructure.StorageZones.Add(zone);
 
                     if (z.Shelves != null)
                     {
@@ -279,8 +337,7 @@ namespace Storix_BE.Service.Implementation
                                 YCoordinate = s.Y.HasValue ? Convert.ToInt32(Math.Round(s.Y.Value)) : null,
                                 Width = s.Width.HasValue ? Convert.ToInt32(Math.Round(s.Width.Value)) : null,
                                 Height = s.Height.HasValue ? Convert.ToInt32(Math.Round(s.Height.Value)) : null,
-                                Zone = zone,
-                                CreatedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified)
+                                CreatedAt = now
                             };
                             zone.Shelves.Add(shelf);
 
@@ -293,8 +350,6 @@ namespace Storix_BE.Service.Implementation
                                     if (string.IsNullOrWhiteSpace(acc.Id)) throw new InvalidOperationException("AccessNode Id is required.");
                                     if (!nodeIds.Add(acc.Id))
                                     {
-                                        // If it already exists in nodeDict we should allow reusing that nodeId for shelf linking,
-                                        // but we disallow duplicate id definitions in accessNodes/top-level nodes.
                                         if (!nodeDict.ContainsKey(acc.Id))
                                             throw new InvalidOperationException($"Duplicate AccessNode IdCode detected: '{acc.Id}'");
                                     }
@@ -313,10 +368,9 @@ namespace Storix_BE.Service.Implementation
                                             YCoordinate = acc.Y.HasValue ? Convert.ToInt32(Math.Round(acc.Y.Value)) : null,
                                             Radius = acc.Radius,
                                             Side = acc.Side,
-                                            Warehouse = warehouse
                                         };
                                         nodeDict[acc.Id] = existingNode;
-                                        warehouse.NavNodes.Add(existingNode);
+                                        warehouseStructure.NavNodes.Add(existingNode);
                                     }
                                     else
                                     {
@@ -346,8 +400,7 @@ namespace Storix_BE.Service.Implementation
                                     var level = new ShelfLevel
                                     {
                                         IdCode = lvl.Id,
-                                        Code = lvl.Code,
-                                        Shelf = shelf
+                                        Code = lvl.Code
                                     };
                                     shelf.ShelfLevels.Add(level);
 
@@ -363,8 +416,7 @@ namespace Storix_BE.Service.Implementation
                                             var bin = new ShelfLevelBin
                                             {
                                                 IdCode = b.Id,
-                                                Code = b.Code,
-                                                Level = level
+                                                Code = b.Code
                                             };
                                             level.ShelfLevelBins.Add(bin);
                                         }
@@ -397,16 +449,21 @@ namespace Storix_BE.Service.Implementation
                         IdCode = e.Id,
                         Distance = e.Distance,
                         NodeFromNavigation = fromNode,
-                        NodeToNavigation = toNode,
-                        Warehouse = warehouse
+                        NodeToNavigation = toNode
                     };
 
-                    warehouse.NavEdges.Add(edge);
+                    warehouseStructure.NavEdges.Add(edge);
                 }
             }
 
-            var created = await _assignmentRepository.CreateWarehouseAsync(warehouse);
-            return created;
+            // Persist structure replacement via repository
+            var updated = await _assignmentRepository.UpdateWarehouseStructureAsync(warehouseId, warehouseStructure);
+            if (!updated)
+                throw new System.Exception("Failed to update warehouse structure.");
+
+            // Return warehouse with refreshed structure
+            var result = await _assignmentRepository.GetWarehouseWithStructureAsync(warehouseId) ?? throw new System.Exception("Failed to load updated warehouse.");
+            return result;
         }
         public async Task<Warehouse> GetWarehouseStructureAsync(int companyId, int warehouseId)
         {

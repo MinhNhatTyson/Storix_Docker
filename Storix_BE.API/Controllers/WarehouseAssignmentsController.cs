@@ -205,18 +205,56 @@ namespace Storix_BE.API.Controllers
         /// Create new warehouse (Company Administrator only). Route: POST /api/company-warehouses/{companyId}
         /// </summary>
         [HttpPost]
-        [AllowAnonymous]
-        [Route("~/api/create-company-warehouses/{companyId:int}/")]
-        public async Task<IActionResult> CreateWarehouse(int companyId, [FromBody] CreateWarehouseRequest request)
+        [Authorize(Roles = "2")]
+        [Route("~/api/update-company-warehouse/{companyId:int}/structure/{warehouseId:int}")]
+        public async Task<IActionResult> UpdateWarehouseStructure(int companyId, int warehouseId, [FromBody] CreateWarehouseRequest request)
+        {
+            if (companyId <= 0)
+                return BadRequest(new { message = "CompanyId is required." });
+            if (warehouseId <= 0)
+                return BadRequest(new { message = "WarehouseId is required." });
+            if (request == null)
+                return BadRequest(new { message = "Request body is required." });
+            try
+            {
+                var warehouse = await _assignmentService.UpdateWarehouseStructureAsync(companyId, warehouseId, request);
+                return Ok(new { Id = warehouse.Id });
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Forbid();
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (BusinessRuleException ex)
+            {
+                return BadRequest(new { code = ex.Code, message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Create simple warehouse (Company Administrator only).
+        /// Creates a warehouse with basic metadata (name, address, description, status) and optionally assigns a manager.
+        /// Route: POST /api/company-warehouses/{companyId}
+        /// </summary>
+        [HttpPost]
+        [Authorize(Roles = "2")]
+        [Route("~/api/create-company-warehouse/{companyId:int}")]
+        public async Task<IActionResult> CreateSimpleWarehouse(int companyId, [FromBody] CreateSimpleWarehouseRequest request)
         {
             if (companyId <= 0)
                 return BadRequest(new { message = "CompanyId is required." });
             if (request == null)
                 return BadRequest(new { message = "Request body is required." });
-
             try
             {
-                var warehouse = await _assignmentService.CreateWarehouseAsync(companyId, request);
+                var warehouse = await _assignmentService.CreateSimpleWarehouseAsync(companyId, request);
                 return Ok(new { Id = warehouse.Id });
             }
             catch (UnauthorizedAccessException)

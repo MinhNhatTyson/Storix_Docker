@@ -172,6 +172,138 @@ namespace Storix_BE.Repository.Implementation
                 throw;
             }
         }
+        public async Task<bool> UpdateWarehouseStructureAsync(int warehouseId, Warehouse warehouseStructure)
+        {
+            if (warehouseStructure == null) throw new System.ArgumentNullException(nameof(warehouseStructure));
+            if (warehouseId <= 0) throw new System.ArgumentException("Invalid warehouse id.", nameof(warehouseId));
+
+            // Load existing warehouse with related collections to remove them safely
+            var existing = await _context.Warehouses
+                .Include(w => w.NavEdges)
+                    .ThenInclude(e => e.NodeFromNavigation)
+                .Include(w => w.NavEdges)
+                    .ThenInclude(e => e.NodeToNavigation)
+                .Include(w => w.NavNodes)
+                .Include(w => w.StorageZones)
+                    .ThenInclude(z => z.Shelves)
+                        .ThenInclude(s => s.ShelfLevels)
+                            .ThenInclude(l => l.ShelfLevelBins)
+                .Include(w => w.StorageZones)
+                    .ThenInclude(z => z.Shelves)
+                        .ThenInclude(s => s.ShelfNodes)
+                            .ThenInclude(sn => sn.Node)
+                .FirstOrDefaultAsync(w => w.Id == warehouseId);
+
+            if (existing == null) throw new System.InvalidOperationException("Warehouse not found.");
+
+            await using var tx = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                // Remove existing structure items (edges, nodes, zones). Rely on cascade or explicit removal.
+                if (existing.NavEdges != null && existing.NavEdges.Any())
+                    _context.NavEdges.RemoveRange(existing.NavEdges);
+
+                if (existing.StorageZones != null && existing.StorageZones.Any())
+                    _context.StorageZones.RemoveRange(existing.StorageZones);
+
+                if (existing.NavNodes != null && existing.NavNodes.Any())
+                    _context.NavNodes.RemoveRange(existing.NavNodes);
+
+                await _context.SaveChangesAsync();
+
+                // Update dimensions
+                existing.Width = warehouseStructure.Width;
+                existing.Height = warehouseStructure.Height;
+
+                var now = System.DateTime.SpecifyKind(System.DateTime.UtcNow, System.DateTimeKind.Unspecified);
+
+                // Add new NavNodes (if any)
+                if (warehouseStructure.NavNodes != null)
+                {
+                    foreach (var n in warehouseStructure.NavNodes)
+                    {
+                        n.Warehouse = existing;
+                        n.Id = 0;
+                        _context.NavNodes.Add(n);
+                    }
+                }
+
+                // Add new StorageZones (and nested shelves/levels/bins)
+                if (warehouseStructure.StorageZones != null)
+                {
+                    foreach (var z in warehouseStructure.StorageZones)
+                    {
+                        z.Warehouse = existing;
+                        z.Id = 0;
+                        z.CreatedAt = z.CreatedAt ?? now;
+                        _context.StorageZones.Add(z);
+                        // EF will pick up nested children if they are attached to z
+                        // ensure nested entities have CreatedAt where appropriate
+                        if (z.Shelves != null)
+                        {
+                            foreach (var s in z.Shelves)
+                            {
+                                s.Zone = z;
+                                s.Id = 0;
+                                s.CreatedAt = s.CreatedAt ?? now;
+                                if (s.ShelfLevels != null)
+                                {
+                                    foreach (var lvl in s.ShelfLevels)
+                                    {
+                                        lvl.Shelf = s;
+                                        lvl.Id = 0;
+                                        if (lvl.ShelfLevelBins != null)
+                                        {
+                                            foreach (var b in lvl.ShelfLevelBins)
+                                            {
+                                                b.Level = lvl;
+                                                b.Id = 0;
+                                            }
+                                        }
+                                    }
+                                }
+
+                                if (s.ShelfNodes != null)
+                                {
+                                    foreach (var sn in s.ShelfNodes)
+                                    {
+                                        sn.Shelf = s;
+                                        sn.Id = 0;
+                                        if (sn.Node != null)
+                                        {
+
+                                            sn.Node.Warehouse = existing;
+                                            sn.Node.Id = 0;
+                                            _context.NavNodes.Add(sn.Node);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Add new NavEdges (after nodes are added)
+                if (warehouseStructure.NavEdges != null)
+                {
+                    foreach (var e in warehouseStructure.NavEdges)
+                    {
+                        e.Warehouse = existing;
+                        e.Id = 0;
+                        _context.NavEdges.Add(e);
+                    }
+                }
+
+                await _context.SaveChangesAsync();
+                await tx.CommitAsync();
+                return true;
+            }
+            catch
+            {
+                await tx.RollbackAsync();
+                throw;
+            }
+        }
         public async Task<Warehouse?> GetWarehouseWithStructureAsync(int warehouseId)
         {
             if (warehouseId <= 0) return null;
