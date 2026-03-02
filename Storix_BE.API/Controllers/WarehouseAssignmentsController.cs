@@ -236,5 +236,118 @@ namespace Storix_BE.API.Controllers
                 return BadRequest(new { message = ex.Message });
             }
         }
+        [HttpGet("~/api/get-warehouse-structure/{companyId:int}/{warehouseId:int}")]
+        [Authorize(Roles = "2")]
+        public async Task<IActionResult> GetWarehouseStructure(int companyId, int warehouseId)
+        {
+            if (companyId <= 0) return BadRequest(new { message = "CompanyId is required." });
+            if (warehouseId <= 0) return BadRequest(new { message = "WarehouseId is required." });
+
+            try
+            {
+                var warehouse = await _assignmentService.GetWarehouseStructureAsync(companyId, warehouseId);
+
+                var nodes = warehouse.NavNodes == null
+                    ? new List<object>()
+                    : warehouse.NavNodes
+                        .Select(n => new
+                        {
+                            id = n.IdCode,
+                            x = n.XCoordinate,
+                            y = n.YCoordinate,
+                            radius = n.Radius,
+                            side = n.Side,
+                            type = n.Type
+                        })
+                        .Cast<object>()
+                        .ToList();
+
+                var edges = warehouse.NavEdges == null
+                    ? new List<object>()
+                    : warehouse.NavEdges
+                    .Select(e => new
+                    {
+                        id = e.IdCode,
+                        from = e.NodeFromNavigation?.IdCode,
+                        to = e.NodeToNavigation?.IdCode,
+                        distance = e.Distance
+                    })
+                    .Cast<object>()
+                        .ToList();
+
+                var zones = warehouse.StorageZones?
+                    .Select(z => (object)new
+                    {
+                        id = z.IdCode,
+                        code = z.Code,
+                        x = (double?)null,
+                        y = (double?)null,
+                        width = z.Width,
+                        height = z.Height,
+                        shelves = z.Shelves?.Select(s => (object)new
+                        {
+                            id = s.IdCode,
+                            code = s.Code,
+                            x = s.XCoordinate,
+                            y = s.YCoordinate,
+                            width = s.Width,
+                            height = s.Height,
+
+                            accessNodes = (s.ShelfNodes != null
+                            ? s.ShelfNodes.Select(sn => (object)new
+                            {
+                                id = sn.IdCode ?? sn.Node?.IdCode,
+                                side = sn.Node?.Side,
+                                x = sn.Node?.XCoordinate,
+                                y = sn.Node?.YCoordinate
+                            }).ToList()
+                            : new List<object>()),
+
+                            levels = s.ShelfLevels != null
+                            ? s.ShelfLevels.Select(l => (object)new
+                            {
+                                id = l.IdCode,
+                                code = l.Code,
+                                bins = l.ShelfLevelBins != null
+                                    ? l.ShelfLevelBins.Select(b => (object)new
+                                    {
+                                        id = b.IdCode,
+                                        code = b.Code
+                                    }).ToList()
+                                    : new List<object>()
+                            }).ToList()
+                            : new List<object>()
+                        }).ToList() ?? new List<object>()
+                    }).ToList() ?? new List<object>();
+
+                var response = new
+                {
+                    width = warehouse.Width,
+                    height = warehouse.Height,
+                    zones = zones,
+                    nodes = nodes,
+                    edges = edges
+                };
+
+                return Ok(response);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Forbid();
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (BusinessRuleException ex)
+            {
+                return BadRequest(new { code = ex.Code, message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+
+        }
     }
 }

@@ -181,6 +181,19 @@ namespace Storix_BE.Service.Implementation
         {
             if (companyId <= 0) throw new InvalidOperationException("Invalid company id.");
             if (request == null) throw new InvalidOperationException("Request is required.");
+            if (string.IsNullOrWhiteSpace(request.Name))
+                throw new InvalidOperationException("Warehouse Name is required.");
+            if (request.Width.HasValue && request.Width.Value < 0)
+                throw new InvalidOperationException("Warehouse Width must be >= 0.");
+            if (request.Height.HasValue && request.Height.Value < 0)
+                throw new InvalidOperationException("Warehouse Height must be >= 0.");
+
+            var zoneIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var shelfIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var levelIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var binIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var nodeIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var edgeIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             var warehouse = new Warehouse
             {
@@ -199,22 +212,25 @@ namespace Storix_BE.Service.Implementation
             {
                 foreach (var n in request.Nodes)
                 {
-                    if (string.IsNullOrWhiteSpace(n?.Id)) continue;
-                    if (!nodeDict.ContainsKey(n.Id))
+                    if (n == null) throw new InvalidOperationException("Node entry cannot be null.");
+                    if (string.IsNullOrWhiteSpace(n.Id)) throw new InvalidOperationException("Node Id is required.");
+                    if (!nodeIds.Add(n.Id)) throw new InvalidOperationException($"Duplicate Node IdCode detected: '{n.Id}'");
+                    if (!n.X.HasValue || !n.Y.HasValue) throw new InvalidOperationException($"Node '{n.Id}' X and Y coordinates are required.");
+                    if (n.X.Value < 0 || n.Y.Value < 0) throw new InvalidOperationException($"Node '{n.Id}' coordinates must be >= 0.");
+                    if (n.Radius.HasValue && n.Radius.Value < 0) throw new InvalidOperationException($"Node '{n.Id}' radius must be >= 0.");
+
+                    var navNode = new NavNode
                     {
-                        var navNode = new NavNode
-                        {
-                            IdCode = n.Id,
-                            XCoordinate = n.X.HasValue ? Convert.ToInt32(Math.Round(n.X.Value)) : null,
-                            YCoordinate = n.Y.HasValue ? Convert.ToInt32(Math.Round(n.Y.Value)) : null,
-                            Radius = n.Radius,
-                            Side = n.Side,
-                            Type = n.Type,
-                            Warehouse = warehouse
-                        };
-                        nodeDict[n.Id] = navNode;
-                        warehouse.NavNodes.Add(navNode);
-                    }
+                        IdCode = n.Id,
+                        XCoordinate = Convert.ToInt32(Math.Round(n.X.Value)),
+                        YCoordinate = Convert.ToInt32(Math.Round(n.Y.Value)),
+                        Radius = n.Radius,
+                        Side = n.Side,
+                        Type = n.Type,
+                        Warehouse = warehouse
+                    };
+                    nodeDict[n.Id] = navNode;
+                    warehouse.NavNodes.Add(navNode);
                 }
             }
 
@@ -222,42 +238,75 @@ namespace Storix_BE.Service.Implementation
             {
                 foreach (var z in request.Zones)
                 {
+                    if (z == null) throw new InvalidOperationException("Zone entry cannot be null.");
+                    if (string.IsNullOrWhiteSpace(z.Id)) throw new InvalidOperationException("Zone Id is required.");
+                    if (!zoneIds.Add(z.Id)) throw new InvalidOperationException($"Duplicate Zone IdCode detected: '{z.Id}'");
+                    if (z.Width.HasValue && z.Width.Value < 0) throw new InvalidOperationException($"Zone '{z.Id}' width must be >= 0.");
+                    if (z.Height.HasValue && z.Height.Value < 0) throw new InvalidOperationException($"Zone '{z.Id}' height must be >= 0.");
+                    // X/Y optional in DTO sample; if provided validate
+                    if (z.X.HasValue && z.X.Value < 0) throw new InvalidOperationException($"Zone '{z.Id}' X must be >= 0.");
+                    if (z.Y.HasValue && z.Y.Value < 0) throw new InvalidOperationException($"Zone '{z.Id}' Y must be >= 0.");
+
                     var zone = new StorageZone
                     {
-                        IdCode = z?.Id,
-                        Code = z?.Code,
-                        Width = z?.Width,
-                        Height = z?.Height,
+                        IdCode = z.Id,
+                        Code = z.Code,
+                        Width = z.Width,
+                        Height = z.Height,
                         Warehouse = warehouse,
                         CreatedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified)
                     };
                     warehouse.StorageZones.Add(zone);
 
-                    if (z?.Shelves != null)
+                    if (z.Shelves != null)
                     {
                         foreach (var s in z.Shelves)
                         {
+                            if (s == null) throw new InvalidOperationException("Shelf entry cannot be null.");
+                            if (string.IsNullOrWhiteSpace(s.Id)) throw new InvalidOperationException("Shelf Id is required.");
+                            if (!shelfIds.Add(s.Id)) throw new InvalidOperationException($"Duplicate Shelf IdCode detected: '{s.Id}'");
+                            if (string.IsNullOrWhiteSpace(s.Code)) throw new InvalidOperationException($"Shelf '{s.Id}' Code is required.");
+                            if (s.X.HasValue && s.X.Value < 0) throw new InvalidOperationException($"Shelf '{s.Id}' X must be >= 0.");
+                            if (s.Y.HasValue && s.Y.Value < 0) throw new InvalidOperationException($"Shelf '{s.Id}' Y must be >= 0.");
+                            if (s.Width.HasValue && s.Width.Value < 0) throw new InvalidOperationException($"Shelf '{s.Id}' width must be >= 0.");
+                            if (s.Height.HasValue && s.Height.Value < 0) throw new InvalidOperationException($"Shelf '{s.Id}' height must be >= 0.");
+
                             var shelf = new Shelf
                             {
-                                IdCode = s?.Id,
-                                Code = s?.Code,
-                                XCoordinate = (bool)(s?.X.HasValue) ? Convert.ToInt32(Math.Round(s.X.Value)) : null,
-                                YCoordinate = (bool)s?.Y.HasValue ? Convert.ToInt32(Math.Round(s.Y.Value)) : null,
-                                Width = (bool)s?.Width.HasValue ? Convert.ToInt32(Math.Round(s.Width.Value)) : null,
-                                Height = (bool)s?.Height.HasValue ? Convert.ToInt32(Math.Round(s.Height.Value)) : null,
+                                IdCode = s.Id,
+                                Code = s.Code,
+                                XCoordinate = s.X.HasValue ? Convert.ToInt32(Math.Round(s.X.Value)) : null,
+                                YCoordinate = s.Y.HasValue ? Convert.ToInt32(Math.Round(s.Y.Value)) : null,
+                                Width = s.Width.HasValue ? Convert.ToInt32(Math.Round(s.Width.Value)) : null,
+                                Height = s.Height.HasValue ? Convert.ToInt32(Math.Round(s.Height.Value)) : null,
                                 Zone = zone,
                                 CreatedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified)
                             };
                             zone.Shelves.Add(shelf);
 
-                            if (s?.AccessNodes != null)
+                            // Access nodes for shelf
+                            if (s.AccessNodes != null)
                             {
                                 foreach (var acc in s.AccessNodes)
                                 {
-                                    if (string.IsNullOrWhiteSpace(acc?.Id)) continue;
-                                    if (!nodeDict.TryGetValue(acc.Id, out var existingNode) || existingNode == null)
+                                    if (acc == null) throw new InvalidOperationException("AccessNode entry cannot be null.");
+                                    if (string.IsNullOrWhiteSpace(acc.Id)) throw new InvalidOperationException("AccessNode Id is required.");
+                                    if (!nodeIds.Add(acc.Id))
                                     {
-                                        var accessNode = new NavNode
+                                        // If it already exists in nodeDict we should allow reusing that nodeId for shelf linking,
+                                        // but we disallow duplicate id definitions in accessNodes/top-level nodes.
+                                        if (!nodeDict.ContainsKey(acc.Id))
+                                            throw new InvalidOperationException($"Duplicate AccessNode IdCode detected: '{acc.Id}'");
+                                    }
+
+                                    if (acc.X.HasValue && acc.X.Value < 0) throw new InvalidOperationException($"AccessNode '{acc.Id}' X must be >= 0.");
+                                    if (acc.Y.HasValue && acc.Y.Value < 0) throw new InvalidOperationException($"AccessNode '{acc.Id}' Y must be >= 0.");
+                                    if (acc.Radius.HasValue && acc.Radius.Value < 0) throw new InvalidOperationException($"AccessNode '{acc.Id}' radius must be >= 0.");
+
+                                    NavNode existingNode;
+                                    if (!nodeDict.TryGetValue(acc.Id, out var existing) || existing == null)
+                                    {
+                                        existingNode = new NavNode
                                         {
                                             IdCode = acc.Id,
                                             XCoordinate = acc.X.HasValue ? Convert.ToInt32(Math.Round(acc.X.Value)) : null,
@@ -266,9 +315,12 @@ namespace Storix_BE.Service.Implementation
                                             Side = acc.Side,
                                             Warehouse = warehouse
                                         };
-                                        nodeDict[acc.Id] = accessNode;
-                                        warehouse.NavNodes.Add(accessNode);
-                                        existingNode = accessNode;
+                                        nodeDict[acc.Id] = existingNode;
+                                        warehouse.NavNodes.Add(existingNode);
+                                    }
+                                    else
+                                    {
+                                        existingNode = existing;
                                     }
 
                                     var shelfNode = new ShelfNode
@@ -281,26 +333,37 @@ namespace Storix_BE.Service.Implementation
                                 }
                             }
 
-                            if (s?.Levels != null)
+                            // Levels and bins
+                            if (s.Levels != null)
                             {
                                 foreach (var lvl in s.Levels)
                                 {
+                                    if (lvl == null) throw new InvalidOperationException("Level entry cannot be null.");
+                                    if (string.IsNullOrWhiteSpace(lvl.Id)) throw new InvalidOperationException("Level Id is required.");
+                                    if (!levelIds.Add(lvl.Id)) throw new InvalidOperationException($"Duplicate Level IdCode detected: '{lvl.Id}'");
+                                    if (string.IsNullOrWhiteSpace(lvl.Code)) throw new InvalidOperationException($"Level '{lvl.Id}' Code is required.");
+
                                     var level = new ShelfLevel
                                     {
-                                        IdCode = lvl?.Id,
-                                        Code = lvl?.Code,
+                                        IdCode = lvl.Id,
+                                        Code = lvl.Code,
                                         Shelf = shelf
                                     };
                                     shelf.ShelfLevels.Add(level);
 
-                                    if (lvl?.Bins != null)
+                                    if (lvl.Bins != null)
                                     {
                                         foreach (var b in lvl.Bins)
                                         {
+                                            if (b == null) throw new InvalidOperationException("Bin entry cannot be null.");
+                                            if (string.IsNullOrWhiteSpace(b.Id)) throw new InvalidOperationException("Bin Id is required.");
+                                            if (!binIds.Add(b.Id)) throw new InvalidOperationException($"Duplicate Bin IdCode detected: '{b.Id}'");
+                                            if (string.IsNullOrWhiteSpace(b.Code)) throw new InvalidOperationException($"Bin '{b.Id}' Code is required.");
+
                                             var bin = new ShelfLevelBin
                                             {
-                                                IdCode = b?.Id,
-                                                Code = b?.Code,
+                                                IdCode = b.Id,
+                                                Code = b.Code,
                                                 Level = level
                                             };
                                             level.ShelfLevelBins.Add(bin);
@@ -317,12 +380,17 @@ namespace Storix_BE.Service.Implementation
             {
                 foreach (var e in request.Edges)
                 {
-                    if (string.IsNullOrWhiteSpace(e?.From) || string.IsNullOrWhiteSpace(e?.To)) continue;
+                    if (e == null) throw new InvalidOperationException("Edge entry cannot be null.");
+                    if (string.IsNullOrWhiteSpace(e.Id)) throw new InvalidOperationException("Edge Id is required.");
+                    if (!edgeIds.Add(e.Id)) throw new InvalidOperationException($"Duplicate Edge IdCode detected: '{e.Id}'");
+                    if (string.IsNullOrWhiteSpace(e.From) || string.IsNullOrWhiteSpace(e.To))
+                        throw new InvalidOperationException($"Edge '{e.Id}' From and To are required.");
+                    if (e.Distance.HasValue && e.Distance.Value < 0) throw new InvalidOperationException($"Edge '{e.Id}' distance must be >= 0.");
 
                     if (!nodeDict.TryGetValue(e.From, out var fromNode) || fromNode == null)
-                        continue;
+                        throw new InvalidOperationException($"Edge '{e.Id}' references unknown From node '{e.From}'.");
                     if (!nodeDict.TryGetValue(e.To, out var toNode) || toNode == null)
-                        continue;
+                        throw new InvalidOperationException($"Edge '{e.Id}' references unknown To node '{e.To}'.");
 
                     var edge = new NavEdge
                     {
@@ -339,6 +407,19 @@ namespace Storix_BE.Service.Implementation
 
             var created = await _assignmentRepository.CreateWarehouseAsync(warehouse);
             return created;
+        }
+        public async Task<Warehouse> GetWarehouseStructureAsync(int companyId, int warehouseId)
+        {
+            if (companyId <= 0) throw new InvalidOperationException("Invalid company id.");
+            if (warehouseId <= 0) throw new InvalidOperationException("Invalid warehouse id.");
+
+            var warehouse = await _assignmentRepository.GetWarehouseWithStructureAsync(warehouseId);
+            if (warehouse == null)
+                throw new BusinessRuleException("BR-WH-01", "Warehouse not found.");
+            if (warehouse.CompanyId != companyId)
+                throw new BusinessRuleException("BR-WH-08", "Cross-company access is not allowed.");
+
+            return warehouse;
         }
     }
 }

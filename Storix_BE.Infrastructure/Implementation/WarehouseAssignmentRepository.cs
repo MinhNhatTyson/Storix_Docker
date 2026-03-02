@@ -172,5 +172,26 @@ namespace Storix_BE.Repository.Implementation
                 throw;
             }
         }
+        public async Task<Warehouse?> GetWarehouseWithStructureAsync(int warehouseId)
+        {
+            if (warehouseId <= 0) return null;
+
+            return await _context.Warehouses
+                .Include(w => w.Company)
+                .Include(w => w.StorageZones)
+                    .ThenInclude(z => z.Shelves)
+                        .ThenInclude(s => s.ShelfLevels)
+                            .ThenInclude(l => l.ShelfLevelBins)
+                .Include(w => w.StorageZones)
+                    .ThenInclude(z => z.Shelves)
+                        .ThenInclude(s => s.ShelfNodes)
+                            .ThenInclude(sn => sn.Node)
+                .Include(w => w.NavNodes)
+                .Include(w => w.NavEdges)
+                    .ThenInclude(e => e.NodeFromNavigation)
+                .Include(w => w.NavEdges)
+                    .ThenInclude(e => e.NodeToNavigation)
+                .FirstOrDefaultAsync(w => w.Id == warehouseId);
+        }
     }
 }

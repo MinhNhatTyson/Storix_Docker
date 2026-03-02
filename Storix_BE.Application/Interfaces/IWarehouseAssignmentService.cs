@@ -17,6 +17,7 @@ namespace Storix_BE.Service.Interfaces
         Task<int> CountAssignmentsByUserAsync(int userId);
         Task<int> UpdateRoleInAssignmentsAsync(int userId, string roleInWarehouse);
         Task<Warehouse> CreateWarehouseAsync(int companyId, CreateWarehouseRequest request);
+        Task<Warehouse> GetWarehouseStructureAsync(int companyId, int warehouseId);
     }
 
     public sealed record AssignWarehouseRequest(int UserId, int WarehouseId);
