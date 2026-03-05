@@ -325,5 +325,85 @@ namespace Storix_BE.Repository.Implementation
                     .ThenInclude(e => e.NodeToNavigation)
                 .FirstOrDefaultAsync(w => w.Id == warehouseId);
         }
+        public async Task<bool> DeleteWarehouseAsync(int warehouseId)
+        {
+            if (warehouseId <= 0) throw new System.InvalidOperationException("Invalid warehouse id.");
+
+            var warehouse = await _context.Warehouses
+                .Include(w => w.StorageZones)
+                    .ThenInclude(z => z.Shelves)
+                        .ThenInclude(s => s.ShelfLevels)
+                            .ThenInclude(l => l.ShelfLevelBins)
+                .Include(w => w.StorageZones)
+                    .ThenInclude(z => z.Shelves)
+                        .ThenInclude(s => s.ShelfNodes)
+                            .ThenInclude(sn => sn.Node)
+                .Include(w => w.NavEdges)
+                .Include(w => w.NavNodes)
+                .Include(w => w.WarehouseAssignments)
+                .FirstOrDefaultAsync(w => w.Id == warehouseId);
+
+            if (warehouse == null) return false;
+
+            await using var tx = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                // Remove nested shelf level bins
+                var bins = warehouse.StorageZones?
+                    .SelectMany(z => z.Shelves ?? Enumerable.Empty<Shelf>())
+                    .SelectMany(s => s.ShelfLevels ?? Enumerable.Empty<ShelfLevel>())
+                    .SelectMany(l => l.ShelfLevelBins ?? Enumerable.Empty<ShelfLevelBin>())
+                    .ToList() ?? new List<ShelfLevelBin>();
+                if (bins.Any()) _context.ShelfLevelBins.RemoveRange(bins);
+
+                // Remove shelf levels
+                var levels = warehouse.StorageZones?
+                    .SelectMany(z => z.Shelves ?? Enumerable.Empty<Shelf>())
+                    .SelectMany(s => s.ShelfLevels ?? Enumerable.Empty<ShelfLevel>())
+                    .ToList() ?? new List<ShelfLevel>();
+                if (levels.Any()) _context.ShelfLevels.RemoveRange(levels);
+
+                // Remove shelf nodes (associations)
+                var shelfNodes = warehouse.StorageZones?
+                    .SelectMany(z => z.Shelves ?? Enumerable.Empty<Shelf>())
+                    .SelectMany(s => s.ShelfNodes ?? Enumerable.Empty<ShelfNode>())
+                    .ToList() ?? new List<ShelfNode>();
+                if (shelfNodes.Any()) _context.ShelfNodes.RemoveRange(shelfNodes);
+
+                // Remove shelves
+                var shelves = warehouse.StorageZones?
+                    .SelectMany(z => z.Shelves ?? Enumerable.Empty<Shelf>())
+                    .ToList() ?? new List<Shelf>();
+                if (shelves.Any()) _context.Shelves.RemoveRange(shelves);
+
+                // Remove zones
+                var zones = warehouse.StorageZones?.ToList() ?? new List<StorageZone>();
+                if (zones.Any()) _context.StorageZones.RemoveRange(zones);
+
+                // Remove nav edges
+                var edges = warehouse.NavEdges?.ToList() ?? new List<NavEdge>();
+                if (edges.Any()) _context.NavEdges.RemoveRange(edges);
+
+                // Remove nav nodes
+                var nodes = warehouse.NavNodes?.ToList() ?? new List<NavNode>();
+                if (nodes.Any()) _context.NavNodes.RemoveRange(nodes);
+
+                // Remove warehouse assignments
+                var assignments = warehouse.WarehouseAssignments?.ToList() ?? new List<WarehouseAssignment>();
+                if (assignments.Any()) _context.WarehouseAssignments.RemoveRange(assignments);
+
+                // Finally remove the warehouse itself
+                _context.Warehouses.Remove(warehouse);
+
+                await _context.SaveChangesAsync();
+                await tx.CommitAsync();
+                return true;
+            }
+            catch
+            {
+                await tx.RollbackAsync();
+                throw;
+            }
+        }
     }
 }

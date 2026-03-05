@@ -478,5 +478,23 @@ namespace Storix_BE.Service.Implementation
 
             return warehouse;
         }
+        public async Task<bool> DeleteWarehouseAsync(int companyId, int warehouseId)
+        {
+            if (companyId <= 0) throw new InvalidOperationException("Invalid company id.");
+            if (warehouseId <= 0) throw new InvalidOperationException("Invalid warehouse id.");
+
+            var warehouse = await _assignmentRepository.GetWarehouseByIdAsync(warehouseId);
+            if (warehouse == null)
+                throw new BusinessRuleException("BR-WH-01", "Warehouse not found.");
+            if (warehouse.CompanyId != companyId)
+                throw new BusinessRuleException("BR-WH-08", "Cross-company access is not allowed.");
+
+            // No special business rule preventing deletion specified; delegate to repository to remove structure and warehouse.
+            var deleted = await _assignmentRepository.DeleteWarehouseAsync(warehouseId);
+            if (!deleted)
+                throw new Exception("Failed to delete warehouse.");
+
+            return true;
+        }
     }
 }

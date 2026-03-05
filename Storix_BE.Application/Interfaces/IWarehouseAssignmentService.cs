@@ -20,6 +20,7 @@ namespace Storix_BE.Service.Interfaces
         Task<Warehouse> UpdateWarehouseStructureAsync(int companyId, int warehouseId, CreateWarehouseRequest request);
 
         Task<Warehouse> GetWarehouseStructureAsync(int companyId, int warehouseId);
+        Task<bool> DeleteWarehouseAsync(int companyId, int warehouseId);
     }
 
     public sealed record AssignWarehouseRequest(int UserId, int WarehouseId);
