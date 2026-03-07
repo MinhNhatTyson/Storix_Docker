@@ -27,6 +27,8 @@ public partial class Shelf
 
     public string? IdCode { get; set; }
 
+    public double? Length { get; set; }
+
     public virtual ICollection<InventoryLocation> InventoryLocations { get; set; } = new List<InventoryLocation>();
 
     public virtual ICollection<ShelfLevel> ShelfLevels { get; set; } = new List<ShelfLevel>();

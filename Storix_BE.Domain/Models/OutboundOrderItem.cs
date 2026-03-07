@@ -16,6 +16,12 @@ public partial class OutboundOrderItem
     public int? Quantity { get; set; }
     public double? Price { get; set; }
 
+    /// <summary>Phương pháp tính giá vốn: LastPurchasePrice | SpecificIdentification</summary>
+    public string? PricingMethod { get; set; }
+
+    /// <summary>Giá vốn tại thời điểm xuất kho (cost price)</summary>
+    public double? CostPrice { get; set; }
+
     public virtual OutboundOrder? OutboundOrder { get; set; }
 
     public virtual OutboundRequest? OutboundRequest { get; set; }

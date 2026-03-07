@@ -14,6 +14,8 @@
 		<PackageReference Include="Microsoft.IdentityModel.Tokens" Version="8.1.0" />
 		<PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
 		<PackageReference Include="CloudinaryDotNet" Version="1.26.2" />
+		<PackageReference Include="QuestPDF" Version="2025.12.4" />
+		<PackageReference Include="ScottPlot" Version="5.1.57" />
 		<PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.1.0" />
 	</ItemGroup>
   <ItemGroup>

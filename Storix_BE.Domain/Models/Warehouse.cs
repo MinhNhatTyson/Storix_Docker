@@ -49,7 +49,7 @@ public partial class Warehouse
 
     public virtual ICollection<OutboundRequest> OutboundRequests { get; set; } = new List<OutboundRequest>();
 
-    public virtual ICollection<StockCountsTicket> StockCountsTickets { get; set; } = new List<StockCountsTicket>();
+    public virtual ICollection<InventoryCountsTicket> InventoryCountsTickets { get; set; } = new List<InventoryCountsTicket>();
 
     public virtual ICollection<StorageForecast> StorageForecasts { get; set; } = new List<StorageForecast>();
 

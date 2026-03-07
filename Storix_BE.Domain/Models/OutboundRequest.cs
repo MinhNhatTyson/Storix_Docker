@@ -15,6 +15,12 @@ public partial class OutboundRequest
 
     public string? Destination { get; set; }
 
+    /// <summary>Lý do xuất kho (bán hàng, nội bộ, hỏng vỡ, ...)</summary>
+    public string? Reason { get; set; }
+
+    /// <summary>Mã phiếu xuất kho tự sinh: PXK-YYYYMMDD-XXXX</summary>
+    public string? ReferenceCode { get; set; }
+
     public string? Status { get; set; }
     public double? TotalPrice { get; set; }
 

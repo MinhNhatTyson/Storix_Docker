@@ -23,6 +23,12 @@ public partial class StorageZone
 
     public string? IdCode { get; set; }
 
+    public double? Length { get; set; }
+
+    public double? XCoordinate { get; set; }
+
+    public double? YCoordinate { get; set; }
+
     public virtual ICollection<Shelf> Shelves { get; set; } = new List<Shelf>();
 
     public virtual ProductType? Type { get; set; }

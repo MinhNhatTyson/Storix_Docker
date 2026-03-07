@@ -3,7 +3,7 @@ using System.Collections.Generic;
 
 namespace Storix_BE.Domain.Models;
 
-public partial class StockCountsTicket
+public partial class InventoryCountsTicket
 {
     public int Id { get; set; }
 
@@ -29,7 +29,7 @@ public partial class StockCountsTicket
 
     public virtual User? PerformedByNavigation { get; set; }
 
-    public virtual ICollection<StockCountItem> StockCountItems { get; set; } = new List<StockCountItem>();
+    public virtual ICollection<InventoryCountItem> InventoryCountItems { get; set; } = new List<InventoryCountItem>();
 
     public virtual Warehouse? Warehouse { get; set; }
 }

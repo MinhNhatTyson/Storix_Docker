@@ -30,25 +30,32 @@ namespace Storix_BE.API.Controllers
         [HttpPost("register")]
         public async Task<IActionResult> RegisterCompany([FromBody] CompanyRegisterRequest request)
         {
-            var user = await _userService.RegisterCompanyAsync(
-                request.CompanyName,
-                request.BusinessCode,
-                request.Address,
-                request.ContactEmail,
-                request.ContactPhone,
-                request.AdminFullName,
-                request.AdminEmail,
-                request.AdminPhone,
-                request.Password);
-
-            var token = GenerateJsonWebToken(user);
-
-            return Ok(new
+            try
             {
-                Token = token,
-                RoleId = user.RoleId,
-                CompanyId = user.CompanyId
-            });
+                var user = await _userService.RegisterCompanyAsync(
+                    request.CompanyName,
+                    request.BusinessCode,
+                    request.Address,
+                    request.ContactEmail,
+                    request.ContactPhone,
+                    request.AdminFullName,
+                    request.AdminEmail,
+                    request.AdminPhone,
+                    request.Password);
+
+                var token = GenerateJsonWebToken(user);
+
+                return Ok(new
+                {
+                    Token = token,
+                    RoleId = user.RoleId,
+                    CompanyId = user.CompanyId
+                });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
         }
 
         private string GenerateJsonWebToken(User user)

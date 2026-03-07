@@ -7,8 +7,10 @@ using Microsoft.IdentityModel.Tokens;
 using Storix_BE.Domain.Models;
 using Storix_BE.Repository.DTO;
 using Storix_BE.Service.Interfaces;
+using System.ComponentModel.Design;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -84,8 +86,6 @@ namespace Storix_BE.API.Controllers
         [HttpPost("Signup")]
         public async Task<IActionResult> Signup([FromBody] SignupRequest request)
         {
-            if (!ModelState.IsValid)
-                return BadRequest(ModelState);
             try
             {
                 var user = await _accService.SignupNewAccount(request.FullName, request.Email, request.PhoneNumber, request.Password, request.Address, request.CompanyCode);
