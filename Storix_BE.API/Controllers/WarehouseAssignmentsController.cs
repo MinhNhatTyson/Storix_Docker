@@ -275,7 +275,7 @@ namespace Storix_BE.API.Controllers
             }
         }
         [HttpGet("~/api/get-warehouse-structure/{companyId:int}/{warehouseId:int}")]
-        [Authorize(Roles = "2")]
+        [Authorize(Roles = "2,3,4")]
         public async Task<IActionResult> GetWarehouseStructure(int companyId, int warehouseId)
         {
             if (companyId <= 0) return BadRequest(new { message = "CompanyId is required." });
