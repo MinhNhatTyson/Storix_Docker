@@ -318,10 +318,11 @@ namespace Storix_BE.API.Controllers
                     {
                         id = z.IdCode,
                         code = z.Code,
-                        x = (double?)null,
-                        y = (double?)null,
+                        x = z.XCoordinate,
+                        y = z.YCoordinate,
                         width = z.Width,
                         height = z.Height,
+                        length = z.Length,
                         shelves = z.Shelves?.Select(s => (object)new
                         {
                             id = s.IdCode,
@@ -330,7 +331,7 @@ namespace Storix_BE.API.Controllers
                             y = s.YCoordinate,
                             width = s.Width,
                             height = s.Height,
-
+                            length = s.Length,
                             accessNodes = (s.ShelfNodes != null
                             ? s.ShelfNodes.Select(sn => (object)new
                             {
