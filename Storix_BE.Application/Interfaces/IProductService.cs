@@ -47,6 +47,9 @@ namespace Storix_BE.Service.Interfaces
         int? CategoryId,
         string? Unit,
         double? Weight,
+        double? Width,
+        double? Length,
+        double? Height,
         string? Description,
         IFormFile? Image);
 
@@ -58,6 +61,9 @@ namespace Storix_BE.Service.Interfaces
         int? CategoryId,
         string? Unit,
         double? Weight,
+        double? Width,
+        double? Length,
+        double? Height,
         string? Description,
         IFormFile? Image);
     public sealed record ProductResponseDTO(
