@@ -10,7 +10,7 @@ namespace Storix_BE.API.Controllers
 {
     [ApiController]
     [Route("api/inventory-count-tickets")]
-    [Authorize(Roles = "3,4")]
+    [Authorize(Roles = "2,3,4")]
     public class InventoryCountTicketsController : ControllerBase
     {
         private readonly IInventoryCountService _service;
