@@ -284,13 +284,24 @@ namespace Storix_BE.Service.Implementation
             if (request.CompanyId <= 0) throw new InvalidOperationException("CompanyId must be a positive integer.");
             var name = request.Name?.Trim();
             if (string.IsNullOrWhiteSpace(name)) throw new InvalidOperationException("Product category name is required.");
-
-            var toCreate = new ProductCategory
+            var toCreate = new ProductCategory();
+            if (request.ParentCategoryId.HasValue && request.ParentCategoryId.Value == 0)
             {
-                CompanyId = request.CompanyId,
-                Name = name,
-                ParentCategoryId = request.ParentCategoryId
-            };
+                toCreate = new ProductCategory
+                {
+                    CompanyId = request.CompanyId,
+                    Name = name,
+                };
+            }
+            else
+            {
+                 toCreate = new ProductCategory
+                {
+                    CompanyId = request.CompanyId,
+                    Name = name,
+                    ParentCategoryId = request.ParentCategoryId
+                };
+            }
 
             // repository will validate parent, uniqueness and compute level
             return await _repo.CreateCategoryAsync(toCreate);
