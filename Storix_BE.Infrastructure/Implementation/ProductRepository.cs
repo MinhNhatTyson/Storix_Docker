@@ -1,5 +1,8 @@
 ﻿using ClosedXML.Excel;
 using CsvHelper;
+using DocumentFormat.OpenXml.ExtendedProperties;
+using DocumentFormat.OpenXml.InkML;
+using DocumentFormat.OpenXml.Wordprocessing;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Storix_BE.Domain.Context;
@@ -8,7 +11,7 @@ using Storix_BE.Repository.DTO;
 using Storix_BE.Repository.Interfaces;
 using System;
 using System.Collections.Generic;
-using System.Formats.Asn1;
+using System.ComponentModel.Design;
 using System.Globalization;
 using System.Linq;
 using System.Text;
@@ -62,6 +65,26 @@ namespace Storix_BE.Repository.Implementation
                 .Where(p => p.CompanyId == companyId)
                 .ToListAsync();
         }
+        public async Task<bool> CategoryHasChildrenAsync(int categoryId)
+        {
+            return await _context.ProductCategories
+                .AnyAsync(c => c.ParentCategoryId == categoryId);
+        }
+        public async Task<ProductCategory?> GetCategoryByIdAsync(int id)
+        {
+            return await _context.ProductCategories
+                .AsNoTracking()
+                .FirstOrDefaultAsync(p => p.Id == id);
+        }
+        public async Task<List<ProductCategory>> GetChildCategoriesAsync(int parentId)
+        {
+            if (parentId <= 0) throw new InvalidOperationException("Invalid parent category id.");
+
+            return await _context.ProductCategories
+                .AsNoTracking()
+                .Where(c => c.ParentCategoryId == parentId)
+               .ToListAsync();
+        }
 
         public async Task<Product> CreateAsync(Product product)
         {
@@ -82,6 +105,7 @@ namespace Storix_BE.Repository.Implementation
             return await _context.Products
                 .AsNoTracking()
                 .Include(p => p.Type)
+                .Include(p => p.Category)
                 .FirstOrDefaultAsync(p => p.Id == product.Id) ?? product;
         }
 
@@ -107,11 +131,28 @@ namespace Storix_BE.Repository.Implementation
                 existing.Type = null;
             }
 
+            // If CategoryId changed / provided, validate and attach
+            if (product.CategoryId.HasValue)
+            {
+                var category = await _context.ProductCategories.FindAsync(product.CategoryId.Value);
+                if (category == null)
+                    throw new InvalidOperationException($"Product category with id {product.CategoryId.Value} not found.");
+                // ensure category belongs to same company when both sides have company id
+                if (category.CompanyId.HasValue && product.CompanyId.HasValue && category.CompanyId != product.CompanyId)
+                    throw new InvalidOperationException("Product category does not belong to the same company as the product.");
+                existing.CategoryId = product.CategoryId;
+                existing.Category = category;
+            }
+            else
+            {
+                existing.CategoryId = null;
+                existing.Category = null;
+            }
+
             // Patch other fields
             existing.CompanyId = product.CompanyId;
             existing.Sku = product.Sku;
             existing.Name = product.Name;
-            existing.Category = product.Category;
             existing.Unit = product.Unit;
             existing.Weight = product.Weight;
             existing.Description = product.Description;
@@ -197,6 +238,7 @@ namespace Storix_BE.Repository.Implementation
             if (string.IsNullOrWhiteSpace(name)) throw new InvalidOperationException("Product type name is required.");
 
             var nameLower = name.ToLowerInvariant();
+            // check if a product type with same name is already used by this company
             var existsForCompany = await _context.ProductTypes
                 .AsNoTracking()
                 .Where(t => t.Name != null && t.Name.ToLower() == nameLower)
@@ -265,6 +307,7 @@ namespace Storix_BE.Repository.Implementation
             await _context.SaveChangesAsync();
             return true;
         }
+
         public async Task<int?> GetCompanyIdByUserIdAsync(int userId)
         {
             if (userId <= 0) return null;
@@ -285,12 +328,12 @@ namespace Storix_BE.Repository.Implementation
                     Id = p.Id,
                     Sku = p.Sku,
                     Name = p.Name,
-                    Category = p.Category,
+                    Category = p.Category.Name,
                     Unit = p.Unit,
                     Weight = p.Weight,
                     CompanyName = p.Company != null ? p.Company.Name : null,
                     ProductType = p.Type != null ? p.Type.Name : null,
-                    CreatedAt = p.CreatedAt
+                    Description = p.Description
                 })
                 .ToListAsync();
         }
@@ -324,7 +367,7 @@ namespace Storix_BE.Repository.Implementation
             worksheet.Cell(1, 6).Value = "Weight";
             worksheet.Cell(1, 7).Value = "Company";
             worksheet.Cell(1, 8).Value = "Type";
-            worksheet.Cell(1, 9).Value = "Created At";
+            worksheet.Cell(1, 9).Value = "Description";
 
             // Data
             for (int i = 0; i < products.Count; i++)
@@ -340,7 +383,7 @@ namespace Storix_BE.Repository.Implementation
                 worksheet.Cell(row, 6).Value = p.Weight;
                 worksheet.Cell(row, 7).Value = p.CompanyName;
                 worksheet.Cell(row, 8).Value = p.ProductType;
-                worksheet.Cell(row, 9).Value = p.CreatedAt;
+                worksheet.Cell(row, 9).Value = p.Description;
             }
 
             worksheet.Columns().AdjustToContents();
@@ -398,6 +441,7 @@ namespace Storix_BE.Repository.Implementation
 
                 var companyId = await ResolveCompanyId(dto.CompanyName);
                 var typeId = await ResolveProductTypeId(dto.ProductType);
+                var categoryId = await ResolveProductCategoryId(dto.Category);
 
                 if (product == null)
                 {
@@ -413,7 +457,7 @@ namespace Storix_BE.Repository.Implementation
 
                 // UPDATE (shared)
                 product.Name = dto.Name;
-                product.Category = dto.Category;
+                product.CategoryId = categoryId;
                 product.Unit = dto.Unit;
                 product.Weight = dto.Weight;
                 product.CompanyId = companyId;
@@ -442,6 +486,93 @@ namespace Storix_BE.Repository.Implementation
                 .Where(c => c.Name == typeName)
                 .Select(c => (int?)c.Id)
                 .FirstOrDefaultAsync();
+        }
+        private async Task<int?> ResolveProductCategoryId(string? categoryName)
+        {
+            if (string.IsNullOrWhiteSpace(categoryName)) return null;
+
+            return await _context.ProductCategories
+                .Where(c => c.Name == categoryName)
+                .Select(c => (int?)c.Id)
+                .FirstOrDefaultAsync();
+        }
+        public async Task<List<ProductCategory>> GetAllProductCategoriesAsync(int companyId)
+        {
+            return await _context.ProductCategories
+                .AsNoTracking()
+                .Where(c => c.CompanyId == companyId)
+                .OrderBy(c => c.Id)
+                .ToListAsync();
+        }
+
+        public async Task<ProductCategory> CreateCategoryAsync(ProductCategory category)
+        {
+            if (category == null) throw new InvalidOperationException("Category cannot be null.");
+            var name = category.Name?.Trim();
+            if (string.IsNullOrWhiteSpace(name)) throw new InvalidOperationException("Product category name is required.");
+
+            // ensure unique name within same company and parent scope
+            var nameLower = name.ToLowerInvariant();
+            var parentId = category.ParentCategoryId;
+            var exists = await _context.ProductCategories
+                .AsNoTracking()
+                .FirstOrDefaultAsync(c =>
+                    c.CompanyId == category.CompanyId &&
+                    c.ParentCategoryId == parentId &&
+                    c.Name != null && c.Name.ToLower() == nameLower);
+
+            if (exists != null)
+                throw new InvalidOperationException($"Product category with name '{name}' already exists in the same scope.");
+
+            // resolve parent (if any) and compute level
+            int level = 0;
+            if (parentId.HasValue)
+            {
+                var parent = await _context.ProductCategories.FindAsync(parentId.Value);
+                if (parent == null)
+                    throw new InvalidOperationException($"Parent product category with id {parentId.Value} not found.");
+                // ensure same company when specified
+                if (parent.CompanyId.HasValue && category.CompanyId.HasValue && parent.CompanyId != category.CompanyId)
+                    throw new InvalidOperationException("Parent category does not belong to the same company as the new category.");
+                level = parent.Level + 1;
+            }
+
+            var newCategory = new ProductCategory
+            {
+                Name = name,
+                CompanyId = category.CompanyId,
+                ParentCategoryId = parentId,
+                Level = level,
+                CreatedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified)
+            };
+
+            _context.ProductCategories.Add(newCategory);
+            await _context.SaveChangesAsync();
+
+            return await _context.ProductCategories
+            .AsNoTracking()
+            .FirstOrDefaultAsync(c => c.Id == newCategory.Id) ?? newCategory;
+        }
+
+        public async Task<bool> RemoveCategoryAsync(ProductCategory category)
+        {
+            if (category == null) throw new InvalidOperationException("Category cannot be null.");
+            var existing = await _context.ProductCategories
+                .Include(c => c.InverseParentCategory)
+                .Include(c => c.Products)
+                .FirstOrDefaultAsync(c => c.Id == category.Id);
+
+            if (existing == null) return false;
+
+            if ((existing.InverseParentCategory != null && existing.InverseParentCategory.Any()) ||
+                (existing.Products != null && existing.Products.Any()))
+            {
+                throw new InvalidOperationException("Cannot remove product category because it has child categories or products referencing it.");
+            }
+
+            _context.ProductCategories.Remove(existing);
+            await _context.SaveChangesAsync();
+            return true;
         }
     }
 }

@@ -26,6 +26,7 @@ public partial class Company
     public DateTime? UpdatedAt { get; set; }
     public virtual ICollection<CompanyPayment> CompanyPayments { get; set; } = new List<CompanyPayment>();
     public virtual ICollection<Subscription> Subscriptions { get; set; } = new List<Subscription>();
+    public virtual ICollection<ProductCategory> ProductCategories { get; set; } = new List<ProductCategory>();
     public virtual ICollection<ProductType> ProductTypes { get; set; } = new List<ProductType>();
 
     public virtual ICollection<Product> Products { get; set; } = new List<Product>();

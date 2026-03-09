@@ -15,8 +15,6 @@ public partial class Product
 
     public int? TypeId { get; set; }
 
-    public string? Category { get; set; }
-
     public string? Unit { get; set; }
 
     public double? Weight { get; set; }
@@ -34,6 +32,10 @@ public partial class Product
     public double? Length { get; set; }
 
     public double? Height { get; set; }
+
+    public int? CategoryId { get; set; }
+
+    public virtual ProductCategory? Category { get; set; }
 
     public virtual Company? Company { get; set; }
 

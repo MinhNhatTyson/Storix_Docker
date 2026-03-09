@@ -26,6 +26,10 @@ namespace Storix_BE.Service.Interfaces
         Task<ProductType?> UpdateProductTypeAsync(int id, UpdateProductTypeRequest request);
         Task<bool> DeleteProductTypeAsync(int id);
         Task<int> GetCompanyIdByUserIdAsync(int userId);
+        Task<List<ProductCategory>> GetChildCategoriesAsync(int parentId);
+        Task<List<ProductCategory>> GetAllProductCategoriesAsync(int companyId);
+        Task<ProductCategory> CreateProductCategoryAsync(CreateProductCategoryRequest request);
+        Task<bool> DeleteProductCategoryAsync(int id);
         Task<List<ProductExportDto>> GetProductsForExportAsync();
         byte[] ExportProductsToCsv(List<ProductExportDto> products);
         byte[] ExportProductsToExcel(List<ProductExportDto> products);
@@ -40,7 +44,7 @@ namespace Storix_BE.Service.Interfaces
         string? Sku,
         string? Name,
         int? TypeId,
-        string? Category,
+        int? CategoryId,
         string? Unit,
         double? Weight,
         string? Description,
@@ -51,9 +55,21 @@ namespace Storix_BE.Service.Interfaces
         string Sku,
         string? Name,
         int? TypeId,
-        string? Category,
+        int? CategoryId,
         string? Unit,
         double? Weight,
         string? Description,
         IFormFile? Image);
+    public sealed record ProductResponseDTO(
+        int ProductId,
+        string? Sku,
+        string? Name,
+        int? TypeId,
+        int? CategoryId,
+        string? Unit,
+        double? Weight,
+        string? Description,
+        double? LatestPrice,
+        IFormFile? Image);
+    public sealed record CreateProductCategoryRequest(int CompanyId, string Name, int? ParentCategoryId);
 }

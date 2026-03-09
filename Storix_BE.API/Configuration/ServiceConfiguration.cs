@@ -25,6 +25,7 @@ namespace Storix_BE.API.Configuration
             // services.AddScoped<ISubscriptionService, SubscriptionService>(); // tạm tắt subscription
             services.AddScoped<IReportingService, ReportingService>();
             services.AddScoped<IInventoryCountService, InventoryCountService>();
+            services.AddScoped<IWarehouseTransferService, WarehouseTransferService>();
             services.AddTransient<IImageService, ImageService>();
             services.AddTransient<IEmailService, EmailService>();
 

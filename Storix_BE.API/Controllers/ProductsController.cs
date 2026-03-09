@@ -1,5 +1,9 @@
-﻿using Microsoft.AspNetCore.Authorization;
+﻿using DocumentFormat.OpenXml.Office2010.Excel;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
+using Org.BouncyCastle.Asn1.Ocsp;
+using Storix_BE.Service.Implementation;
 using Storix_BE.Service.Interfaces;
 
 namespace Storix_BE.API.Controllers
@@ -143,7 +147,7 @@ namespace Storix_BE.API.Controllers
                 return Ok("Successfully deleted the product with id: " + id);
             }
             catch (InvalidOperationException ex)
-            {                
+            {
                 return BadRequest(new { message = ex.Message });
             }
         }
@@ -170,12 +174,15 @@ namespace Storix_BE.API.Controllers
 
         [HttpPost("create-new-product-type")]
         [Authorize(Roles = "2")]
-        public async Task<IActionResult> Create([FromBody] Storix_BE.Service.Interfaces.CreateProductTypeRequest request)
+        public async Task<IActionResult> Create([FromBody] CreateProductTypeRequest request)
         {
+            if (request == null) return BadRequest(new { message = "Request cannot be null." });
+
             try
             {
-                var created = await _service.CreateProductTypeAsync(request);
-                return Ok(created);
+                var companyScopedRequest = new CreateProductTypeRequest(request.CompanyId, request.Name);
+                var created = await _service.CreateProductTypeAsync(companyScopedRequest);
+                return CreatedAtAction(nameof(GetAllProductTypes), new { userId = request.CompanyId }, created);
             }
             catch (InvalidOperationException ex)
             {
@@ -261,6 +268,76 @@ namespace Storix_BE.API.Controllers
             await _service.ImportProductsAsync(products);
 
             return Ok(new { message = "Excel import successful" });
+        }
+        [HttpGet("categories/children/{parentId:int}")]
+        [Authorize(Roles = "2,3")]
+        public async Task<IActionResult> GetCategoryChildren(int parentId)
+        {
+            if (parentId <= 0) return BadRequest(new { message = "Invalid parent category id." });
+
+            try
+            {
+                var children = await _service.GetChildCategoriesAsync(parentId);
+                return Ok(children);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+        [HttpGet("categories/company/{userId:int}")]
+        [Authorize(Roles = "2,3")]
+        public async Task<IActionResult> GetAllCategoriesForCompany(int userId)
+        {
+            if (userId <= 0) return BadRequest(new { message = "Invalid user id." });
+
+            try
+            {
+                var companyId = await _service.GetCompanyIdByUserIdAsync(userId);
+                if (companyId <= 0) return NotFound("Cannot find company id with the provided user id");
+
+                var categories = await _service.GetAllProductCategoriesAsync(companyId);
+                return Ok(categories);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        [HttpPost("categories/create")]
+        [Authorize(Roles = "2")]
+        public async Task<IActionResult> CreateCategory([FromBody] CreateProductCategoryRequest request)
+        {
+            if (request == null) return BadRequest(new { message = "Request cannot be null." });
+
+            try
+            {
+                var created = await _service.CreateProductCategoryAsync(request);
+                return CreatedAtAction(nameof(GetAllCategoriesForCompany), new { userId = request.CompanyId }, created);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        [HttpDelete("categories/{id:int}")]
+        [Authorize(Roles = "2")]
+        public async Task<IActionResult> DeleteCategory(int id)
+        {
+            if (id <= 0) return BadRequest(new { message = "Invalid category id." });
+
+            try
+            {
+                var removed = await _service.DeleteProductCategoryAsync(id);
+                if (!removed) return NotFound();
+                return NoContent();
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
         }
     }
 }

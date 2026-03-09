@@ -48,6 +48,8 @@ public partial class StorixDbContext : DbContext
 
     public virtual DbSet<Product> Products { get; set; }
 
+    public virtual DbSet<ProductCategory> ProductCategories { get; set; }
+
     public virtual DbSet<ProductPrice> ProductPrices { get; set; }
 
     public virtual DbSet<ProductType> ProductTypes { get; set; }
@@ -631,9 +633,7 @@ public partial class StorixDbContext : DbContext
             entity.HasIndex(e => e.Sku, "products_sku_key").IsUnique();
 
             entity.Property(e => e.Id).HasColumnName("id");
-            entity.Property(e => e.Category)
-                .HasColumnType("character varying")
-                .HasColumnName("category");
+            entity.Property(e => e.CategoryId).HasColumnName("category_id");
             entity.Property(e => e.CompanyId).HasColumnName("company_id");
             entity.Property(e => e.CreatedAt)
                 .HasColumnType("timestamp without time zone")
@@ -658,6 +658,11 @@ public partial class StorixDbContext : DbContext
             entity.Property(e => e.Weight).HasColumnName("weight");
             entity.Property(e => e.Width).HasColumnName("width");
 
+            entity.HasOne(d => d.Category).WithMany(p => p.Products)
+                .HasForeignKey(d => d.CategoryId)
+                .OnDelete(DeleteBehavior.SetNull)
+                .HasConstraintName("fk_product_category");
+
             entity.HasOne(d => d.Company).WithMany(p => p.Products)
                 .HasForeignKey(d => d.CompanyId)
                 .HasConstraintName("fk_products_company_id");
@@ -665,6 +670,37 @@ public partial class StorixDbContext : DbContext
             entity.HasOne(d => d.Type).WithMany(p => p.Products)
                 .HasForeignKey(d => d.TypeId)
                 .HasConstraintName("fk_products_type_id");
+        });
+
+        modelBuilder.Entity<ProductCategory>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("product_categories_pkey");
+
+            entity.ToTable("product_categories");
+
+            entity.Property(e => e.Id).HasColumnName("id");
+            entity.Property(e => e.CompanyId).HasColumnName("company_id");
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("CURRENT_TIMESTAMP")
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("created_at");
+            entity.Property(e => e.Level)
+                .HasDefaultValue(1)
+                .HasColumnName("level");
+            entity.Property(e => e.Name)
+                .HasMaxLength(255)
+                .HasColumnName("name");
+            entity.Property(e => e.ParentCategoryId).HasColumnName("parent_category_id");
+
+            entity.HasOne(d => d.Company).WithMany(p => p.ProductCategories)
+                .HasForeignKey(d => d.CompanyId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("fk_product_category_company");
+
+            entity.HasOne(d => d.ParentCategory).WithMany(p => p.InverseParentCategory)
+                .HasForeignKey(d => d.ParentCategoryId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("fk_product_category_parent");
         });
 
         modelBuilder.Entity<ProductPrice>(entity =>
