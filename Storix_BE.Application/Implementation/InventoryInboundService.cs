@@ -1,4 +1,6 @@
-﻿using Storix_BE.Domain.Models;
+﻿using ClosedXML.Excel;
+using Microsoft.AspNetCore.Http;
+using Storix_BE.Domain.Models;
 using Storix_BE.Repository.DTO;
 using Storix_BE.Repository.Interfaces;
 using Storix_BE.Service.Interfaces;
@@ -42,6 +44,11 @@ namespace Storix_BE.Service.Implementation
             if (request.OrderDiscount.HasValue && (double.IsNaN(request.OrderDiscount.Value) || request.OrderDiscount.Value < 0 || request.OrderDiscount.Value > 100))
                 throw new InvalidOperationException("OrderDiscount must be in the range of 0 - 100");
 
+            if (string.IsNullOrWhiteSpace(request.Note))
+                throw new InvalidOperationException("Note is required.");
+
+            if (!request.ExpectedArrivalDate.HasValue)
+                throw new InvalidOperationException("ExpectedArrivalDate is required.");
             var today = DateOnly.FromDateTime(DateTime.UtcNow);
             if (request.ExpectedArrivalDate.Value < today)
                 throw new InvalidOperationException("ExpectedArrivalDate cannot be in the past.");
@@ -108,7 +115,54 @@ namespace Storix_BE.Service.Implementation
             var createdRequest = await _repo.CreateInventoryInboundTicketRequest(inboundRequest, productPrices);
             return createdRequest;
         }
+        public async Task<InboundRequest> ImportInboundRequestAsync(IFormFile file)
+        {
+            if (file == null || file.Length == 0)
+                throw new InvalidOperationException("Excel file is empty.");
 
+            using var stream = new MemoryStream();
+            await file.CopyToAsync(stream);
+
+            using var workbook = new XLWorkbook(stream);
+            var worksheet = workbook.Worksheet(1);
+
+            // HEADER (Row 2)
+            var header = worksheet.Row(2);
+
+            // Fix: Use List<CreateInboundOrderItemRequest> for Items so we can add items
+            var items = new List<CreateInboundOrderItemRequest>();
+
+            var request = new CreateInboundRequestRequest(
+                header.Cell(1).GetValue<int>(),
+                header.Cell(2).GetValue<int>(),
+                header.Cell(3).GetValue<int>(),
+                header.Cell(4).GetValue<string>(),
+                DateOnly.FromDateTime(header.Cell(5).GetDateTime()),
+                header.Cell(6).GetValue<double>(),
+                items
+            );
+
+            // ITEMS
+            int itemHeaderRow = 4;
+            int row = itemHeaderRow + 1;
+
+            while (!worksheet.Row(row).IsEmpty())
+            {
+                var item = new CreateInboundOrderItemRequest(
+                    worksheet.Row(row).Cell(1).GetValue<int>(),
+                    worksheet.Row(row).Cell(2).GetValue<int>(),
+                    worksheet.Row(row).Cell(3).GetValue<double>(),
+                    worksheet.Row(row).Cell(4).GetValue<double>()
+                );
+
+                items.Add(item); // Fix: Add to the List, not to IEnumerable
+
+                row++;
+            }
+
+            // IMPORTANT: reuse your existing logic
+            return await CreateInboundRequestAsync(request);
+        }
         private async Task<string> GenerateUniqueCodeAsync()
         {
             const string prefix = "PO";
@@ -143,7 +197,7 @@ namespace Storix_BE.Service.Implementation
         {
             if (inboundRequestId <= 0) throw new ArgumentException("Invalid inboundRequestId.", nameof(inboundRequestId));
             if (createdBy <= 0) throw new ArgumentException("Invalid createdBy.", nameof(createdBy));
-            if(staffId.HasValue && staffId.Value <= 0) throw new ArgumentException("Invalid staffId.", nameof(staffId));
+            // staffId may be null (optional)
 
             return await _repo.CreateInboundOrderFromRequestAsync(inboundRequestId, createdBy, staffId);
         }
