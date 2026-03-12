@@ -23,5 +23,6 @@ namespace Storix_BE.Repository.DTO
         public int? UserId { get; set; }
         public int? RoleId { get; set; }
         public int? CompanyId { get; set; }
+        public int? WarehouseId { get; set; }
     }
 }

@@ -42,7 +42,8 @@ namespace Storix_BE.API.Controllers
                     RefreshToken = result.RefreshToken,
                     RoleId = result.RoleId,
                     UserId = result.UserId,
-                    CompanyId = result.CompanyId
+                    CompanyId = result.CompanyId,
+                    WarehouseId = result.WarehouseId
                 });
             }
             catch (UnauthorizedAccessException)
