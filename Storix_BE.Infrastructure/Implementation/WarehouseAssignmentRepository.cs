@@ -24,6 +24,7 @@ namespace Storix_BE.Repository.Implementation
         {
             return await _context.Warehouses.FindAsync(warehouseId);
         }
+
         public async Task<List<Warehouse>> GetWarehousesByCompanyIdAsync(int companyId)
         {
             return await _context.Warehouses
@@ -31,6 +32,7 @@ namespace Storix_BE.Repository.Implementation
                 .OrderBy(w => w.Id)
                 .ToListAsync();
         }
+
         public async Task<WarehouseAssignment?> GetAssignmentAsync(int userId, int warehouseId)
         {
             return await _context.WarehouseAssignments

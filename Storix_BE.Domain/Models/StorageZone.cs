@@ -29,6 +29,12 @@ public partial class StorageZone
 
     public double? YCoordinate { get; set; }
 
+    public bool? IsEsd { get; set; }
+
+    public bool? IsMsd { get; set; }
+
+    public string? ZoneType { get; set; }
+
     public virtual ICollection<Shelf> Shelves { get; set; } = new List<Shelf>();
 
     public virtual ProductType? Type { get; set; }

@@ -1013,12 +1013,15 @@ public partial class StorixDbContext : DbContext
             entity.Property(e => e.Image)
                 .HasColumnType("character varying")
                 .HasColumnName("image");
+            entity.Property(e => e.IsEsd).HasColumnName("isESD");
+            entity.Property(e => e.IsMsd).HasColumnName("isMSD");
             entity.Property(e => e.Length).HasColumnName("length");
             entity.Property(e => e.TypeId).HasColumnName("type_id");
             entity.Property(e => e.WarehouseId).HasColumnName("warehouse_id");
             entity.Property(e => e.Width).HasColumnName("width");
             entity.Property(e => e.XCoordinate).HasColumnName("x_coordinate");
             entity.Property(e => e.YCoordinate).HasColumnName("y_coordinate");
+            entity.Property(e => e.ZoneType).HasColumnName("zoneType");
 
             entity.HasOne(d => d.Type).WithMany(p => p.StorageZones)
                 .HasForeignKey(d => d.TypeId)
