@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Storix_BE.Domain.Exception;
 using Storix_BE.Repository.DTO;
 using Storix_BE.Service.Interfaces;
+using System.Collections.Generic;
 
 namespace Storix_BE.API.Controllers
 {
@@ -323,6 +324,9 @@ namespace Storix_BE.API.Controllers
                         width = z.Width,
                         height = z.Height,
                         length = z.Length,
+                        IsEsd = z.IsEsd,
+                        IsMsd =z.IsMsd,
+                        ZoneType = z.ZoneType,
                         shelves = z.Shelves?.Select(s => (object)new
                         {
                             id = s.IdCode,
@@ -351,7 +355,8 @@ namespace Storix_BE.API.Controllers
                                     ? l.ShelfLevelBins.Select(b => (object)new
                                     {
                                         id = b.IdCode,
-                                        code = b.Code
+                                        code = b.Code,
+                                        status = b.Status
                                     }).ToList()
                                     : new List<object>()
                             }).ToList()
