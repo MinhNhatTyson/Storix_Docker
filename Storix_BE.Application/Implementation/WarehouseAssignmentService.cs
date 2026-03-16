@@ -262,6 +262,7 @@ namespace Storix_BE.Service.Implementation
             {
                 Width = request.Width.HasValue ? Convert.ToInt32(Math.Round(request.Width.Value)) : null,
                 Height = request.Height.HasValue ? Convert.ToInt32(Math.Round(request.Height.Value)) : null,
+                Length = request.Length.HasValue ? Convert.ToInt32(Math.Round(request.Length.Value)) : null,
                 // keep CompanyId null here — repository update will attach to existing warehouse
             };
 
@@ -302,6 +303,7 @@ namespace Storix_BE.Service.Implementation
                     if (!zoneIds.Add(z.Id)) throw new InvalidOperationException($"Duplicate Zone IdCode detected: '{z.Id}'");
                     if (z.Width.HasValue && z.Width.Value < 0) throw new InvalidOperationException($"Zone '{z.Id}' width must be >= 0.");
                     if (z.Height.HasValue && z.Height.Value < 0) throw new InvalidOperationException($"Zone '{z.Id}' height must be >= 0.");
+                    if (z.Length.HasValue && z.Length.Value < 0) throw new InvalidOperationException($"Zone '{z.Id}' length must be >= 0.");
                     if (z.X.HasValue && z.X.Value < 0) throw new InvalidOperationException($"Zone '{z.Id}' X must be >= 0.");
                     if (z.Y.HasValue && z.Y.Value < 0) throw new InvalidOperationException($"Zone '{z.Id}' Y must be >= 0.");
 
@@ -311,6 +313,7 @@ namespace Storix_BE.Service.Implementation
                         Code = z.Code,
                         Width = z.Width,
                         Height = z.Height,
+                        Length = z.Length,
                         XCoordinate = z.X,
                         YCoordinate = z.Y,
                         IsEsd = z.isESD,
@@ -341,6 +344,7 @@ namespace Storix_BE.Service.Implementation
                                 YCoordinate = s.Y.HasValue ? Convert.ToInt32(Math.Round(s.Y.Value)) : null,
                                 Width = s.Width.HasValue ? Convert.ToInt32(Math.Round(s.Width.Value)) : null,
                                 Height = s.Height.HasValue ? Convert.ToInt32(Math.Round(s.Height.Value)) : null,
+                                Length = s.Length.HasValue ? Convert.ToInt32(Math.Round(s.Length.Value)) : null,
                                 CreatedAt = now
                             };
                             zone.Shelves.Add(shelf);

@@ -216,6 +216,7 @@ namespace Storix_BE.Repository.Implementation
                 // Update dimensions
                 existing.Width = warehouseStructure.Width;
                 existing.Height = warehouseStructure.Height;
+                existing.Length = warehouseStructure.Length;
 
                 var now = System.DateTime.SpecifyKind(System.DateTime.UtcNow, System.DateTimeKind.Unspecified);
 

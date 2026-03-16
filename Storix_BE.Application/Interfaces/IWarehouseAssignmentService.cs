@@ -24,6 +24,7 @@ namespace Storix_BE.Service.Interfaces
     public sealed record CreateWarehouseRequest(
         double? Width,
         double? Height,
+        double? Length,
         IEnumerable<ZoneDto>? Zones,
         IEnumerable<NodeDto>? Nodes,
         IEnumerable<EdgeDto>? Edges);
@@ -41,6 +42,7 @@ namespace Storix_BE.Service.Interfaces
         double? Y,
         double? Width,
         double? Height,
+        double? Length,
         bool? isESD,
         bool? isMSD,
         string? zoneType,
@@ -53,6 +55,7 @@ namespace Storix_BE.Service.Interfaces
         double? Y,
         double? Width,
         double? Height,
+        double? Length,
         IEnumerable<AccessNodeDto>? AccessNodes,
         IEnumerable<LevelDto>? Levels);
 
