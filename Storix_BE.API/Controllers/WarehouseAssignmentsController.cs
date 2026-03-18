@@ -286,6 +286,11 @@ namespace Storix_BE.API.Controllers
             {
                 var warehouse = await _assignmentService.GetWarehouseStructureAsync(companyId, warehouseId);
 
+                // Find the start node (type == "start")
+                var startNode = warehouse.NavNodes?.FirstOrDefault(n => n.Type == "start");
+                double? startX = startNode?.XCoordinate;
+                double? startY = startNode?.YCoordinate;
+
                 var nodes = warehouse.NavNodes == null
                     ? new List<object>()
                     : warehouse.NavNodes
@@ -325,42 +330,59 @@ namespace Storix_BE.API.Controllers
                         height = z.Height,
                         length = z.Length,
                         IsEsd = z.IsEsd,
-                        IsMsd =z.IsMsd,
+                        IsMsd = z.IsMsd,
                         ZoneType = z.ZoneType,
-                        shelves = z.Shelves?.Select(s => (object)new
+                        shelves = z.Shelves?.Select(s =>
                         {
-                            id = s.IdCode,
-                            code = s.Code,
-                            x = s.XCoordinate,
-                            y = s.YCoordinate,
-                            width = s.Width,
-                            height = s.Height,
-                            length = s.Length,
-                            accessNodes = (s.ShelfNodes != null
-                            ? s.ShelfNodes.Select(sn => (object)new
-                            {
-                                id = sn.IdCode ?? sn.Node?.IdCode,
-                                side = sn.Node?.Side,
-                                x = sn.Node?.XCoordinate,
-                                y = sn.Node?.YCoordinate
-                            }).ToList()
-                            : new List<object>()),
+                            // compute actual shelf coordinate = shelf coordinate + zone coordinate
+                            var actualX = z.XCoordinate + s.XCoordinate;
+                            var actualY = z.YCoordinate + s.YCoordinate;
 
-                            levels = s.ShelfLevels != null
-                            ? s.ShelfLevels.Select(l => (object)new
+                            // compute distance from start node if start exists
+                            double? distanceFromStart = null;
+                            if (startX.HasValue && startY.HasValue)
                             {
-                                id = l.IdCode,
-                                code = l.Code,
-                                bins = l.ShelfLevelBins != null
-                                    ? l.ShelfLevelBins.Select(b => (object)new
-                                    {
-                                        id = b.IdCode,
-                                        code = b.Code,
-                                        status = b.Status
-                                    }).ToList()
-                                    : new List<object>()
-                            }).ToList()
-                            : new List<object>()
+                                var dx = actualX - startX.Value;
+                                var dy = actualY - startY.Value;
+                                distanceFromStart = Math.Sqrt((double)(dx * dx + dy * dy));
+                            }
+
+                            return (object)new
+                            {
+                                id = s.IdCode,
+                                code = s.Code,
+                                x = s.XCoordinate,
+                                y = s.YCoordinate,
+                                width = s.Width,
+                                height = s.Height,
+                                length = s.Length,
+                                distanceFromStart = distanceFromStart,
+                                accessNodes = (s.ShelfNodes != null
+                                ? s.ShelfNodes.Select(sn => (object)new
+                                {
+                                    id = sn.IdCode ?? sn.Node?.IdCode,
+                                    side = sn.Node?.Side,
+                                    x = sn.Node?.XCoordinate,
+                                    y = sn.Node?.YCoordinate
+                                }).ToList()
+                                : new List<object>()),
+
+                                levels = s.ShelfLevels != null
+                                ? s.ShelfLevels.Select(l => (object)new
+                                {
+                                    id = l.IdCode,
+                                    code = l.Code,
+                                    bins = l.ShelfLevelBins != null
+                                        ? l.ShelfLevelBins.Select(b => (object)new
+                                        {
+                                            id = b.IdCode,
+                                            code = b.Code,
+                                            status = b.Status
+                                        }).ToList()
+                                        : new List<object>()
+                                }).ToList()
+                                : new List<object>()
+                            };
                         }).ToList() ?? new List<object>()
                     }).ToList() ?? new List<object>();
 

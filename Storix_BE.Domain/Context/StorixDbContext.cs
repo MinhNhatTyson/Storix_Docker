@@ -641,10 +641,13 @@ public partial class StorixDbContext : DbContext
             entity.Property(e => e.Description).HasColumnName("description");
             entity.Property(e => e.Height).HasColumnName("height");
             entity.Property(e => e.Image).HasColumnName("image");
+            entity.Property(e => e.IsEsd).HasColumnName("isEsd");
+            entity.Property(e => e.IsMsd).HasColumnName("isMsd");
             entity.Property(e => e.Length).HasColumnName("length");
             entity.Property(e => e.Name)
                 .HasColumnType("character varying")
                 .HasColumnName("name");
+            entity.Property(e => e.PopularityScore).HasColumnName("popularity_score");
             entity.Property(e => e.Sku)
                 .HasColumnType("character varying")
                 .HasColumnName("sku");

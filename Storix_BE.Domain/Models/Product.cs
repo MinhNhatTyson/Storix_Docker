@@ -35,6 +35,12 @@ public partial class Product
 
     public int? CategoryId { get; set; }
 
+    public bool? IsEsd { get; set; }
+
+    public bool? IsMsd { get; set; }
+
+    public double? PopularityScore { get; set; }
+
     public virtual ProductCategory? Category { get; set; }
 
     public virtual Company? Company { get; set; }
