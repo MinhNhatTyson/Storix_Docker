@@ -111,7 +111,6 @@ namespace Storix_BE.Repository.Implementation
                 await tx.RollbackAsync().ConfigureAwait(false);
                 throw;
             }
-            await UpdateProductPopularityAsync().ConfigureAwait(false);
             return request;
         }
 
@@ -135,29 +134,6 @@ namespace Storix_BE.Repository.Implementation
             await _context.SaveChangesAsync().ConfigureAwait(false);
 
             return inbound;
-        }
-        private async Task UpdateProductPopularityAsync()
-        {
-            // Example using Raw SQL in Entity Framework
-            var sql = @"UPDATE products
-                    SET popularity_score = sub.new_score
-                    FROM (
-                        SELECT 
-                            p.id,
-                            (COALESCE(SUM(ooi.quantity), 0) * 0.6) + 
-                            (CASE 
-                                WHEN MAX(it.created_at) IS NULL THEN 0 
-                                ELSE (30 - EXTRACT(DAY FROM (NOW() - MAX(it.created_at)))) 
-                             END * 0.4) as new_score
-                        FROM products p
-                        LEFT JOIN outbound_order_items ooi ON p.id = ooi.product_id
-                        LEFT JOIN inventory_transactions it ON p.id = it.product_id 
-                            AND it.transaction_type = 'OUT'
-                        WHERE it.created_at > NOW() - INTERVAL '30 days' OR it.created_at IS NULL
-                        GROUP BY p.id
-                    ) AS sub
-                    WHERE products.id = sub.id;";
-            await _context.Database.ExecuteSqlRawAsync(sql);
         }
         public async Task<InboundOrder> CreateInboundOrderFromRequestAsync(int inboundRequestId, int createdBy, int? staffId)
         {
@@ -214,7 +190,6 @@ namespace Storix_BE.Repository.Implementation
                 await tx.RollbackAsync().ConfigureAwait(false);
                 throw;
             }
-            await UpdateProductPopularityAsync().ConfigureAwait(false);
 
             return inboundOrder;
         }
