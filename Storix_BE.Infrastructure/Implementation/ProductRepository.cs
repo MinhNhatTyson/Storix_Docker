@@ -155,6 +155,11 @@ namespace Storix_BE.Repository.Implementation
             existing.Name = product.Name;
             existing.Unit = product.Unit;
             existing.Weight = product.Weight;
+            existing.Width = product.Width;
+            existing.Length = product.Length;
+            existing.Height = product.Height;
+            existing.IsEsd = product.IsEsd;
+            existing.IsMsd = product.IsMsd;
             existing.Description = product.Description;
             existing.Image = product.Image;
             existing.UpdatedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);

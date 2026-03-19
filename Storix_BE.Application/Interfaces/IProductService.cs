@@ -50,6 +50,8 @@ namespace Storix_BE.Service.Interfaces
         double? Width,
         double? Length,
         double? Height,
+        bool? IsEsd,
+        bool? IsMsd,
         string? Description,
         IFormFile? Image);
 
@@ -64,6 +66,8 @@ namespace Storix_BE.Service.Interfaces
         double? Width,
         double? Length,
         double? Height,
+        bool? IsEsd,
+        bool? IsMsd,
         string? Description,
         IFormFile? Image);
     public sealed record ProductResponseDTO(

@@ -101,6 +101,8 @@ namespace Storix_BE.Service.Implementation
                 Width = request.Width,
                 Length = request.Length,
                 Height = request.Height,
+                IsEsd = request.IsEsd,
+                IsMsd = request.IsMsd,
                 Description = request.Description,
                 Image = imageUrl
             };
@@ -166,6 +168,8 @@ namespace Storix_BE.Service.Implementation
             if (request.Width.HasValue) existing.Width = request.Width;
             if (request.Length.HasValue) existing.Length = request.Length;
             if (request.Height.HasValue) existing.Height = request.Height;
+            if (request.IsEsd.HasValue) existing.IsEsd = request.IsEsd;
+            if (request.IsMsd.HasValue) existing.IsMsd = request.IsMsd;
             if (request.Description != null) existing.Description = request.Description;
 
             await _repo.UpdateAsync(existing);
