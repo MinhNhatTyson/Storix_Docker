@@ -228,6 +228,14 @@ namespace Storix_BE.API.Controllers
             return await ExecuteStaffTransition(transferOrderId, (companyId, userId) => _service.ReceiveAsync(companyId, userId, transferOrderId, request)).ConfigureAwait(false);
         }
 
+        [HttpPost("{transferOrderId:int}/quality-check")]
+        [Authorize(Roles = "4")]
+        public async Task<IActionResult> QualityCheck(int transferOrderId, [FromBody] TransferQualityCheckRequest request)
+        {
+            if (request == null) return BadRequest(new { message = "Request body is required." });
+            return await ExecuteStaffTransition(transferOrderId, (companyId, userId) => _service.QualityCheckAsync(companyId, userId, transferOrderId, request)).ConfigureAwait(false);
+        }
+
         [HttpPost("{transferOrderId:int}/cancel")]
         [Authorize(Roles = "3")]
         public async Task<IActionResult> Cancel(int transferOrderId, [FromBody] CancelTransferOrderRequest? request)

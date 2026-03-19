@@ -20,6 +20,7 @@ namespace Storix_BE.Service.Interfaces
         Task<TransferOrderDetailDto> MarkPackedAsync(int companyId, int actorUserId, int transferOrderId);
         Task<TransferOrderDetailDto> ShipAsync(int companyId, int actorUserId, int transferOrderId);
         Task<TransferOrderDetailDto> ReceiveAsync(int companyId, int actorUserId, int transferOrderId, ReceiveTransferOrderRequest request);
+        Task<TransferOrderDetailDto> QualityCheckAsync(int companyId, int actorUserId, int transferOrderId, TransferQualityCheckRequest request);
 
         Task<TransferOrderDetailDto> CancelAsync(int companyId, int actorUserId, int transferOrderId, string? reason);
 
@@ -40,16 +41,21 @@ namespace Storix_BE.Service.Interfaces
         public const string ReceivedFull = "RECEIVED_FULL";
         public const string ReceivedPartial = "RECEIVED_PARTIAL";
         public const string Completed = "COMPLETED";
+        public const string QualityChecked = "QUALITY_CHECKED";
+        public const string QualityIssue = "QUALITY_ISSUE";
         public const string Cancelled = "CANCELLED";
     }
 
-    public sealed record CreateTransferOrderRequest(int SourceWarehouseId, int DestinationWarehouseId, bool SubmitAfterCreate = false);
-    public sealed record UpdateTransferOrderRequest(int SourceWarehouseId, int DestinationWarehouseId);
+    public sealed record CreateTransferOrderRequest(int SourceWarehouseId, int DestinationWarehouseId, int? CarrierUserId = null, bool SubmitAfterCreate = false);
+    public sealed record UpdateTransferOrderRequest(int SourceWarehouseId, int DestinationWarehouseId, int? CarrierUserId = null);
     public sealed record AddTransferOrderItemRequest(int ProductId, int Quantity);
     public sealed record UpdateTransferOrderItemRequest(int ProductId, int Quantity);
 
     public sealed record ReceiveTransferItemRequest(int ProductId, int ReceivedQuantity, int? DamagedQuantity);
     public sealed record ReceiveTransferOrderRequest(IEnumerable<ReceiveTransferItemRequest> Items, string? Note);
+
+    public sealed record TransferQualityCheckItemRequest(int ProductId, int OkQuantity, int BadQuantity, string? Note);
+    public sealed record TransferQualityCheckRequest(IEnumerable<TransferQualityCheckItemRequest> Items, string? Note);
 
     public sealed record TransferOrderItemDto(int Id, int? ProductId, string? ProductName, int? Quantity);
 

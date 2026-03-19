@@ -23,6 +23,9 @@ namespace Storix_BE.Service.Implementation
             await GetWarehouseInCompanyAsync(request.SourceWarehouseId, companyId);
             await GetWarehouseInCompanyAsync(request.DestinationWarehouseId, companyId);
 
+            if (request.CarrierUserId.HasValue && request.CarrierUserId.Value > 0)
+                await EnsureStaffAssignedToWarehouseAsync(request.CarrierUserId.Value, request.SourceWarehouseId, companyId);
+
             var entity = new TransferOrder
             {
                 SourceWarehouseId = request.SourceWarehouseId,
@@ -34,6 +37,10 @@ namespace Storix_BE.Service.Implementation
 
             _context.TransferOrders.Add(entity);
             await _context.SaveChangesAsync();
+
+            if (request.CarrierUserId.HasValue && request.CarrierUserId.Value > 0)
+                await AddActivityAsync(createdBy, $"CARRIER:{request.CarrierUserId.Value}", entity.Id);
+
             await AddActivityAsync(createdBy, "TRANSFER_CREATED_DRAFT", entity.Id);
 
             if (request.SubmitAfterCreate)
@@ -55,6 +62,10 @@ namespace Storix_BE.Service.Implementation
             order.SourceWarehouseId = request.SourceWarehouseId;
             order.DestinationWarehouseId = request.DestinationWarehouseId;
             await _context.SaveChangesAsync();
+
+            if (request.CarrierUserId.HasValue && request.CarrierUserId.Value > 0)
+                await AddActivityAsync(actorUserId, $"CARRIER:{request.CarrierUserId.Value}", order.Id);
+
             await AddActivityAsync(actorUserId, "TRANSFER_UPDATED_DRAFT", order.Id);
 
             return await GetByIdAsync(companyId, order.Id);
@@ -180,12 +191,77 @@ namespace Storix_BE.Service.Implementation
                 {
                     var inv = inventories.First(i => i.ProductId == line.ProductId);
                     var qty = line.Quantity ?? 0;
-                    inv.ReservedQuantity = (inv.ReservedQuantity ?? 0) + qty;
+                    inv.Quantity = (inv.Quantity ?? 0) - qty;
                     inv.LastUpdated = now;
+
+                    _context.InventoryTransactions.Add(new InventoryTransaction
+                    {
+                        WarehouseId = order.SourceWarehouseId,
+                        ProductId = line.ProductId,
+                        QuantityChange = -qty,
+                        TransactionType = "TransferApproveOut",
+                        ReferenceId = order.Id,
+                        PerformedBy = actorUserId,
+                        CreatedAt = now
+                    });
                 }
+
+                var carrierId = await ResolveCarrierUserIdAsync(order.Id);
+
+                var outbound = new OutboundOrder
+                {
+                    WarehouseId = order.SourceWarehouseId,
+                    Destination = order.DestinationWarehouse?.Name,
+                    CreatedBy = actorUserId,
+                    StaffId = carrierId,
+                    Status = "Picking",
+                    Note = $"AUTO_FROM_TRANSFER#{order.Id}",
+                    CreatedAt = now
+                };
+
+                foreach (var line in items)
+                {
+                    outbound.OutboundOrderItems.Add(new OutboundOrderItem
+                    {
+                        ProductId = line.ProductId,
+                        Quantity = line.Quantity,
+                        PricingMethod = "LastPurchasePrice"
+                    });
+                }
+
+                _context.OutboundOrders.Add(outbound);
+                await _context.SaveChangesAsync();
+
+                var inbound = new InboundOrder
+                {
+                    WarehouseId = order.DestinationWarehouseId,
+                    CreatedBy = actorUserId,
+                    StaffId = null,
+                    Status = "Created",
+                    ReferenceCode = $"AUTO_FROM_TRANSFER#{order.Id}",
+                    CreatedAt = now
+                };
+
+                foreach (var line in items)
+                {
+                    inbound.InboundOrderItems.Add(new InboundOrderItem
+                    {
+                        ProductId = line.ProductId,
+                        ExpectedQuantity = line.Quantity,
+                        ReceivedQuantity = 0
+                    });
+                }
+
+                _context.InboundOrders.Add(inbound);
+                await _context.SaveChangesAsync();
 
                 order.Status = TransferStatuses.Approved;
                 await _context.SaveChangesAsync();
+
+                await AddActivityAsync(actorUserId, $"LINK_OUTBOUND:{outbound.Id}", order.Id);
+                await AddActivityAsync(actorUserId, $"LINK_INBOUND:{inbound.Id}", order.Id);
+                await AddActivityAsync(actorUserId, "TRANSFER_APPROVED", order.Id);
+
                 await tx.CommitAsync();
             }
             catch
@@ -194,7 +270,6 @@ namespace Storix_BE.Service.Implementation
                 throw;
             }
 
-            await AddActivityAsync(actorUserId, "TRANSFER_APPROVED", order.Id);
             return await GetByIdAsync(companyId, order.Id);
         }
 
@@ -322,6 +397,69 @@ namespace Storix_BE.Service.Implementation
             }
 
             await AddActivityAsync(actorUserId, string.IsNullOrWhiteSpace(request.Note) ? "TRANSFER_RECEIVED" : $"TRANSFER_RECEIVED:{request.Note}", order.Id);
+            return await GetByIdAsync(companyId, order.Id);
+        }
+
+        public async Task<TransferOrderDetailDto> QualityCheckAsync(int companyId, int actorUserId, int transferOrderId, TransferQualityCheckRequest request)
+        {
+            if (request == null) throw new ArgumentNullException(nameof(request));
+            var order = await GetOrderInCompanyAsync(companyId, transferOrderId);
+            await EnsureStaffAssignedToWarehouseAsync(actorUserId, order.SourceWarehouseId ?? 0, companyId);
+
+            var items = request.Items?.ToList() ?? new List<TransferQualityCheckItemRequest>();
+            if (!items.Any()) throw new InvalidOperationException("quality items required");
+
+            var orderItems = await _context.TransferOrderItems.Where(x => x.TransferOrderId == order.Id).ToListAsync();
+            var reqByProduct = orderItems.Where(i => i.ProductId.HasValue)
+                .ToDictionary(i => i.ProductId!.Value, i => i.Quantity ?? 0);
+
+            foreach (var line in items)
+            {
+                if (!reqByProduct.ContainsKey(line.ProductId))
+                    throw new InvalidOperationException($"INVALID_PRODUCT {line.ProductId}");
+                if (line.OkQuantity < 0 || line.BadQuantity < 0)
+                    throw new InvalidOperationException("INVALID_QUANTITY");
+                if (line.OkQuantity + line.BadQuantity > reqByProduct[line.ProductId])
+                    throw new InvalidOperationException($"QUALITY_OVERFLOW ProductId={line.ProductId}");
+            }
+
+            var outboundId = await ResolveLinkedOutboundIdAsync(order.Id);
+            if (outboundId == null)
+                throw new InvalidOperationException("Linked outbound order not found.");
+
+            var outbound = await _context.OutboundOrders
+                .Include(o => o.OutboundOrderItems)
+                .FirstOrDefaultAsync(o => o.Id == outboundId.Value);
+            if (outbound == null)
+                throw new InvalidOperationException("Linked outbound order not found.");
+
+            var status = items.Any(i => i.BadQuantity > 0) ? TransferStatuses.QualityIssue : TransferStatuses.QualityChecked;
+            order.Status = status;
+            await _context.SaveChangesAsync();
+
+            try
+            {
+                outbound.Status = items.Any(i => i.BadQuantity > 0) ? "IssueReported" : "QualityCheck";
+                await _context.SaveChangesAsync();
+            }
+            catch
+            {
+                // best effort outbound update
+            }
+
+            var note = string.IsNullOrWhiteSpace(request.Note) ? "QUALITY_CHECK" : $"QUALITY_CHECK:{request.Note}";
+            await AddActivityAsync(actorUserId, note, order.Id);
+
+            foreach (var line in items)
+            {
+                var itemNote = string.IsNullOrWhiteSpace(line.Note)
+                    ? $"QUALITY_ITEM:{line.ProductId}:{line.OkQuantity}:{line.BadQuantity}"
+                    : $"QUALITY_ITEM:{line.ProductId}:{line.OkQuantity}:{line.BadQuantity}:{line.Note}";
+                await AddActivityAsync(actorUserId, itemNote, order.Id);
+            }
+
+            await AddActivityAsync(actorUserId, $"OUTBOUND_QUALITY_UPDATED:{outbound.Id}", order.Id);
+
             return await GetByIdAsync(companyId, order.Id);
         }
 
@@ -484,6 +622,34 @@ namespace Storix_BE.Service.Implementation
                 Timestamp = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified)
             });
             await _context.SaveChangesAsync();
+        }
+
+        private async Task<int?> ResolveLinkedOutboundIdAsync(int transferOrderId)
+        {
+            var action = await _context.ActivityLogs
+                .Where(a => a.Entity == "TransferOrder" && a.EntityId == transferOrderId && a.Action != null && a.Action.StartsWith("LINK_OUTBOUND:"))
+                .OrderByDescending(a => a.Timestamp)
+                .Select(a => a.Action)
+                .FirstOrDefaultAsync();
+
+            if (string.IsNullOrWhiteSpace(action)) return null;
+            var parts = action.Split(':');
+            if (parts.Length != 2) return null;
+            return int.TryParse(parts[1], out var id) ? id : null;
+        }
+
+        private async Task<int?> ResolveCarrierUserIdAsync(int transferOrderId)
+        {
+            var action = await _context.ActivityLogs
+                .Where(a => a.Entity == "TransferOrder" && a.EntityId == transferOrderId && a.Action != null && a.Action.StartsWith("CARRIER:"))
+                .OrderByDescending(a => a.Timestamp)
+                .Select(a => a.Action)
+                .FirstOrDefaultAsync();
+
+            if (string.IsNullOrWhiteSpace(action)) return null;
+            var parts = action.Split(':');
+            if (parts.Length != 2) return null;
+            return int.TryParse(parts[1], out var id) ? id : null;
         }
 
         private static void EnsureCanEdit(string? status)
