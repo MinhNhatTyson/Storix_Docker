@@ -19,6 +19,27 @@ namespace Storix_BE.API.Controllers
         {
             _service = service;
         }
+        [HttpPost("update-popularity_score")]
+        public async Task<IActionResult> UpdatePopularityScore()
+        {
+            try
+            {
+                await _service.UpdateProductPopularityAsync();
+                return Ok();
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = ex.Message });
+            }
+        }
         [HttpGet("get-all/{userId:int}")]
         [Authorize(Roles = "2,3")]
         public async Task<IActionResult> GetAllProductsFromACompany(int userId)

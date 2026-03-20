@@ -36,6 +36,7 @@ namespace Storix_BE.Repository.Interfaces
         Task<List<ProductCategory>> GetAllProductCategoriesAsync(int companyId);
         Task<ProductCategory> CreateCategoryAsync(ProductCategory category);
         Task<bool> RemoveCategoryAsync(ProductCategory category);
+        Task UpdateProductPopularityAsync();
 
     }
 }

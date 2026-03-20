@@ -36,6 +36,7 @@ namespace Storix_BE.Service.Interfaces
         List<ProductExportDto> ParseProductsFromCsv(IFormFile file);
         List<ProductExportDto> ParseProductsFromExcel(IFormFile file);
         Task ImportProductsAsync(List<ProductExportDto> dtos);
+            Task UpdateProductPopularityAsync();
     }
     public sealed record CreateProductTypeRequest(int CompanyId, string Name);
     public sealed record UpdateProductTypeRequest(string Name);

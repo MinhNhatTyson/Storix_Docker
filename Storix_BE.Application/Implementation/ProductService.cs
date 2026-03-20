@@ -325,5 +325,9 @@ namespace Storix_BE.Service.Implementation
             if (existing == null) return false;
             return await _repo.RemoveCategoryAsync(existing);
         }
+        public async Task UpdateProductPopularityAsync()
+        {
+            await _repo.UpdateProductPopularityAsync();
+        }
     }
 }
