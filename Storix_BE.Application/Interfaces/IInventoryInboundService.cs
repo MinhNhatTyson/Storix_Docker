@@ -32,6 +32,11 @@ namespace Storix_BE.Service.Interfaces
         byte[] ExportInboundOrderToCsv(InboundOrderExportDto order);
         byte[] ExportInboundOrderToExcel(InboundOrderExportDto order);
         Task<InboundRequest> ImportInboundRequestAsync(IFormFile file);
+
+        public sealed record RecommendationPayload(string BinId, string? Path, double? DistanceInfo);
+        public sealed record StorageRecommendationItemRequest(int InboundProductId, RecommendationPayload Recommendation, string? Reason);
+        public sealed record AddStorageRecommendationsRequest(IEnumerable<StorageRecommendationItemRequest> StorageRecommendations);
+        Task AddStorageRecommendationsAsync(AddStorageRecommendationsRequest request);
     }
     public sealed record SupplierDto(int Id, string? Name, string? Phone, string? Email);
 

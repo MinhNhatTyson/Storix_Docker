@@ -28,5 +28,11 @@ namespace Storix_BE.Repository.Interfaces
 
         byte[] ExportInboundOrderToCsv(InboundOrderExportDto order);
         byte[] ExportInboundOrderToExcel(InboundOrderExportDto order);
+
+
+        public sealed record RecommendationCreateDto(string BinIdCode, string? Path, double? DistanceInfo);
+        public sealed record StorageRecommendationCreateDto(int InboundProductId, RecommendationCreateDto Recommendation, string? Reason);
+
+        Task AddStorageRecommendationsAsync(IEnumerable<StorageRecommendationCreateDto> requests);
     }
 }

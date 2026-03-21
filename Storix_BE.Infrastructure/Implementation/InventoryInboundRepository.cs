@@ -805,5 +805,73 @@ namespace Storix_BE.Repository.Implementation
             workbook.SaveAs(stream);
             return stream.ToArray();
         }
+        public async Task AddStorageRecommendationsAsync(IEnumerable<IInventoryInboundRepository.StorageRecommendationCreateDto> requests)
+        {
+            if (requests == null) throw new ArgumentNullException(nameof(requests));
+
+            var list = requests.ToList();
+            if (!list.Any()) return;
+
+            var inboundProductIds = list.Select(r => r.InboundProductId).Distinct().ToList();
+            // Validate inbound products exist
+            var existingInboundProductIds = await _context.InboundOrderItems
+                .Where(i => inboundProductIds.Contains(i.Id))
+                .Select(i => i.Id)
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            var missingInbound = inboundProductIds.Except(existingInboundProductIds).ToList();
+            if (missingInbound.Any())
+                throw new InvalidOperationException($"InboundOrderItems not found: {string.Join(',', missingInbound)}");
+
+            // Resolve shelf level bins by IdCode (BinIdCode)
+            var binIdCodes = list.Select(r => r.Recommendation.BinIdCode).Distinct().ToList();
+            var shelfBins = await _context.ShelfLevelBins
+                .Where(b => binIdCodes.Contains(b.IdCode))
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            var missingBins = binIdCodes.Except(shelfBins.Select(b => b.IdCode)).ToList();
+            if (missingBins.Any())
+                throw new InvalidOperationException($"ShelfLevelBins not found for IdCodes: {string.Join(',', missingBins)}");
+
+            // Use transaction to persist Recommendation and StorageRecommendation atomically
+            await using var tx = await _context.Database.BeginTransactionAsync().ConfigureAwait(false);
+            try
+            {
+                var now = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
+
+                foreach (var req in list)
+                {
+                    var bin = shelfBins.First(b => b.IdCode == req.Recommendation.BinIdCode);
+
+                    var recommendation = new Recommendation
+                    {
+                        BinId = bin.Id,
+                        Path = req.Recommendation.Path,
+                        DistanceInfo = req.Recommendation.DistanceInfo
+                    };
+
+                    // Create StorageRecommendation with navigation to Recommendation so EF will insert both and set FK.
+                    var storageRecommendation = new StorageRecommendation
+                    {
+                        InboundProductId = req.InboundProductId,
+                        Recommendation = recommendation,
+                        Reason = req.Reason,
+                        CreatedAt = now
+                    };
+
+                    _context.StorageRecommendations.Add(storageRecommendation);
+                }
+
+                await _context.SaveChangesAsync().ConfigureAwait(false);
+                await tx.CommitAsync().ConfigureAwait(false);
+            }
+            catch
+            {
+                await tx.RollbackAsync().ConfigureAwait(false);
+                throw;
+            }
+        }
     }
 }

@@ -377,5 +377,29 @@ namespace Storix_BE.Service.Implementation
         {
             return _repo.ExportInboundOrderToExcel(order);
         }
+        public async Task AddStorageRecommendationsAsync(IInventoryInboundService.AddStorageRecommendationsRequest request)
+        {
+            if (request == null) throw new ArgumentNullException(nameof(request));
+
+            var items = request.StorageRecommendations?.ToList();
+            if (items == null || !items.Any()) throw new InvalidOperationException("storageRecommendations payload is required and cannot be empty.");
+
+            // Basic validation
+            foreach (var it in items)
+            {
+                if (it.InboundProductId <= 0) throw new ArgumentException("Each storage recommendation must contain a valid inboundProductId.");
+                if (it.Recommendation == null) throw new ArgumentException("Recommendation is required for each storage recommendation.");
+                if (string.IsNullOrWhiteSpace(it.Recommendation.BinId)) throw new ArgumentException("Recommendation.binId (ShelfLevelBin.IdCode) is required.");
+            }
+
+            // Map to repository DTOs
+            var repoDtos = items.Select(i => new IInventoryInboundRepository.StorageRecommendationCreateDto(
+                i.InboundProductId,
+                new IInventoryInboundRepository.RecommendationCreateDto(i.Recommendation.BinId, i.Recommendation.Path, i.Recommendation.DistanceInfo),
+                i.Reason
+            )).ToList();
+
+            await _repo.AddStorageRecommendationsAsync(repoDtos).ConfigureAwait(false);
+        }
     }
 }

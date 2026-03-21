@@ -351,6 +351,27 @@ namespace Storix_BE.API.Controllers
             var result = await _service.ImportInboundRequestAsync(file);
             return Ok(result);
         }
+        [HttpPost("storage-recommendations")]
+        public async Task<IActionResult> AddStorageRecommendations([FromBody] IInventoryInboundService.AddStorageRecommendationsRequest request)
+        {
+            try
+            {
+                await _service.AddStorageRecommendationsAsync(request);
+                return Ok(new { message = "Storage recommendations added successfully." });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = ex.Message });
+            }
+        }
     }
     public sealed record CreateTicketFromRequestRequest(int CreatedBy, int StaffId);
 }
