@@ -9,11 +9,13 @@ public partial class StorageRecommendation
 
     public int? InboundProductId { get; set; }
 
-    public string? StorageRecommendation1 { get; set; }
-
     public string? Reason { get; set; }
 
     public DateTime? CreatedAt { get; set; }
 
+    public int? RecommendationId { get; set; }
+
     public virtual InboundOrderItem? InboundProduct { get; set; }
+
+    public virtual Recommendation? Recommendation { get; set; }
 }

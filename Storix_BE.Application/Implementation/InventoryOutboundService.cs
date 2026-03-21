@@ -4,7 +4,6 @@ using Storix_BE.Service.Interfaces;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
 
 namespace Storix_BE.Service.Implementation
@@ -33,7 +32,8 @@ namespace Storix_BE.Service.Implementation
             {
                 WarehouseId = request.WarehouseId,
                 Destination = request.Destination,
-                RequestedBy = request.RequestedBy
+                RequestedBy = request.RequestedBy,
+                Reason = request.Reason
             };
 
             foreach (var item in request.Items)
@@ -63,12 +63,19 @@ namespace Storix_BE.Service.Implementation
             return await _repo.UpdateOutboundRequestStatusAsync(requestId, approverId, status);
         }
 
-        public async Task<OutboundOrder> CreateOutboundOrderFromRequestAsync(int outboundRequestId, int createdBy, int? staffId, string? note)
+        public async Task<OutboundOrder> CreateOutboundOrderFromRequestAsync(int outboundRequestId, int createdBy, int? staffId, string? note, string? pricingMethod = "LastPurchasePrice")
         {
             if (outboundRequestId <= 0) throw new ArgumentException("Invalid outboundRequestId.", nameof(outboundRequestId));
             if (createdBy <= 0) throw new ArgumentException("Invalid createdBy.", nameof(createdBy));
 
-            return await _repo.CreateOutboundOrderFromRequestAsync(outboundRequestId, createdBy, staffId, note);
+            var method = string.IsNullOrWhiteSpace(pricingMethod) ? "LastPurchasePrice" : pricingMethod.Trim();
+            if (!string.Equals(method, "LastPurchasePrice", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(method, "SpecificIdentification", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException("Invalid pricing method. Allowed: LastPurchasePrice, SpecificIdentification.", nameof(pricingMethod));
+            }
+
+            return await _repo.CreateOutboundOrderFromRequestAsync(outboundRequestId, createdBy, staffId, note, method);
         }
 
         public async Task<OutboundOrder> UpdateOutboundOrderItemsAsync(int outboundOrderId, IEnumerable<UpdateOutboundOrderItemRequest> items)
@@ -96,12 +103,48 @@ namespace Storix_BE.Service.Implementation
             return await _repo.UpdateOutboundOrderStatusAsync(outboundOrderId, performedBy, status);
         }
 
-        public async Task<OutboundOrder> ConfirmOutboundOrderAsync(int outboundOrderId, int performedBy)
+        public async Task<OutboundOrder> ConfirmOutboundOrderAsync(int outboundOrderId, int performedBy, IEnumerable<ConfirmOutboundBatchAllocationRequest> allocations)
         {
             if (outboundOrderId <= 0) throw new ArgumentException("Invalid outboundOrderId.", nameof(outboundOrderId));
             if (performedBy <= 0) throw new ArgumentException("Invalid performedBy.", nameof(performedBy));
+            if (allocations == null) throw new ArgumentNullException(nameof(allocations));
 
-            return await _repo.ConfirmOutboundOrderAsync(outboundOrderId, performedBy);
+            var mapped = allocations.Select(a => (a.ProductId, a.BatchId, a.Quantity)).ToList();
+            if (!mapped.Any()) throw new InvalidOperationException("Allocations are required. Each outbound line must specify explicit batch allocations.");
+
+            var invalid = mapped.FirstOrDefault(a => a.ProductId <= 0 || a.BatchId <= 0 || a.Quantity <= 0);
+            if (invalid != default)
+                throw new InvalidOperationException("Each allocation must have ProductId > 0, BatchId > 0 and Quantity > 0.");
+
+            return await _repo.ConfirmOutboundOrderAsync(outboundOrderId, performedBy, mapped);
+        }
+
+        public async Task<OutboundOrder> ConfirmOutboundOrderAsync(int outboundOrderId, int performedBy, ConfirmOutboundOrderRequest request)
+        {
+            if (request == null) throw new ArgumentNullException(nameof(request));
+            if (outboundOrderId <= 0) throw new ArgumentException("Invalid outboundOrderId.", nameof(outboundOrderId));
+            if (performedBy <= 0) throw new ArgumentException("Invalid performedBy.", nameof(performedBy));
+
+            var batchAllocations = (request.Allocations ?? Enumerable.Empty<ConfirmOutboundBatchAllocationRequest>())
+                .Select(a => (a.ProductId, a.BatchId, a.Quantity))
+                .ToList();
+
+            if (!batchAllocations.Any())
+                throw new InvalidOperationException("Allocations are required. Each outbound line must specify explicit batch allocations.");
+
+            var invalidBatch = batchAllocations.FirstOrDefault(a => a.ProductId <= 0 || a.BatchId <= 0 || a.Quantity <= 0);
+            if (invalidBatch != default)
+                throw new InvalidOperationException("Each allocation must have ProductId > 0, BatchId > 0 and Quantity > 0.");
+
+            var locationAllocations = (request.LocationAllocations ?? Enumerable.Empty<ConfirmOutboundLocationAllocationRequest>())
+                .Select(a => (a.ProductId, a.ShelfId, a.Quantity))
+                .ToList();
+
+            var invalidLocation = locationAllocations.FirstOrDefault(a => a.ProductId <= 0 || a.ShelfId <= 0 || a.Quantity <= 0);
+            if (invalidLocation != default)
+                throw new InvalidOperationException("Each location allocation must have ProductId > 0, ShelfId > 0 and Quantity > 0.");
+
+            return await _repo.ConfirmOutboundOrderAsync(outboundOrderId, performedBy, batchAllocations, locationAllocations, request.Note);
         }
         private static OutboundWarehouseDto? MapWarehouse(Warehouse? w)
         {
@@ -123,7 +166,9 @@ namespace Storix_BE.Service.Implementation
                 item.ProductId,
                 p?.Name,
                 item.Quantity,
-                item.Price);
+                item.Price,
+                item.CostPrice,
+                item.PricingMethod);
         }
 
         private static OutboundRequestDto MapOutboundRequestToDto(OutboundRequest r)
@@ -135,6 +180,8 @@ namespace Storix_BE.Service.Implementation
                 r.RequestedBy,
                 r.ApprovedBy,
                 r.Destination,
+                r.Reason,
+                r.ReferenceCode,
                 r.Status,
                 r.TotalPrice,
                 r.CreatedAt,
