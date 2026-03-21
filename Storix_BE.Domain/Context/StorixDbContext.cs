@@ -989,9 +989,6 @@ public partial class StorixDbContext : DbContext
             entity.Property(e => e.Reason)
                 .HasColumnType("character varying")
                 .HasColumnName("reason");
-            entity.Property(e => e.StorageRecommendation1)
-                .HasColumnType("character varying")
-                .HasColumnName("storage_recommendation");
 
             entity.HasOne(d => d.InboundProduct).WithMany(p => p.StorageRecommendations)
                 .HasForeignKey(d => d.InboundProductId)
