@@ -24,6 +24,20 @@ namespace Storix_BE.Repository.DTO
         public DateTime? ApprovedAt { get; set; }
         public List<InboundOrderItemExportDto> Items { get; set; } = new();
     }
+    public class OutboundRequestExportDto
+    {
+        public int Id { get; set; }
+        public string? Code { get; set; }
+        public string? Warehouse { get; set; }
+        public string? RequestedBy { get; set; }
+        public string? ApprovedBy { get; set; }
+        public string? Status { get; set; }
+        public string? Destination { get; set; }
+        public double? TotalPrice { get; set; }
+        public DateTime? CreatedAt { get; set; }
+        public DateTime? ApprovedAt { get; set; }
+        public List<OutboundOrderItemExportDto> Items { get; set; } = new();
+    }
     public class InboundOrderExportDto
     {
         public int Id { get; set; }
@@ -37,6 +51,18 @@ namespace Storix_BE.Repository.DTO
         public DateTime? CreatedAt { get; set; }
         public List<InboundOrderItemExportDto> Items { get; set; } = new();
     }
+    public class OutboundOrderExportDto
+    {
+        public int Id { get; set; }
+        public string? ReferenceCode { get; set; }
+        public string? Warehouse { get; set; }
+        public string? CreatedBy { get; set; }
+        public string? Staff { get; set; }
+        public string? Status { get; set; }
+        public double? TotalPrice { get; set; }
+        public DateTime? CreatedAt { get; set; }
+        public List<OutboundOrderItemExportDto> Items { get; set; } = new();
+    }
     public class InboundOrderItemExportDto
     {
         public int? ProductId { get; set; }
@@ -48,5 +74,34 @@ namespace Storix_BE.Repository.DTO
         public int? ReceivedQuantity { get; set; }
         public int? TypeId { get; set; }
         public string? Description { get; set; }
+    }
+    public class OutboundOrderItemExportDto
+    {
+        public int? ProductId { get; set; }
+        public string? Sku { get; set; }
+        public string? Name { get; set; }
+        public double? Price { get; set; }
+        public int? TypeId { get; set; }
+        public string? Description { get; set; }
+
+    }
+    public class ImportInboundRequestDto
+    {
+        public int WarehouseId { get; set; }
+        public int SupplierId { get; set; }
+        public string RequestedBy { get; set; }
+        public string Note { get; set; }
+        public DateTime ExpectedArrivalDate { get; set; }
+        public decimal OrderDiscount { get; set; }
+
+        public List<ImportInboundItemDto> Items { get; set; } = new();
+    }
+
+    public class ImportInboundItemDto
+    {
+        public int ProductId { get; set; }
+        public int ExpectedQuantity { get; set; }
+        public decimal Price { get; set; }
+        public decimal LineDiscount { get; set; }
     }
 }
