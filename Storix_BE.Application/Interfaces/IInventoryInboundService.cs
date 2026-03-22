@@ -37,6 +37,7 @@ namespace Storix_BE.Service.Interfaces
         public sealed record StorageRecommendationItemRequest(int InboundProductId, RecommendationPayload Recommendation, string? Reason);
         public sealed record AddStorageRecommendationsRequest(IEnumerable<StorageRecommendationItemRequest> StorageRecommendations);
         Task AddStorageRecommendationsAsync(AddStorageRecommendationsRequest request);
+        Task<List<InboundItemRecommendationsDto>> GetStorageRecommendationsByInboundOrderIdAsync(int inboundOrderId);
     }
     public sealed record SupplierDto(int Id, string? Name, string? Phone, string? Email);
 
@@ -107,4 +108,20 @@ namespace Storix_BE.Service.Interfaces
 
     public sealed record UpdateInboundRequestStatusRequest(int ApproverId, string Status);
     public sealed record UpdateInboundOrderItemRequest(int Id, int ProductId, int? ExpectedQuantity, int? ReceivedQuantity);
+    public sealed record StorageRecommendationDto(
+            int Id,
+            int? RecommendationId,
+            int? BinId,
+            string? BinIdCode,
+            string? Path,
+            double? DistanceInfo,
+            string? Reason,
+            DateTime? CreatedAt);
+
+    public sealed record InboundItemRecommendationsDto(
+        int InboundOrderItemId,
+        int? ProductId,
+        string? Sku,
+        string? Name,
+        IEnumerable<StorageRecommendationDto> StorageRecommendations);
 }

@@ -873,5 +873,27 @@ namespace Storix_BE.Repository.Implementation
                 throw;
             }
         }
+        public async Task<List<InboundOrderItem>> GetInboundOrderItemsWithRecommendationsAsync(int inboundOrderId)
+        {
+            if (inboundOrderId <= 0) throw new ArgumentException("Invalid inbound order id.", nameof(inboundOrderId));
+
+            var orderExists = await _context.InboundOrders
+                .AnyAsync(o => o.Id == inboundOrderId)
+                .ConfigureAwait(false);
+
+            if (!orderExists)
+                throw new InvalidOperationException($"InboundOrder with id {inboundOrderId} not found.");
+
+            var items = await _context.InboundOrderItems
+                .Where(i => i.InboundOrderId == inboundOrderId)
+                .Include(i => i.Product)
+                .Include(i => i.StorageRecommendations)
+                    .ThenInclude(sr => sr.Recommendation)
+                        .ThenInclude(r => r.Bin)
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            return items;
+        }
     }
 }

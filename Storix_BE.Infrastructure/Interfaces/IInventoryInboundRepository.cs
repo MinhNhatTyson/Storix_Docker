@@ -34,5 +34,6 @@ namespace Storix_BE.Repository.Interfaces
         public sealed record StorageRecommendationCreateDto(int InboundProductId, RecommendationCreateDto Recommendation, string? Reason);
 
         Task AddStorageRecommendationsAsync(IEnumerable<StorageRecommendationCreateDto> requests);
+        Task<List<InboundOrderItem>> GetInboundOrderItemsWithRecommendationsAsync(int inboundOrderId);
     }
 }

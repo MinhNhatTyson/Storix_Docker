@@ -372,6 +372,29 @@ namespace Storix_BE.API.Controllers
                 return StatusCode(500, new { message = ex.Message });
             }
         }
+        [HttpGet("get-inbound-orders/{inboundOrderId:int}/storage-recommendations")]
+        public async Task<IActionResult> GetStorageRecommendations(int inboundOrderId)
+        {
+            if (inboundOrderId <= 0) return BadRequest(new { message = "Invalid inbound order id." });
+
+            try
+            {
+                var items = await _service.GetStorageRecommendationsByInboundOrderIdAsync(inboundOrderId);
+                return Ok(items);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = ex.Message });
+            }
+        }
     }
     public sealed record CreateTicketFromRequestRequest(int CreatedBy, int StaffId);
 }
