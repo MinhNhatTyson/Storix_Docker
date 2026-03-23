@@ -91,10 +91,28 @@ public partial class StorixDbContext : DbContext
     public virtual DbSet<Report> Reports { get; set; }
 
     public virtual DbSet<Subscription> Subscriptions { get; set; }
+    public virtual DbSet<Recommendation> Recommendations { get; set; }
 
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<Recommendation>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("recommendations_pkey");
+
+            entity.ToTable("recommendations");
+
+            entity.Property(e => e.Id)
+                .HasDefaultValueSql("nextval('storage_recommendations_id_seq'::regclass)")
+                .HasColumnName("id");
+            entity.Property(e => e.BinId).HasColumnName("bin_id");
+            entity.Property(e => e.DistanceInfo).HasColumnName("distance_info");
+            entity.Property(e => e.Path).HasColumnName("path");
+
+            entity.HasOne(d => d.Bin).WithMany(p => p.Recommendations)
+                .HasForeignKey(d => d.BinId)
+                .HasConstraintName("fk_recommendations_bin_id");
+        });
         modelBuilder.Entity<ActivityLog>(entity =>
         {
             entity.HasKey(e => e.Id).HasName("activity_logs_pkey");
