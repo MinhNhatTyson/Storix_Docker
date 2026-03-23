@@ -17,7 +17,9 @@ namespace Storix_BE.Repository.Interfaces
         Task<InboundRequest> CreateInventoryInboundTicketRequest(InboundRequest request, IEnumerable<ProductPrice>? productPrices = null);
         Task<InboundRequest> UpdateInventoryInboundTicketRequestStatus(int ticketRequestId, int approverId, string status);
         Task<InboundOrder> CreateInboundOrderFromRequestAsync(int inboundRequestId, int createdBy, int? staffId);
-        Task<InboundOrder> UpdateInboundOrderItemsAsync(int inboundOrderId, IEnumerable<InboundOrderItem> items);
+        public sealed record InventoryPlacementDto(int InboundOrderItemId, int ProductId, int Quantity, string BinIdCode);
+
+        Task<InboundOrder> UpdateInboundOrderItemsAsync(int inboundOrderId, IEnumerable<InboundOrderItem> items, IEnumerable<InventoryPlacementDto>? placements = null);
         Task<bool> InboundRequestCodeExistsAsync(string code);
         Task<List<InboundOrder>> GetInboundOrdersByStaffAsync(int companyId, int staffId);
         Task<InboundRequestExportDto?> GetInboundRequestForExportAsync(int inboundRequestId);
@@ -28,7 +30,6 @@ namespace Storix_BE.Repository.Interfaces
 
         byte[] ExportInboundOrderToCsv(InboundOrderExportDto order);
         byte[] ExportInboundOrderToExcel(InboundOrderExportDto order);
-
 
         public sealed record RecommendationCreateDto(string BinIdCode, string? Path, double? DistanceInfo);
         public sealed record StorageRecommendationCreateDto(int InboundProductId, RecommendationCreateDto Recommendation, string? Reason);

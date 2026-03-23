@@ -208,6 +208,7 @@ namespace Storix_BE.Service.Implementation
             if (items == null) throw new ArgumentNullException(nameof(items));
             if (!items.Any()) throw new InvalidOperationException("Items payload cannot be empty.");
 
+            // Map domain inbound order items (existing shape)
             var domainItems = items.Select(i => new InboundOrderItem
             {
                 Id = i.Id,
@@ -216,7 +217,18 @@ namespace Storix_BE.Service.Implementation
                 ReceivedQuantity = i.ReceivedQuantity
             }).ToList();
 
-            return await _repo.UpdateInboundOrderItemsAsync(inboundOrderId, domainItems);
+            // Map location placements to repository DTOs
+            var placements = items
+                .Where(i => i.Locations != null)
+                .SelectMany(i => i.Locations!.Select(loc => new IInventoryInboundRepository.InventoryPlacementDto(
+                    i.Id,
+                    i.ProductId,
+                    loc.Quantity,
+                    loc.BinId
+                )))
+                .ToList();
+
+            return await _repo.UpdateInboundOrderItemsAsync(inboundOrderId, domainItems, placements).ConfigureAwait(false);
         }
         private static SupplierDto? MapSupplier(Supplier? s)
         {

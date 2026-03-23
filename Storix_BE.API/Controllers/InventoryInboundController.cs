@@ -82,8 +82,9 @@ namespace Storix_BE.API.Controllers
 
         /// <summary>
         /// Update InboundOrder (ticket) items — modify expected/received quantities or add items.
+        /// Accepts location assignments to record where received units are stored (bin id code + quantity).
         /// </summary>
-        [HttpPut("tickets/{ticketId}/items")]
+        [HttpPut("update-tickets/{ticketId}/items")]
         public async Task<IActionResult> UpdateTicketItems(int ticketId, [FromBody] IEnumerable<UpdateInboundOrderItemRequest> items)
         {
             try

@@ -32,10 +32,10 @@ namespace Storix_BE.Service.Interfaces
         byte[] ExportInboundOrderToCsv(InboundOrderExportDto order);
         byte[] ExportInboundOrderToExcel(InboundOrderExportDto order);
         Task<InboundRequest> ImportInboundRequestAsync(IFormFile file);
-
         public sealed record RecommendationPayload(string BinId, string? Path, double? DistanceInfo);
         public sealed record StorageRecommendationItemRequest(int InboundProductId, RecommendationPayload Recommendation, string? Reason);
         public sealed record AddStorageRecommendationsRequest(IEnumerable<StorageRecommendationItemRequest> StorageRecommendations);
+
         Task AddStorageRecommendationsAsync(AddStorageRecommendationsRequest request);
         Task<List<InboundItemRecommendationsDto>> GetStorageRecommendationsByInboundOrderIdAsync(int inboundOrderId);
     }
@@ -107,7 +107,8 @@ namespace Storix_BE.Service.Interfaces
         IEnumerable<CreateInboundOrderItemRequest> Items);
 
     public sealed record UpdateInboundRequestStatusRequest(int ApproverId, string Status);
-    public sealed record UpdateInboundOrderItemRequest(int Id, int ProductId, int? ExpectedQuantity, int? ReceivedQuantity);
+    public sealed record LocationAssignmentRequest(string BinId, int Quantity);
+    public sealed record UpdateInboundOrderItemRequest(int Id, int ProductId, int? ExpectedQuantity, int? ReceivedQuantity, IEnumerable<LocationAssignmentRequest>? Locations);
     public sealed record StorageRecommendationDto(
             int Id,
             int? RecommendationId,
