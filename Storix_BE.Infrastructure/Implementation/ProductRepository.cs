@@ -32,7 +32,6 @@ namespace Storix_BE.Repository.Implementation
         {
             return await _context.Products
                 .AsNoTracking()
-                .Include(p => p.Type)
                 .Include(p => p.ProductPrices)
                 .Include(p => p.Category)
                 .ToListAsync();
@@ -42,7 +41,6 @@ namespace Storix_BE.Repository.Implementation
         {
             return await _context.Products
                 .AsNoTracking()
-                .Include(p => p.Type)
                 .Include(p => p.ProductPrices)
                 .Include(p => p.Category)
                 .FirstOrDefaultAsync(p => p.Id == id && p.CompanyId == companyId);
@@ -53,7 +51,6 @@ namespace Storix_BE.Repository.Implementation
             if (string.IsNullOrWhiteSpace(sku)) return null;
             return await _context.Products
                 .AsNoTracking()
-                .Include(p => p.Type)
                 .Include(p => p.ProductPrices)
                 .Include(p => p.Category)
                 .FirstOrDefaultAsync(p => p.Sku == sku && p.CompanyId == companyId);
@@ -63,7 +60,6 @@ namespace Storix_BE.Repository.Implementation
         {
             return await _context.Products
                 .AsNoTracking()
-                .Include(p => p.Type)
                 .Include(p => p.Category)
                 .Include(p => p.ProductPrices)
                 .Where(p => p.CompanyId == companyId)
@@ -94,21 +90,12 @@ namespace Storix_BE.Repository.Implementation
         {
             product.CreatedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
 
-            if (product.TypeId.HasValue)
-            {
-                var type = await _context.ProductTypes.FindAsync(product.TypeId.Value);
-                if (type == null)
-                    throw new InvalidOperationException($"Product type with id {product.TypeId.Value} not found.");
-                product.Type = type;
-            }
-
             _context.Products.Add(product);
             await _context.SaveChangesAsync();
 
             // Reload to ensure navigation is populated for the returned entity
             return await _context.Products
                 .AsNoTracking()
-                .Include(p => p.Type)
                 .Include(p => p.Category)
                 .FirstOrDefaultAsync(p => p.Id == product.Id) ?? product;
         }
@@ -119,21 +106,6 @@ namespace Storix_BE.Repository.Implementation
             var existing = await _context.Products.FirstOrDefaultAsync(p => p.Id == product.Id);
             if (existing == null)
                 throw new InvalidOperationException($"Product with id {product.Id} not found.");
-
-            // If TypeId changed / provided, validate and attach
-            if (product.TypeId.HasValue)
-            {
-                var type = await _context.ProductTypes.FindAsync(product.TypeId.Value);
-                if (type == null)
-                    throw new InvalidOperationException($"Product type with id {product.TypeId.Value} not found.");
-                existing.TypeId = product.TypeId;
-                existing.Type = type;
-            }
-            else
-            {
-                existing.TypeId = null;
-                existing.Type = null;
-            }
 
             // If CategoryId changed / provided, validate and attach
             if (product.CategoryId.HasValue)
@@ -331,7 +303,6 @@ namespace Storix_BE.Repository.Implementation
         {
             return await _context.Products
                 .Include(p => p.Company)
-                .Include(p => p.Type)
                 .Select(p => new ProductExportDto
                 {
                     Id = p.Id,
@@ -341,7 +312,6 @@ namespace Storix_BE.Repository.Implementation
                     Unit = p.Unit,
                     Weight = p.Weight,
                     CompanyName = p.Company != null ? p.Company.Name : null,
-                    ProductType = p.Type != null ? p.Type.Name : null,
                     Description = p.Description
                 })
                 .ToListAsync();
@@ -470,7 +440,6 @@ namespace Storix_BE.Repository.Implementation
                 product.Unit = dto.Unit;
                 product.Weight = dto.Weight;
                 product.CompanyId = companyId;
-                product.TypeId = typeId;
                 product.Description = dto.Description;
                 product.UpdatedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
             }

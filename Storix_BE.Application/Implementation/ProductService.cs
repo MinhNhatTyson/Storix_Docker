@@ -94,7 +94,6 @@ namespace Storix_BE.Service.Implementation
                 CompanyId = request.CompanyId,
                 Sku = request.Sku,
                 Name = request.Name,
-                TypeId = request.TypeId,
                 CategoryId = request.CategoryId,
                 Unit = request.Unit,
                 Weight = request.Weight,
@@ -161,7 +160,6 @@ namespace Storix_BE.Service.Implementation
             }
 
             if (request.Name != null) existing.Name = request.Name;
-            existing.TypeId = request.TypeId;
             existing.CategoryId = request.CategoryId;
             if (request.Unit != null) existing.Unit = request.Unit;
             if (request.Weight.HasValue) existing.Weight = request.Weight;

@@ -52,7 +52,6 @@ namespace Storix_BE.Service.Interfaces
         double? Price,
         double? LineDiscount,
         int? ExpectedQuantity,
-        int? TypeId,
         string? Description);
     public sealed record InboundRequestDto(
         int Id,

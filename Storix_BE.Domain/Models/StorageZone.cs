@@ -11,8 +11,6 @@ public partial class StorageZone
 
     public string? Code { get; set; }
 
-    public int? TypeId { get; set; }
-
     public string? Image { get; set; }
 
     public DateTime? CreatedAt { get; set; }
@@ -33,11 +31,11 @@ public partial class StorageZone
 
     public bool? IsMsd { get; set; }
 
-    public string? ZoneType { get; set; }
+    public bool? IsCold { get; set; }
 
+    public bool? IsVulnerable { get; set; }
+
+    public bool? IsHighValue { get; set; }
     public virtual ICollection<Shelf> Shelves { get; set; } = new List<Shelf>();
-
-    public virtual ProductType? Type { get; set; }
-
     public virtual Warehouse? Warehouse { get; set; }
 }

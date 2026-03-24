@@ -969,7 +969,6 @@ namespace Storix_BE.Repository.Implementation
                         Sku = i.Product != null ? i.Product.Sku : null,
                         Name = i.Product != null ? i.Product.Name : null,
                         Price = i.Price,
-                        TypeId = i.Product != null ? i.Product.TypeId : null,
                         Description = i.Product != null ? i.Product.Description : null
                     }).ToList()
                 })
@@ -1000,7 +999,6 @@ namespace Storix_BE.Repository.Implementation
                         Sku = i.Product != null ? i.Product.Sku : null,
                         Name = i.Product != null ? i.Product.Name : null,
                         Price = i.Price,
-                        TypeId = i.Product != null ? i.Product.TypeId : null,
                         Description = i.Product != null ? i.Product.Description : null
                     }).ToList()
                 })

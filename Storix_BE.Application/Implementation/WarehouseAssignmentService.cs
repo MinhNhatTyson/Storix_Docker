@@ -318,7 +318,6 @@ namespace Storix_BE.Service.Implementation
                         YCoordinate = z.Y,
                         IsEsd = z.isESD,
                         IsMsd = z.isMSD,
-                        ZoneType = z.zoneType,
                         CreatedAt = now
                     };
                     warehouseStructure.StorageZones.Add(zone);

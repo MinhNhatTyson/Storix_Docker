@@ -331,7 +331,6 @@ namespace Storix_BE.API.Controllers
                         length = z.Length,
                         IsEsd = z.IsEsd,
                         IsMsd = z.IsMsd,
-                        ZoneType = z.ZoneType,
                         shelves = z.Shelves?.Select(s =>
                         {
                             // compute actual shelf coordinate = shelf coordinate + zone coordinate

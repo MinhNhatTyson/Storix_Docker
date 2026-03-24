@@ -13,8 +13,6 @@ public partial class Product
 
     public string? Name { get; set; }
 
-    public int? TypeId { get; set; }
-
     public string? Unit { get; set; }
 
     public double? Weight { get; set; }
@@ -45,6 +43,11 @@ public partial class Product
 
     public virtual Company? Company { get; set; }
 
+    public bool? IsCold { get; set; }
+
+    public bool? IsVulnerable { get; set; }
+
+    public bool? IsHighValue { get; set; }
     public virtual ICollection<InboundOrderItem> InboundOrderItems { get; set; } = new List<InboundOrderItem>();
 
     public virtual ICollection<Inventory> Inventories { get; set; } = new List<Inventory>();
@@ -60,6 +63,4 @@ public partial class Product
     public virtual ICollection<StorageForecast> StorageForecasts { get; set; } = new List<StorageForecast>();
 
     public virtual ICollection<TransferOrderItem> TransferOrderItems { get; set; } = new List<TransferOrderItem>();
-
-    public virtual ProductType? Type { get; set; }
 }

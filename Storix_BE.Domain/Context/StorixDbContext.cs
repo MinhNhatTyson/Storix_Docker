@@ -582,7 +582,7 @@ public partial class StorixDbContext : DbContext
             entity.Property(e => e.OutboundRequestId).HasColumnName("outbound_request_id");
             entity.Property(e => e.Price).HasColumnName("price");
             entity.Property(e => e.ProductId).HasColumnName("product_id");
-            entity.Property(e => e.Quantity).HasColumnName("quantity"); 
+            entity.Property(e => e.Quantity).HasColumnName("quantity");
             entity.Property(e => e.PricingMethod)
                 .HasColumnType("character varying")
                 .HasColumnName("pricing_method");
@@ -659,8 +659,11 @@ public partial class StorixDbContext : DbContext
             entity.Property(e => e.Description).HasColumnName("description");
             entity.Property(e => e.Height).HasColumnName("height");
             entity.Property(e => e.Image).HasColumnName("image");
+            entity.Property(e => e.IsCold).HasColumnName("isCold");
             entity.Property(e => e.IsEsd).HasColumnName("isEsd");
+            entity.Property(e => e.IsHighValue).HasColumnName("isHighValue");
             entity.Property(e => e.IsMsd).HasColumnName("isMsd");
+            entity.Property(e => e.IsVulnerable).HasColumnName("isVulnerable");
             entity.Property(e => e.Length).HasColumnName("length");
             entity.Property(e => e.Name)
                 .HasColumnType("character varying")
@@ -669,7 +672,6 @@ public partial class StorixDbContext : DbContext
             entity.Property(e => e.Sku)
                 .HasColumnType("character varying")
                 .HasColumnName("sku");
-            entity.Property(e => e.TypeId).HasColumnName("type_id");
             entity.Property(e => e.Unit)
                 .HasColumnType("character varying")
                 .HasColumnName("unit");
@@ -687,10 +689,6 @@ public partial class StorixDbContext : DbContext
             entity.HasOne(d => d.Company).WithMany(p => p.Products)
                 .HasForeignKey(d => d.CompanyId)
                 .HasConstraintName("fk_products_company_id");
-
-            entity.HasOne(d => d.Type).WithMany(p => p.Products)
-                .HasForeignKey(d => d.TypeId)
-                .HasConstraintName("fk_products_type_id");
         });
 
         modelBuilder.Entity<ProductCategory>(entity =>
@@ -1036,19 +1034,15 @@ public partial class StorixDbContext : DbContext
             entity.Property(e => e.Image)
                 .HasColumnType("character varying")
                 .HasColumnName("image");
+            entity.Property(e => e.IsCold).HasColumnName("isCold");
             entity.Property(e => e.IsEsd).HasColumnName("isESD");
+            entity.Property(e => e.IsHighValue).HasColumnName("isHighValue");
             entity.Property(e => e.IsMsd).HasColumnName("isMSD");
             entity.Property(e => e.Length).HasColumnName("length");
-            entity.Property(e => e.TypeId).HasColumnName("type_id");
             entity.Property(e => e.WarehouseId).HasColumnName("warehouse_id");
             entity.Property(e => e.Width).HasColumnName("width");
             entity.Property(e => e.XCoordinate).HasColumnName("x_coordinate");
             entity.Property(e => e.YCoordinate).HasColumnName("y_coordinate");
-            entity.Property(e => e.ZoneType).HasColumnName("zoneType");
-
-            entity.HasOne(d => d.Type).WithMany(p => p.StorageZones)
-                .HasForeignKey(d => d.TypeId)
-                .HasConstraintName("fk_storage_zones_type_id");
 
             entity.HasOne(d => d.Warehouse).WithMany(p => p.StorageZones)
                 .HasForeignKey(d => d.WarehouseId)
