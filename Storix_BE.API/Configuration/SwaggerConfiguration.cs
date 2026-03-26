@@ -19,7 +19,6 @@ namespace CarServ.API.Configuration
                     BearerFormat = "JWT",
                     Scheme = "bearer"
                 });
-                DocExpansion = DocExpansion.None;
                 options.AddSecurityRequirement(new OpenApiSecurityRequirement
             {
                 {
