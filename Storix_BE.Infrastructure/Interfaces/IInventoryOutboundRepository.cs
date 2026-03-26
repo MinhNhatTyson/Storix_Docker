@@ -15,7 +15,9 @@ namespace Storix_BE.Repository.Interfaces
 
         Task<OutboundOrder> CreateOutboundOrderFromRequestAsync(int outboundRequestId, int createdBy, int? staffId, string? note, string? pricingMethod = "LastPurchasePrice");
 
-        Task<OutboundOrder> UpdateOutboundOrderItemsAsync(int outboundOrderId, IEnumerable<OutboundOrderItem> items);
+        public sealed record InventoryPlacementDto(int OutboundOrderItemId, int ProductId, int Quantity, string BinIdCode);
+
+        Task<OutboundOrder> UpdateOutboundOrderItemsAsync(int outboundOrderId, IEnumerable<OutboundOrderItem> items, IEnumerable<InventoryPlacementDto>? placements = null);
 
         Task<OutboundOrder> UpdateOutboundOrderStatusAsync(int outboundOrderId, int performedBy, string status);
 

@@ -19,8 +19,6 @@ namespace Storix_BE.Service.Interfaces
 
         Task<OutboundOrder> UpdateOutboundOrderStatusAsync(int outboundOrderId, int performedBy, string status);
 
-        Task<OutboundOrder> ConfirmOutboundOrderAsync(int outboundOrderId, int performedBy, IEnumerable<ConfirmOutboundBatchAllocationRequest> allocations);
-        Task<OutboundOrder> ConfirmOutboundOrderAsync(int outboundOrderId, int performedBy, ConfirmOutboundOrderRequest request);
         Task<List<OutboundRequestDto>> GetAllOutboundRequestsAsync(int companyId, int? warehouseId);
         Task<OutboundRequestDto> GetOutboundRequestByIdAsync(int companyId, int id);
         Task<List<OutboundOrderDto>> GetAllOutboundOrdersAsync(int companyId, int? warehouseId);
@@ -39,21 +37,18 @@ namespace Storix_BE.Service.Interfaces
 
     public sealed record UpdateOutboundRequestStatusRequest(int ApproverId, string Status);
 
-    public sealed record UpdateOutboundOrderItemRequest(int Id, int ProductId, int? Quantity);
+    public sealed record UpdateOutboundLocationAssignmentRequest(string BinId, int Quantity);
 
-    public sealed record UpdateOutboundOrderItemLocationRequest(int Id, int ProductId, int? Quantity, int? ShelfId);
+    // Keep payload shape aligned with inbound edit-items:
+    // id, productId, expectedQuantity, receivedQuantity, locations[]
+    public sealed record UpdateOutboundOrderItemRequest(
+        int Id,
+        int ProductId,
+        int? ExpectedQuantity,
+        int? ReceivedQuantity,
+        IEnumerable<UpdateOutboundLocationAssignmentRequest>? Locations);
 
     public sealed record CreateOutboundOrderFromRequestRequest(int CreatedBy, int? StaffId, string? Note, string? PricingMethod = "LastPurchasePrice");
-
-    public sealed record ConfirmOutboundBatchAllocationRequest(int ProductId, int BatchId, int Quantity);
-
-    public sealed record ConfirmOutboundLocationAllocationRequest(int ProductId, int ShelfId, int Quantity);
-
-    public sealed record ConfirmOutboundOrderRequest(
-        int PerformedBy,
-        IEnumerable<ConfirmOutboundBatchAllocationRequest>? Allocations,
-        IEnumerable<ConfirmOutboundLocationAllocationRequest>? LocationAllocations = null,
-        string? Note = null);
 
     public sealed record UpdateOutboundOrderStatusRequest(int PerformedBy, string Status);
 
@@ -62,7 +57,16 @@ namespace Storix_BE.Service.Interfaces
 
     public sealed record OutboundUserDto(int Id, string? FullName, string? Email, string? Phone);
 
-    public sealed record OutboundOrderItemDto(int Id, int? ProductId, string? ProductName, int? Quantity, double? Price, double? CostPrice, string? PricingMethod);
+    public sealed record OutboundOrderItemDto(
+        int Id,
+        int? ProductId,
+        string? ProductName,
+        int? ExpectedQuantity,
+        int? ReceivedQuantity,
+        int? Quantity,
+        double? Price,
+        double? CostPrice,
+        string? PricingMethod);
 
     public sealed record OutboundRequestDto(
         int Id,

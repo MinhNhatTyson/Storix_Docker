@@ -231,6 +231,8 @@ namespace Storix_BE.Repository.Implementation
                 var orderItem = new OutboundOrderItem
                 {
                     ProductId = reqItem.ProductId,
+                    ExpectedQuantity = reqItem.Quantity,
+                    ReceivedQuantity = reqItem.Quantity,
                     Quantity = reqItem.Quantity,
                     OutboundRequestId = outboundRequest.Id,
                     PricingMethod = method,
@@ -257,7 +259,7 @@ namespace Storix_BE.Repository.Implementation
             return outboundOrder;
         }
 
-        public async Task<OutboundOrder> UpdateOutboundOrderItemsAsync(int outboundOrderId, IEnumerable<OutboundOrderItem> items)
+        public async Task<OutboundOrder> UpdateOutboundOrderItemsAsync(int outboundOrderId, IEnumerable<OutboundOrderItem> items, IEnumerable<IInventoryOutboundRepository.InventoryPlacementDto>? placements = null)
         {
             if (items == null) throw new ArgumentNullException(nameof(items));
 
@@ -284,6 +286,13 @@ namespace Storix_BE.Repository.Implementation
             {
                 if (incoming.ProductId == null || incoming.ProductId <= 0)
                     throw new InvalidOperationException("Each item must have a valid ProductId.");
+
+                if (incoming.ExpectedQuantity.HasValue && incoming.ExpectedQuantity < 0)
+                    throw new InvalidOperationException("ExpectedQuantity cannot be negative.");
+
+                if (incoming.ReceivedQuantity.HasValue && incoming.ReceivedQuantity < 0)
+                    throw new InvalidOperationException("ReceivedQuantity cannot be negative.");
+
                 if (incoming.Quantity == null || incoming.Quantity <= 0)
                     throw new InvalidOperationException("Each item must have Quantity > 0.");
             }
@@ -337,6 +346,8 @@ namespace Storix_BE.Repository.Implementation
                 if (existing.ProductId != incoming.ProductId)
                     throw new InvalidOperationException("Changing ProductId is not allowed when updating outbound ticket items.");
 
+                existing.ExpectedQuantity = incoming.ExpectedQuantity;
+                existing.ReceivedQuantity = incoming.ReceivedQuantity;
                 existing.Quantity = incoming.Quantity;
             }
 
@@ -398,7 +409,12 @@ namespace Storix_BE.Repository.Implementation
             var now = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
             var oldStatus = order.Status;
 
-            order.Status = normalized;
+            // Staff reaches final handover step => close outbound ticket immediately.
+            var finalStatus = string.Equals(normalized, "LoadHandover", StringComparison.OrdinalIgnoreCase)
+                ? "Completed"
+                : normalized;
+
+            order.Status = finalStatus;
             await _context.SaveChangesAsync().ConfigureAwait(false);
 
             // Best-effort audit logging: outbound status update should not fail
@@ -409,7 +425,7 @@ namespace Storix_BE.Repository.Implementation
                 {
                     OutboundOrderId = order.Id,
                     OldStatus = oldStatus,
-                    NewStatus = normalized,
+                    NewStatus = finalStatus,
                     ChangedByUserId = performedBy,
                     ChangedAt = now
                 });
