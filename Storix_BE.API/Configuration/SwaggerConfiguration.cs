@@ -1,4 +1,5 @@
 ﻿using Microsoft.OpenApi.Models;
+using Swashbuckle.AspNetCore.SwaggerUI;
 
 namespace CarServ.API.Configuration
 {
@@ -8,7 +9,7 @@ namespace CarServ.API.Configuration
         {
             services.AddSwaggerGen(options =>
             {
-                options.SwaggerDoc("v1", new OpenApiInfo { Title = "Car Services Management System", Version = "v1" });
+                options.SwaggerDoc("v1", new OpenApiInfo { Title = "Storix", Version = "v1" });
                 options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
                 {
                     In = ParameterLocation.Header,
@@ -18,6 +19,7 @@ namespace CarServ.API.Configuration
                     BearerFormat = "JWT",
                     Scheme = "bearer"
                 });
+                DocExpansion = DocExpansion.None;
                 options.AddSecurityRequirement(new OpenApiSecurityRequirement
             {
                 {
