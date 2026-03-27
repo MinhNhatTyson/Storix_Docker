@@ -8,13 +8,5 @@ public partial class ProductType
     public int Id { get; set; }
 
     public string? Name { get; set; }
-
-    public int? CompanyId { get; set; }
-
-    public virtual Company? Company { get; set; }
-
-    public virtual ICollection<Product> Products { get; set; } = new List<Product>();
-
-    public virtual ICollection<StorageZone> StorageZones { get; set; } = new List<StorageZone>();
 }
 
