@@ -206,7 +206,6 @@ namespace Storix_BE.Repository.Implementation
         {
             var types = await _context.ProductTypes
                 .AsNoTracking()
-                .Where(t => t.CompanyId == companyId)
                 .OrderBy(t => t.Id)
                 .ToListAsync();
             return types;
@@ -223,7 +222,6 @@ namespace Storix_BE.Repository.Implementation
             var existsForCompany = await _context.ProductTypes
                 .AsNoTracking()
                 .Where(t => t.Name != null && t.Name.ToLower() == nameLower)
-                .Where(t => t.CompanyId == companyId)
                 .FirstOrDefaultAsync();
 
             if (existsForCompany != null)
@@ -232,7 +230,6 @@ namespace Storix_BE.Repository.Implementation
             var newType = new ProductType
             {
                 Name = name,
-                CompanyId = companyId
             };
 
             _context.ProductTypes.Add(newType);
@@ -271,18 +268,9 @@ namespace Storix_BE.Repository.Implementation
         {
             if (type == null) throw new InvalidOperationException("Type cannot be null.");
             var existing = await _context.ProductTypes
-                .Include(t => t.Products)
-                .Include(t => t.StorageZones)
                 .FirstOrDefaultAsync(t => t.Id == type.Id);
 
             if (existing == null) return false;
-
-            // Prevent deletion if referenced
-            if ((existing.Products != null && existing.Products.Any()) ||
-                (existing.StorageZones != null && existing.StorageZones.Any()))
-            {
-                throw new InvalidOperationException("Cannot remove product type because it is referenced by products or storage zones.");
-            }
 
             _context.ProductTypes.Remove(existing);
             await _context.SaveChangesAsync();
