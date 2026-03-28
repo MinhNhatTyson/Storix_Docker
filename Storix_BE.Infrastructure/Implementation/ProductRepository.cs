@@ -137,6 +137,9 @@ namespace Storix_BE.Repository.Implementation
             existing.IsEsd = product.IsEsd;
             existing.IsMsd = product.IsMsd;
             existing.Description = product.Description;
+            existing.IsCold = product.IsCold;
+            existing.IsVulnerable = product.IsVulnerable;
+            existing.IsHighValue = product.IsHighValue;
             existing.Image = product.Image;
             existing.UpdatedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
 
@@ -333,8 +336,7 @@ namespace Storix_BE.Repository.Implementation
             worksheet.Cell(1, 5).Value = "Unit";
             worksheet.Cell(1, 6).Value = "Weight";
             worksheet.Cell(1, 7).Value = "Company";
-            worksheet.Cell(1, 8).Value = "Type";
-            worksheet.Cell(1, 9).Value = "Description";
+            worksheet.Cell(1, 8).Value = "Description";
 
             // Data
             for (int i = 0; i < products.Count; i++)
@@ -349,8 +351,7 @@ namespace Storix_BE.Repository.Implementation
                 worksheet.Cell(row, 5).Value = p.Unit;
                 worksheet.Cell(row, 6).Value = p.Weight;
                 worksheet.Cell(row, 7).Value = p.CompanyName;
-                worksheet.Cell(row, 8).Value = p.ProductType;
-                worksheet.Cell(row, 9).Value = p.Description;
+                worksheet.Cell(row, 8).Value = p.Description;
             }
 
             worksheet.Columns().AdjustToContents();
@@ -387,8 +388,7 @@ namespace Storix_BE.Repository.Implementation
                     Unit = row.Cell(5).GetString(),
                     Weight = row.Cell(6).GetDouble(),
                     CompanyName = row.Cell(7).GetString(),
-                    ProductType = row.Cell(8).GetString(),
-                    Description = row.Cell(9).GetString()
+                    Description = row.Cell(8).GetString()
                 });
             }
 
@@ -407,7 +407,6 @@ namespace Storix_BE.Repository.Implementation
                     .FirstOrDefaultAsync(p => p.Sku == dto.Sku);
 
                 var companyId = await ResolveCompanyId(dto.CompanyName);
-                var typeId = await ResolveProductTypeId(dto.ProductType);
                 var categoryId = await ResolveProductCategoryId(dto.Category);
 
                 if (product == null)

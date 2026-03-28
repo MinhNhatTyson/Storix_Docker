@@ -43,7 +43,7 @@ namespace Storix_BE.API.Controllers
         /// List all warehouses within the current company. Company Administrator only.
         /// </summary>
         [HttpGet("/api/company-warehouses/{companyId:int}/warehouses")]
-        [Authorize(Roles = "2")]
+        [Authorize(Roles = "2,4")]
         public async Task<IActionResult> GetWarehouses(int companyId)
         {
             if (companyId <= 0)

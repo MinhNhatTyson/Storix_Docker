@@ -102,6 +102,9 @@ namespace Storix_BE.Service.Implementation
                 Height = request.Height,
                 IsEsd = request.IsEsd,
                 IsMsd = request.IsMsd,
+                IsCold = request.IsCold,
+                IsVulnerable = request.IsVulnerable,
+                IsHighValue = request.IsHighValue,
                 Description = request.Description,
                 Image = imageUrl
             };
@@ -168,6 +171,9 @@ namespace Storix_BE.Service.Implementation
             if (request.Height.HasValue) existing.Height = request.Height;
             if (request.IsEsd.HasValue) existing.IsEsd = request.IsEsd;
             if (request.IsMsd.HasValue) existing.IsMsd = request.IsMsd;
+            if (request.IsCold.HasValue) existing.IsCold = request.IsCold;
+            if (request.IsVulnerable.HasValue) existing.IsVulnerable = request.IsVulnerable;
+            if (request.IsHighValue.HasValue) existing.IsHighValue = request.IsHighValue;
             if (request.Description != null) existing.Description = request.Description;
 
             await _repo.UpdateAsync(existing);
