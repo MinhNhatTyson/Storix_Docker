@@ -583,6 +583,8 @@ public partial class StorixDbContext : DbContext
             entity.Property(e => e.Price).HasColumnName("price");
             entity.Property(e => e.ProductId).HasColumnName("product_id");
             entity.Property(e => e.Quantity).HasColumnName("quantity");
+            entity.Property(e => e.ExpectedQuantity).HasColumnName("expected_quantity");
+            entity.Property(e => e.ReceivedQuantity).HasColumnName("received_quantity");
             entity.Property(e => e.PricingMethod)
                 .HasColumnType("character varying")
                 .HasColumnName("pricing_method");
