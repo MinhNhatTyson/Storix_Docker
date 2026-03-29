@@ -48,7 +48,6 @@ namespace Storix_BE.Service.Interfaces
         bool? isCold,
         bool? isVulnerable,
         bool? isHighValue,
-        string? zoneType,
         IEnumerable<ShelfDto>? Shelves);
 
     public sealed record ShelfDto(
