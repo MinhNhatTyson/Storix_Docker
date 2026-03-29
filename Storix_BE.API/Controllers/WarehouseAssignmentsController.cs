@@ -55,12 +55,6 @@ namespace Storix_BE.API.Controllers
 
             try
             {
-                var caller = await _userService.GetByEmailAsync(email);
-                if (caller?.CompanyId == null)
-                    return Unauthorized();
-                if (caller.CompanyId.Value != companyId)
-                    return Forbid();
-
                 var warehouses = await _assignmentService.GetWarehousesByCompanyAsync(companyId, roleId.Value);
                 return Ok(warehouses.Select(w => new WarehouseSummaryDto(
                     w.Id,
