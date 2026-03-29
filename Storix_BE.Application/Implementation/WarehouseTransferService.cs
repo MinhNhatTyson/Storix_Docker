@@ -142,6 +142,70 @@ namespace Storix_BE.Service.Implementation
             return await GetByIdAsync(companyId, order.Id);
         }
 
+        public async Task<List<TransferStaffSuggestionDto>> SuggestStaffAsync(int companyId, int actorUserId, int transferOrderId)
+        {
+            var order = await GetOrderInCompanyAsync(companyId, transferOrderId);
+            await EnsureManagerAndOwnerAsync(order, actorUserId, companyId);
+
+            var sourceWarehouseId = order.SourceWarehouseId ?? 0;
+            if (sourceWarehouseId <= 0)
+                throw new InvalidOperationException("Transfer source warehouse is invalid.");
+
+            var assignedStaff = await _context.WarehouseAssignments
+                .Where(a => a.WarehouseId == sourceWarehouseId)
+                .Select(a => a.User)
+                .Where(u => u != null && (u.RoleId ?? 0) == 4 && (u.CompanyId ?? 0) == companyId)
+                .Distinct()
+                .ToListAsync();
+
+            var suggestions = new List<TransferStaffSuggestionDto>();
+            foreach (var staff in assignedStaff)
+            {
+                if (staff == null) continue;
+                var staffId = staff.Id;
+
+                var activeTaskCount = await GetActiveTransferTaskCountAsync(companyId, staffId);
+                var assignedWarehouseCount = await _context.WarehouseAssignments
+                    .AsNoTracking()
+                    .CountAsync(a => a.UserId == staffId);
+
+                var score = Math.Max(0, 100 - (activeTaskCount * 15)) + Math.Min(assignedWarehouseCount, 5);
+                var reason = activeTaskCount == 0
+                    ? "Rảnh, phù hợp để nhận phiếu chuyển mới."
+                    : $"Đang xử lý {activeTaskCount} phiếu chuyển.";
+
+                suggestions.Add(new TransferStaffSuggestionDto(
+                    staffId,
+                    staff.FullName,
+                    staff.Email,
+                    assignedWarehouseCount,
+                    activeTaskCount,
+                    score,
+                    reason));
+            }
+
+            return suggestions
+                .OrderByDescending(x => x.SuggestionScore)
+                .ThenBy(x => x.ActiveTransferTaskCount)
+                .ThenBy(x => x.FullName)
+                .ToList();
+        }
+
+        public async Task<TransferOrderDetailDto> AssignCarrierAsync(int companyId, int actorUserId, int transferOrderId, int carrierUserId)
+        {
+            ValidatePositive(carrierUserId, nameof(carrierUserId));
+
+            var order = await GetOrderInCompanyAsync(companyId, transferOrderId);
+            EnsureCanEdit(order.Status);
+            await EnsureManagerAndOwnerAsync(order, actorUserId, companyId);
+            await EnsureStaffAssignedToWarehouseAsync(carrierUserId, order.SourceWarehouseId ?? 0, companyId);
+
+            await AddActivityAsync(actorUserId, $"CARRIER:{carrierUserId}", order.Id);
+            await AddActivityAsync(actorUserId, "TRANSFER_CARRIER_ASSIGNED", order.Id);
+
+            return await GetByIdAsync(companyId, order.Id);
+        }
+
         public async Task<TransferOrderDetailDto> SubmitAsync(int companyId, int actorUserId, int transferOrderId)
         {
             var order = await GetOrderInCompanyAsync(companyId, transferOrderId);
@@ -650,6 +714,36 @@ namespace Storix_BE.Service.Implementation
             var parts = action.Split(':');
             if (parts.Length != 2) return null;
             return int.TryParse(parts[1], out var id) ? id : null;
+        }
+
+        private async Task<int> GetActiveTransferTaskCountAsync(int companyId, int staffUserId)
+        {
+            var activeStatuses = new[]
+            {
+                TransferStatuses.Approved,
+                TransferStatuses.Picking,
+                TransferStatuses.Packed,
+                TransferStatuses.InTransit,
+                TransferStatuses.QualityChecked,
+                TransferStatuses.QualityIssue
+            };
+
+            var orderIds = await _context.ActivityLogs
+                .Where(a => a.Entity == "TransferOrder" && a.Action == $"CARRIER:{staffUserId}")
+                .Select(a => a.EntityId)
+                .Distinct()
+                .ToListAsync();
+
+            if (!orderIds.Any()) return 0;
+
+            return await _context.TransferOrders
+                .Include(t => t.SourceWarehouse)
+                .Include(t => t.DestinationWarehouse)
+                .Where(t => orderIds.Contains(t.Id)
+                    && activeStatuses.Contains((t.Status ?? string.Empty).ToUpper())
+                    && (t.SourceWarehouse!.CompanyId ?? 0) == companyId
+                    && (t.DestinationWarehouse!.CompanyId ?? 0) == companyId)
+                .CountAsync();
         }
 
         private static void EnsureCanEdit(string? status)

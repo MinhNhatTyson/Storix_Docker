@@ -11,6 +11,8 @@ namespace Storix_BE.Service.Interfaces
         Task<TransferOrderDetailDto> AddItemAsync(int companyId, int actorUserId, int transferOrderId, AddTransferOrderItemRequest request);
         Task<TransferOrderDetailDto> UpdateItemAsync(int companyId, int actorUserId, int transferOrderId, int itemId, UpdateTransferOrderItemRequest request);
         Task<TransferOrderDetailDto> RemoveItemAsync(int companyId, int actorUserId, int transferOrderId, int itemId);
+        Task<List<TransferStaffSuggestionDto>> SuggestStaffAsync(int companyId, int actorUserId, int transferOrderId);
+        Task<TransferOrderDetailDto> AssignCarrierAsync(int companyId, int actorUserId, int transferOrderId, int carrierUserId);
 
         Task<TransferOrderDetailDto> SubmitAsync(int companyId, int actorUserId, int transferOrderId);
         Task<TransferOrderDetailDto> ApproveAsync(int companyId, int actorUserId, int transferOrderId);
@@ -88,4 +90,14 @@ namespace Storix_BE.Service.Interfaces
         IEnumerable<TransferOrderTimelineDto> Timeline);
 
     public sealed record TransferAvailabilityDto(int ProductId, string? ProductName, int RequiredQuantity, int AvailableQuantity, bool IsEnough);
+
+    public sealed record TransferStaffSuggestionDto(
+        int UserId,
+        string? FullName,
+        string? Email,
+        int AssignedWarehouseCount,
+        int ActiveTransferTaskCount,
+        int SuggestionScore,
+        string? Reason);
 }
+

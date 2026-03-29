@@ -175,6 +175,46 @@ namespace Storix_BE.API.Controllers
             }
         }
 
+        [HttpPost("{transferOrderId:int}/assign-carrier")]
+        [Authorize(Roles = "3")]
+        public async Task<IActionResult> AssignCarrier(int transferOrderId, [FromBody] AssignTransferCarrierRequest request)
+        {
+            if (request == null || request.CarrierUserId <= 0)
+                return BadRequest(new { message = "CarrierUserId is required." });
+
+            return await ExecuteManagerTransition(transferOrderId, (companyId, userId) => _service.AssignCarrierAsync(companyId, userId, transferOrderId, request.CarrierUserId)).ConfigureAwait(false);
+        }
+
+        [HttpGet("{transferOrderId:int}/suggest-staff")]
+        [Authorize(Roles = "3")]
+        public async Task<IActionResult> SuggestStaff(int transferOrderId)
+        {
+            if (transferOrderId <= 0) return BadRequest(new { message = "Invalid transferOrderId." });
+
+            var caller = await ResolveCallerAsync().ConfigureAwait(false);
+            if (caller == null) return Unauthorized(new { message = "Unauthorized. Invalid or missing token." });
+            if (!caller.CompanyId.HasValue || caller.CompanyId.Value <= 0)
+                return BadRequest(new { message = "User does not belong to any company. Access denied." });
+
+            try
+            {
+                var result = await _service.SuggestStaffAsync(caller.CompanyId.Value, caller.Id, transferOrderId).ConfigureAwait(false);
+                return Ok(result);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = ex.Message });
+            }
+        }
+
         [HttpPost("{transferOrderId:int}/submit")]
         [Authorize(Roles = "3")]
         public async Task<IActionResult> Submit(int transferOrderId)
@@ -394,4 +434,5 @@ namespace Storix_BE.API.Controllers
 
     public sealed record RejectTransferOrderRequest(string Reason);
     public sealed record CancelTransferOrderRequest(string? Reason);
+    public sealed record AssignTransferCarrierRequest(int CarrierUserId);
 }
