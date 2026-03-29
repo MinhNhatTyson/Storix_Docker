@@ -325,6 +325,9 @@ namespace Storix_BE.API.Controllers
                         length = z.Length,
                         IsEsd = z.IsEsd,
                         IsMsd = z.IsMsd,
+                        IsCold = z.IsCold,
+                        IsVulnerable = z.IsVulnerable,
+                        IsHighValue = z.IsHighValue,
                         shelves = z.Shelves?.Select(s =>
                         {
                             // compute actual shelf coordinate = shelf coordinate + zone coordinate

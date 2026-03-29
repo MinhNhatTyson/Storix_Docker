@@ -45,6 +45,9 @@ namespace Storix_BE.Service.Interfaces
         double? Length,
         bool? isESD,
         bool? isMSD,
+        bool? isCold,
+        bool? isVulnerable,
+        bool? isHighValue,
         string? zoneType,
         IEnumerable<ShelfDto>? Shelves);
 
