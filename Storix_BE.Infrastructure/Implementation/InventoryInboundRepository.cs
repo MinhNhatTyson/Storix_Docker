@@ -431,7 +431,23 @@ namespace Storix_BE.Repository.Implementation
                             var pw = prod.Width ?? 0.0;
                             var ph = prod.Height ?? 0.0;
                             var plength = prod.Length ?? 0.0;
-                            var productUnitVolume = pw * ph * plength;
+                            double productUnitVolume = 0;
+                            if (pw <= 0)
+                            {
+                                productUnitVolume = ph * plength;
+                            }
+                            else if (ph <= 0)
+                            {
+                                productUnitVolume = pw * plength;
+                            }
+                            else if (plength <= 0)
+                            {
+                                productUnitVolume = pw * ph;
+                            }
+                            else
+                            {
+                                productUnitVolume = pw * ph * plength;
+                            }
                             totalOccupiedVolume += productUnitVolume * a.Quantity;
                         }
 
@@ -451,20 +467,25 @@ namespace Storix_BE.Repository.Implementation
                             // If cannot compute (missing dims), set null or zero - choose null to indicate unknown
                             bin.Percentage = null;
                         }
+
+                        if (bin.Percentage == 100)
+                        {
+                            bin.Status = true;
+                        }
                     }
+
+                    var allItems = order.InboundOrderItems;
+                    var anyReceived = allItems.Any(i => (i.ReceivedQuantity ?? 0) > 0);
+                    var allComplete = allItems.Any() && allItems.All(i => (i.ExpectedQuantity ?? 0) > 0 && (i.ReceivedQuantity ?? 0) == (i.ExpectedQuantity ?? 0));
+
+                    if (allComplete)
+                        order.Status = "Completed";
+                    else if (anyReceived)
+                        order.Status = "Partially Completed";
+
+                    await _context.SaveChangesAsync().ConfigureAwait(false);
+                    await tx.CommitAsync().ConfigureAwait(false);
                 }
-
-                var allItems = order.InboundOrderItems;
-                var anyReceived = allItems.Any(i => (i.ReceivedQuantity ?? 0) > 0);
-                var allComplete = allItems.Any() && allItems.All(i => (i.ExpectedQuantity ?? 0) > 0 && (i.ReceivedQuantity ?? 0) == (i.ExpectedQuantity ?? 0));
-
-                if (allComplete)
-                    order.Status = "Completed";
-                else if (anyReceived)
-                    order.Status = "Partially Completed";
-
-                await _context.SaveChangesAsync().ConfigureAwait(false);
-                await tx.CommitAsync().ConfigureAwait(false);
             }
             catch
             {
