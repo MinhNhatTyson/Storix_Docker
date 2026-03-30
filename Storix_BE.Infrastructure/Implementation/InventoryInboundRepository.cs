@@ -339,7 +339,8 @@ namespace Storix_BE.Repository.Implementation
                             Quantity = delta,
                             LastUpdated = now
                         };
-                        _context.Inventories.Add(inventory);
+                         _context.Inventories.Add(inventory);
+                        await _context.SaveChangesAsync().ConfigureAwait(false);
                         inventories.Add(inventory);
                     }
                     else
