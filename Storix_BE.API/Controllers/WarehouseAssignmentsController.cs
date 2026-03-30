@@ -373,7 +373,11 @@ namespace Storix_BE.API.Controllers
                                         {
                                             id = b.IdCode,
                                             code = b.Code,
-                                            status = b.Status
+                                            status = b.Status,
+                                            percentage = b.Percentage,
+                                            width = b.Width,
+                                            height = b.Height,
+                                            length = b.Length,
                                         }).ToList()
                                         : new List<object>()
                                 }).ToList()

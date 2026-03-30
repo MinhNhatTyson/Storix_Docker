@@ -400,7 +400,6 @@ namespace Storix_BE.Service.Implementation
             {
                 if (it.InboundProductId <= 0) throw new ArgumentException("Each storage recommendation must contain a valid inboundProductId.");
                 if (it.Recommendation == null) throw new ArgumentException("Recommendation is required for each storage recommendation.");
-                if (string.IsNullOrWhiteSpace(it.Recommendation.BinId)) throw new ArgumentException("Recommendation.binId (ShelfLevelBin.IdCode) is required.");
             }
 
             // Map to repository DTOs
