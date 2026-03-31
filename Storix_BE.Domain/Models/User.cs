@@ -58,4 +58,5 @@ public partial class User
     public virtual ICollection<TransferOrder> TransferOrders { get; set; } = new List<TransferOrder>();
 
     public virtual ICollection<WarehouseAssignment> WarehouseAssignments { get; set; } = new List<WarehouseAssignment>();
+    public virtual ICollection<UserNotification> UserNotifications { get; set; } = new List<UserNotification>();
 }

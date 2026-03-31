@@ -427,6 +427,13 @@ namespace Storix_BE.Service.Implementation
                                                 IdCode = b.Id,
                                                 Code = b.Code,
                                                 Status = (b.Status?.ToLower() == "active")
+                                                ? true
+                                                        : (b.Status?.ToLower() == "inactive")
+                                                            ? false
+                                                            : (bool?)null,
+                                                Width = b.Width.HasValue ? Convert.ToInt32(Math.Round(b.Width.Value)) : null,
+                                                Height = b.Height.HasValue ? Convert.ToInt32(Math.Round(b.Height.Value)) : null,
+                                                Length = b.Length.HasValue ? Convert.ToInt32(Math.Round(b.Length.Value)) : null,
                                             };
                                             level.ShelfLevelBins.Add(bin);
                                         }

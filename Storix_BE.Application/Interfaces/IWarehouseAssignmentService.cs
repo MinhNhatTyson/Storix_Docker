@@ -65,7 +65,7 @@ namespace Storix_BE.Service.Interfaces
 
     public sealed record LevelDto(string? Id, string? Code, IEnumerable<BinDto>? Bins);
 
-    public sealed record BinDto(string? Id, string? Code, string? Status);
+    public sealed record BinDto(string? Id, string? Code, string? Status, double? Width, double? Length, double? Height);
 
     public sealed record NodeDto(string? Id, double? X, double? Y, double? Radius, string? Side, string? Type);
 

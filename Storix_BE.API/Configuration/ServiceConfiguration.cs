@@ -28,6 +28,7 @@ namespace Storix_BE.API.Configuration
             services.AddScoped<IWarehouseTransferService, WarehouseTransferService>();
             services.AddTransient<IImageService, ImageService>();
             services.AddTransient<IEmailService, EmailService>();
+            services.AddTransient<INotificationService, NotificationService>();
 
             // Filter kiểm tra subscription (Scoped vì phụ thuộc ISubscriptionService)
             // services.AddScoped<SubscriptionAccessFilter>(); // tạm tắt subscription
