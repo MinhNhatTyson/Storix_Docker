@@ -3,6 +3,7 @@ using CloudinaryDotNet;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
 using Storix_BE.API.Configuration;
+using Storix_BE.API.Hubs;
 using Storix_BE.Domain.Context;
 using System.Text.Json.Serialization;
 
@@ -66,6 +67,7 @@ builder.Services.AddCors(opt =>
     });
 });
 builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSignalR();
 
 
 var app = builder.Build();
@@ -86,5 +88,6 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+app.MapHub<NotificationHub>("/hubs/notifications");
 
 app.Run();

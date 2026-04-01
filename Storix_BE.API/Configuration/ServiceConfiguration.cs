@@ -1,9 +1,10 @@
 ﻿
 // using Storix_BE.API.BackgroundJobs; // tạm tắt subscription job do deploy DB chưa có bảng subscriptions
 // using Storix_BE.API.Filters; // tạm tắt filter subscription do deploy DB chưa có bảng subscriptions
+using Storix_BE.API.RealTime;
+using Storix_BE.Service.Configuration;
 using Storix_BE.Service.Implementation;
 using Storix_BE.Service.Interfaces;
-using Storix_BE.Service.Configuration;
 
 namespace Storix_BE.API.Configuration
 {
@@ -29,7 +30,7 @@ namespace Storix_BE.API.Configuration
             services.AddTransient<IImageService, ImageService>();
             services.AddTransient<IEmailService, EmailService>();
             services.AddTransient<INotificationService, NotificationService>();
-
+            services.AddSingleton<INotificationPublisher, SignalRNotificationPublisher>();
             // Filter kiểm tra subscription (Scoped vì phụ thuộc ISubscriptionService)
             // services.AddScoped<SubscriptionAccessFilter>(); // tạm tắt subscription
 
