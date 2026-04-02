@@ -18,4 +18,5 @@ public partial class InventoryLocation
     public virtual Inventory? Inventory { get; set; }
 
     public virtual Shelf? Shelf { get; set; }
+    public virtual ICollection<InventoryCountItem> StockCountItems { get; set; } = new List<InventoryCountItem>();
 }

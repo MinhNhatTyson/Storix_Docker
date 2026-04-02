@@ -453,6 +453,9 @@ public partial class StorixDbContext : DbContext
             entity.ToTable("inventory");
 
             entity.Property(e => e.Id).HasColumnName("id");
+            entity.Property(e => e.LastCountedAt)
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("last_counted_at");
             entity.Property(e => e.LastUpdated)
                 .HasColumnType("timestamp without time zone")
                 .HasColumnName("last_updated");
@@ -963,12 +966,23 @@ public partial class StorixDbContext : DbContext
             entity.ToTable("stock_count_items");
 
             entity.Property(e => e.Id).HasColumnName("id");
+            entity.Property(e => e.CountedAt)
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("counted_at");
+            entity.Property(e => e.CountedBy).HasColumnName("counted_by");
             entity.Property(e => e.CountedQuantity).HasColumnName("counted_quantity");
             entity.Property(e => e.Description)
                 .HasColumnType("character varying")
                 .HasColumnName("description");
             entity.Property(e => e.Discrepancy).HasColumnName("discrepancy");
+            entity.Property(e => e.FinalQuantity).HasColumnName("final_quantity");
+            entity.Property(e => e.LocationId).HasColumnName("location_id");
             entity.Property(e => e.ProductId).HasColumnName("product_id");
+            entity.Property(e => e.RecountedAt)
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("recounted_at");
+            entity.Property(e => e.RecountedBy).HasColumnName("recounted_by");
+            entity.Property(e => e.RecountedQuantity).HasColumnName("recounted_quantity");
             entity.Property(e => e.Status).HasColumnName("status");
             entity.Property(e => e.InventoryCountId).HasColumnName("stock_count_id");
             entity.Property(e => e.SystemQuantity).HasColumnName("system_quantity");
@@ -980,6 +994,10 @@ public partial class StorixDbContext : DbContext
             entity.HasOne(d => d.InventoryCount).WithMany(p => p.InventoryCountItems)
                 .HasForeignKey(d => d.InventoryCountId)
                 .HasConstraintName("fk_stock_count_items_stock_count_id");
+
+            entity.HasOne(d => d.Location).WithMany(p => p.StockCountItems)
+                .HasForeignKey(d => d.LocationId)
+                .HasConstraintName("fk_stock_count_items_location_id");
         });
 
         modelBuilder.Entity<InventoryCountsTicket>(entity =>
@@ -989,6 +1007,10 @@ public partial class StorixDbContext : DbContext
             entity.ToTable("stock_counts_tickets");
 
             entity.Property(e => e.Id).HasColumnName("id");
+            entity.Property(e => e.ApprovedAt)
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("approved_at");
+            entity.Property(e => e.ApprovedBy).HasColumnName("approved_by");
             entity.Property(e => e.AssignedTo).HasColumnName("assigned_to");
             entity.Property(e => e.CreatedAt)
                 .HasColumnType("timestamp without time zone")
@@ -1006,6 +1028,13 @@ public partial class StorixDbContext : DbContext
                 .HasColumnType("character varying")
                 .HasColumnName("name");
             entity.Property(e => e.PerformedBy).HasColumnName("performed_by");
+            entity.Property(e => e.PlannedAt)
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("planned_at");
+            entity.Property(e => e.ScopeId).HasColumnName("scope_id");
+            entity.Property(e => e.ScopeType)
+                .HasMaxLength(50)
+                .HasColumnName("scope_type");
             entity.Property(e => e.Status)
                 .HasColumnType("character varying")
                 .HasColumnName("status");
@@ -1021,6 +1050,10 @@ public partial class StorixDbContext : DbContext
             entity.HasOne(d => d.Warehouse).WithMany(p => p.InventoryCountsTickets)
                 .HasForeignKey(d => d.WarehouseId)
                 .HasConstraintName("fk_stock_counts_tickets_warehouse_id");
+
+            entity.HasOne(d => d.Scope).WithMany(p => p.StockCountsTickets)
+                .HasForeignKey(d => d.ScopeId)
+                .HasConstraintName("fk_stock_counts_tickets_scope_id");
         });
 
         modelBuilder.Entity<StorageForecast>(entity =>

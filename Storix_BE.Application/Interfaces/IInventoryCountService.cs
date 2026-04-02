@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Storix_BE.Domain.Models;
+using System;
 using System.Collections.Generic;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -7,77 +8,29 @@ namespace Storix_BE.Service.Interfaces
 {
     public interface IInventoryCountService
     {
-        Task<IReadOnlyList<InventoryCountInventoryProductDto>> ListInventoryProductsAsync(int companyId, int warehouseId, IEnumerable<int>? productIds = null);
-
-        Task<InventoryCountTicketDetailDto> CreateTicketAsync(int companyId, int createdByUserId, CreateInventoryCountTicketRequest request);
-
-        Task<List<InventoryCountTicketListItemDto>> ListTicketsAsync(int companyId, int? warehouseId, string? status);
-
-        Task<InventoryCountTicketDetailDto> GetTicketByIdAsync(int companyId, int ticketId);
-
-        Task<InventoryCountItemDto> UpdateCountedQuantityAsync(int companyId, int callerUserId, int callerRoleId, int itemId, UpdateInventoryCountItemRequest request);
-
-        Task<RunInventoryCountResultDto> RunAsync(int companyId, int createdByUserId, int ticketId);
-
-        Task ApproveAsync(int companyId, int performedByUserId, int ticketId);
+        Task<InventoryCountsTicket> CreateStockCountTicketAsync(CreateStockCountTicketRequest request);
+        Task<InventoryCountsTicket> UpdateStockCountTicketStatusAsync(int ticketId, int approverId, string status);
+        Task<InventoryCountsTicket> UpdateStockCountItemsAsync(int ticketId, UpdateStockCountItemsRequest request);
+        Task<List<InventoryCountsTicket>> GetStockCountTicketsByCompanyAsync(int companyId);
+        Task<InventoryCountsTicket> GetStockCountTicketByIdAsync(int companyId, int id);
+        Task<List<InventoryCountsTicket>> GetStockCountTicketsByStaffAsync(int companyId, int staffId);
     }
 
-    public sealed record InventoryCountInventoryProductDto(
-        int ProductId,
-        string? Sku,
-        string? Name,
-        int Quantity);
-
-    public sealed record CreateInventoryCountTicketRequest(
-        int WarehouseId,
-        string? Name,
-        string? Type,
-        string? Description,
-        IEnumerable<int>? ProductIds,
-        int? AssignedTo = null);
-
-    public sealed record InventoryCountTicketListItemDto(
-        int Id,
+    public sealed record CreateInventoryCountItemRequest(int ProductId, int? LocationId);
+    public sealed record CreateStockCountTicketRequest(
         int? WarehouseId,
+        int PerformedBy,
+        int? AssignedTo,
         string? Name,
-        string? Type,
-        string? Status,
-        DateTime? CreatedAt,
-        DateTime? ExecutedDay,
-        DateTime? FinishedDay,
-        int ItemCount);
-
-    public sealed record InventoryCountItemDto(
-        int Id,
-        int? ProductId,
-        string? Sku,
-        string? ProductName,
-        int? SystemQuantity,
-        int? CountedQuantity,
-        int? Discrepancy,
-        bool? Status,
-        string? Description);
-
-    public sealed record InventoryCountTicketDetailDto(
-        int Id,
-        int? WarehouseId,
-        string? Name,
-        string? Type,
-        string? Status,
-        DateTime? CreatedAt,
-        DateTime? ExecutedDay,
-        DateTime? FinishedDay,
         string? Description,
-        IReadOnlyList<InventoryCountItemDto> Items);
+        string? ScopeType,
+        int? ScopeId,
+        DateTime? PlannedAt,
+        IEnumerable<CreateInventoryCountItemRequest> Items);
 
-    public sealed record UpdateInventoryCountItemRequest(
-        int CountedQuantity,
-        string? Description,
-        bool? Status);
+    public sealed record UpdateInventoryCountItemRequest(int StockCountItemId, int? ProductId, int? CountedQuantity, int? LocationId);
+    public sealed record UpdateStockCountItemsRequest(int PerformedBy, IEnumerable<UpdateInventoryCountItemRequest> Items);
+    public sealed record UpdateStockCountTicketStatusRequest(int ApproverId, string Status);
 
-    public sealed record RunInventoryCountResultDto(
-        int ReportId,
-        JsonElement Summary,
-        JsonElement Data);
 }
 

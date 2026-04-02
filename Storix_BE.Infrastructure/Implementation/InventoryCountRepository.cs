@@ -18,315 +18,342 @@ namespace Storix_BE.Repository.Implementation
             _context = context;
         }
 
-        public async Task<IReadOnlyList<Inventory>> ListInventoryProductsAsync(int companyId, int warehouseId, IEnumerable<int>? productIds = null)
+        public async Task<InventoryCountsTicket> CreateStockCountTicketAsync(InventoryCountsTicket ticket)
         {
-            if (companyId <= 0) throw new ArgumentException("Invalid companyId.", nameof(companyId));
-            if (warehouseId <= 0) throw new ArgumentException("Invalid warehouseId.", nameof(warehouseId));
+            if (ticket == null) throw new ArgumentNullException(nameof(ticket));
+            if (ticket.InventoryCountItems == null || !ticket.InventoryCountItems.Any())
+                throw new InvalidOperationException("Ticket must contain at least one InventoryCountItem.");
 
-            var warehouse = await _context.Warehouses.AsNoTracking().FirstOrDefaultAsync(w => w.Id == warehouseId).ConfigureAwait(false);
-            if (warehouse == null) throw new InvalidOperationException("Warehouse not found.");
-            if (!warehouse.CompanyId.HasValue || warehouse.CompanyId.Value != companyId)
-                throw new InvalidOperationException("Warehouse does not belong to your company.");
+            ticket.CreatedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
+            if (string.IsNullOrWhiteSpace(ticket.Status))
+                ticket.Status = "Pending";
 
-            var query = _context.Inventories
-                .Include(i => i.Product)
-                .Include(i => i.Warehouse)
-                .Where(i => i.WarehouseId == warehouseId && i.Warehouse != null && i.Warehouse.CompanyId == companyId);
+            var productIds = ticket.InventoryCountItems.Where(i => i.ProductId.HasValue).Select(i => i.ProductId!.Value).Distinct().ToList();
+            Dictionary<int, int> systemQty = new();
 
-            if (productIds != null)
+            if (ticket.WarehouseId.HasValue && productIds.Any())
             {
-                var ids = productIds.Where(x => x > 0).Distinct().ToList();
-                if (ids.Count > 0)
-                    query = query.Where(i => i.ProductId.HasValue && ids.Contains(i.ProductId.Value));
+                var inventories = await _context.Inventories
+                    .Where(inv => inv.WarehouseId == ticket.WarehouseId && inv.ProductId.HasValue && productIds.Contains(inv.ProductId.Value))
+                    .ToListAsync()
+                    .ConfigureAwait(false);
+
+                systemQty = inventories
+                    .Where(inv => inv.ProductId.HasValue)
+                    .GroupBy(inv => inv.ProductId!.Value)
+                    .ToDictionary(g => g.Key, g => g.Sum(i => i.Quantity ?? 0));
             }
 
-            return await query.OrderBy(i => i.ProductId).ToListAsync().ConfigureAwait(false);
-        }
-
-        public async Task<InventoryCountsTicket> CreateTicketAsync(int companyId, int warehouseId, int createdByUserId, string? name, string? type, string? description, IEnumerable<int>? productIds, int? assignedTo = null)
-        {
-            if (companyId <= 0) throw new ArgumentException("Invalid companyId.", nameof(companyId));
-            if (warehouseId <= 0) throw new ArgumentException("Invalid warehouseId.", nameof(warehouseId));
-            if (createdByUserId <= 0) throw new ArgumentException("Invalid createdByUserId.", nameof(createdByUserId));
-
-            var warehouse = await _context.Warehouses.AsNoTracking().FirstOrDefaultAsync(w => w.Id == warehouseId).ConfigureAwait(false);
-            if (warehouse == null) throw new InvalidOperationException("Warehouse not found.");
-            if (!warehouse.CompanyId.HasValue || warehouse.CompanyId.Value != companyId)
-                throw new InvalidOperationException("Warehouse does not belong to your company.");
-
-            var inventories = await ListInventoryProductsAsync(companyId, warehouseId, productIds).ConfigureAwait(false);
-            if (inventories.Count == 0)
-                throw new InvalidOperationException("No inventory found for the selected warehouse or products.");
-
-            if (productIds != null)
+            foreach (var item in ticket.InventoryCountItems)
             {
-                var requested = productIds.Where(x => x > 0).Distinct().ToList();
-                if (requested.Count > 0)
-                {
-                    var found = inventories.Where(i => i.ProductId.HasValue).Select(i => i.ProductId!.Value).Distinct().ToHashSet();
-                    var missing = requested.Where(id => !found.Contains(id)).ToList();
-                    if (missing.Count > 0)
-                        throw new InvalidOperationException($"Some products are not in inventory for this warehouse: {string.Join(", ", missing)}.");
-                }
+                item.InventoryCount = ticket;
+                if (item.ProductId.HasValue && systemQty.TryGetValue(item.ProductId.Value, out var q))
+                    item.SystemQuantity = q;
             }
 
-            var now = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
+            if (productIds.Any())
+            {
+                await ValidateProductsAvailabilityAsync(
+                    productIds,
+                    ticket.InventoryCountItems
+                        .Where(i => i.LocationId.HasValue)
+                        .Select(i => (ProductId: i.ProductId, LocationId: i.LocationId)),
+                    ticket.WarehouseId
+                ).ConfigureAwait(false);
+            }
 
             await using var tx = await _context.Database.BeginTransactionAsync().ConfigureAwait(false);
             try
             {
-                var ticket = new InventoryCountsTicket
-                {
-                    WarehouseId = warehouseId,
-                    PerformedBy = createdByUserId,
-                    AssignedTo = assignedTo,
-                    Name = string.IsNullOrWhiteSpace(name) ? $"InventoryCount-{warehouseId}-{DateTime.UtcNow:yyyyMMddHHmmss}" : name,
-                    Type = string.IsNullOrWhiteSpace(type) ? "InventoryCount" : type,
-                    Status = "Counting",
-                    Description = description,
-                    CreatedAt = now,
-                    ExecutedDay = null,
-                    FinishedDay = null
-                };
-
                 _context.InventoryCountsTickets.Add(ticket);
                 await _context.SaveChangesAsync().ConfigureAwait(false);
-
-                foreach (var inv in inventories)
-                {
-                    if (!inv.ProductId.HasValue) continue;
-
-                    var item = new InventoryCountItem
-                    {
-                        InventoryCountId = ticket.Id,
-                        ProductId = inv.ProductId,
-                        SystemQuantity = inv.Quantity ?? 0,
-                        CountedQuantity = null,
-                        Discrepancy = null,
-                        Status = null,
-                        Description = null
-                    };
-                    _context.InventoryCountItems.Add(item);
-                }
-
-                await _context.SaveChangesAsync().ConfigureAwait(false);
                 await tx.CommitAsync().ConfigureAwait(false);
-
-                return await GetTicketByIdAsync(companyId, ticket.Id).ConfigureAwait(false);
             }
             catch
             {
                 await tx.RollbackAsync().ConfigureAwait(false);
                 throw;
             }
-        }
-
-        public async Task<List<InventoryCountsTicket>> ListTicketsAsync(int companyId, int? warehouseId, string? status)
-        {
-            if (companyId <= 0) throw new ArgumentException("Invalid companyId.", nameof(companyId));
-
-            var query = _context.InventoryCountsTickets
-                .Include(t => t.Warehouse)
-                .Include(t => t.InventoryCountItems)
-                .Where(t => t.Warehouse != null && t.Warehouse.CompanyId == companyId);
-
-            if (warehouseId.HasValue && warehouseId.Value > 0)
-                query = query.Where(t => t.WarehouseId == warehouseId.Value);
-
-            if (!string.IsNullOrWhiteSpace(status))
-                query = query.Where(t => t.Status != null && t.Status.ToLower() == status.ToLower());
-
-            return await query.OrderByDescending(t => t.CreatedAt).ToListAsync().ConfigureAwait(false);
-        }
-
-        public async Task<InventoryCountsTicket> GetTicketByIdAsync(int companyId, int ticketId)
-        {
-            if (companyId <= 0) throw new ArgumentException("Invalid companyId.", nameof(companyId));
-            if (ticketId <= 0) throw new ArgumentException("Invalid ticketId.", nameof(ticketId));
-
-            var ticket = await _context.InventoryCountsTickets
-                .Include(t => t.Warehouse)
-                .Include(t => t.InventoryCountItems)
-                    .ThenInclude(i => i.Product)
-                .FirstOrDefaultAsync(t => t.Id == ticketId && t.Warehouse != null && t.Warehouse.CompanyId == companyId)
-                .ConfigureAwait(false);
-
-            if (ticket == null)
-                throw new InvalidOperationException("Inventory count ticket not found or does not belong to your company.");
 
             return ticket;
         }
 
-        public async Task<InventoryCountItem> GetItemByIdAsync(int companyId, int itemId)
+        public async Task<InventoryCountsTicket> UpdateStockCountTicketStatusAsync(int ticketId, int approverId, string status)
         {
-            if (companyId <= 0) throw new ArgumentException("Invalid companyId.", nameof(companyId));
-            if (itemId <= 0) throw new ArgumentException("Invalid itemId.", nameof(itemId));
-
-            var item = await _context.InventoryCountItems
-                .Include(i => i.InventoryCount)
-                    .ThenInclude(t => t!.Warehouse)
-                .Include(i => i.Product)
-                .FirstOrDefaultAsync(i => i.Id == itemId && i.InventoryCount != null && i.InventoryCount.Warehouse != null && i.InventoryCount.Warehouse.CompanyId == companyId)
-                .ConfigureAwait(false);
-
-            if (item == null)
-                throw new InvalidOperationException("Inventory count item not found or does not belong to your company.");
-
-            return item;
-        }
-
-        public async Task<InventoryCountItem> UpdateCountedQuantityAsync(int companyId, int itemId, int countedQuantity, string? description = null, bool? status = null)
-        {
-            if (companyId <= 0) throw new ArgumentException("Invalid companyId.", nameof(companyId));
-            if (itemId <= 0) throw new ArgumentException("Invalid itemId.", nameof(itemId));
-            if (countedQuantity < 0)
-                throw new ArgumentException("Counted quantity must be greater than or equal to 0.", nameof(countedQuantity));
-
-            var item = await _context.InventoryCountItems
-                .Include(i => i.InventoryCount)
-                    .ThenInclude(t => t!.Warehouse)
-                .Include(i => i.Product)
-                .FirstOrDefaultAsync(i => i.Id == itemId && i.InventoryCount != null && i.InventoryCount.Warehouse != null && i.InventoryCount.Warehouse.CompanyId == companyId)
-                .ConfigureAwait(false);
-
-            if (item == null)
-                throw new InvalidOperationException("Inventory count item not found or does not belong to your company.");
-
-            if (item.InventoryCount == null)
-                throw new InvalidOperationException("Inventory count item is not linked to a ticket.");
-
-            if (string.Equals(item.InventoryCount.Status, "Approved", StringComparison.OrdinalIgnoreCase))
-                throw new InvalidOperationException("Cannot update counted quantity for an approved ticket.");
-
-            item.CountedQuantity = countedQuantity;
-            var systemQty = item.SystemQuantity ?? 0;
-            item.Discrepancy = countedQuantity - systemQty;
-
-            if (description != null) item.Description = description;
-            if (status.HasValue) item.Status = status.Value;
-
-            await _context.SaveChangesAsync().ConfigureAwait(false);
-            return item;
-        }
-
-        public async Task MarkTicketReadyForApprovalAsync(int companyId, int ticketId)
-        {
-            if (companyId <= 0) throw new ArgumentException("Invalid companyId.", nameof(companyId));
-            if (ticketId <= 0) throw new ArgumentException("Invalid ticketId.", nameof(ticketId));
+            if (ticketId <= 0) throw new ArgumentException("Invalid ticket id.", nameof(ticketId));
+            if (approverId <= 0) throw new ArgumentException("Invalid approver id.", nameof(approverId));
+            if (string.IsNullOrWhiteSpace(status)) throw new ArgumentException("Status is required.", nameof(status));
 
             var ticket = await _context.InventoryCountsTickets
-                .Include(t => t.Warehouse)
-                .Include(t => t.InventoryCountItems)
-                .FirstOrDefaultAsync(t => t.Id == ticketId && t.Warehouse != null && t.Warehouse.CompanyId == companyId)
+                .Include(t => t.PerformedByNavigation)
+                .FirstOrDefaultAsync(t => t.Id == ticketId)
                 .ConfigureAwait(false);
 
             if (ticket == null)
-                throw new InvalidOperationException("Inventory count ticket not found or does not belong to your company.");
+                throw new InvalidOperationException($"InventoryCountsTicket with id {ticketId} not found.");
 
-            if (string.Equals(ticket.Status, "Approved", StringComparison.OrdinalIgnoreCase))
-                throw new InvalidOperationException("Cannot mark an approved ticket as ready.");
+            ticket.Status = status;
+            ticket.ApprovedBy = approverId;
+            ticket.ApprovedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
 
-            var missingCounts = ticket.InventoryCountItems.Where(i => !i.CountedQuantity.HasValue).Select(i => i.Id).ToList();
-            if (missingCounts.Count > 0)
-                throw new InvalidOperationException("Some items are missing counted quantity. Please enter counted quantity for all items before running the check.");
-
-            ticket.Status = "ReadyForApproval";
-            ticket.ExecutedDay = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
             await _context.SaveChangesAsync().ConfigureAwait(false);
+            return ticket;
         }
 
-        public async Task ApplyApprovalAsync(int companyId, int ticketId, int performedByUserId)
+        public async Task<InventoryCountsTicket> GetStockCountTicketByIdAsync(int companyId, int id)
         {
-            if (companyId <= 0) throw new ArgumentException("Invalid companyId.", nameof(companyId));
-            if (ticketId <= 0) throw new ArgumentException("Invalid ticketId.", nameof(ticketId));
-            if (performedByUserId <= 0) throw new ArgumentException("Invalid performedByUserId.", nameof(performedByUserId));
+            if (companyId <= 0) throw new ArgumentException("Invalid company id.", nameof(companyId));
+            if (id <= 0) throw new ArgumentException("Invalid ticket id.", nameof(id));
 
             var ticket = await _context.InventoryCountsTickets
-                .Include(t => t.Warehouse)
                 .Include(t => t.InventoryCountItems)
-                .FirstOrDefaultAsync(t => t.Id == ticketId && t.Warehouse != null && t.Warehouse.CompanyId == companyId)
+                    .ThenInclude(i => i.Product)
+                .Include(t => t.InventoryCountItems)
+                    .ThenInclude(i => i.Location)
+                .Include(t => t.Warehouse)
+                .Include(t => t.PerformedByNavigation)
+                .FirstOrDefaultAsync(t => t.Id == id && t.Warehouse != null && t.Warehouse.CompanyId == companyId)
                 .ConfigureAwait(false);
 
             if (ticket == null)
-                throw new InvalidOperationException("Inventory count ticket not found or does not belong to your company.");
+                throw new InvalidOperationException($"InventoryCountsTicket with id {id} not found for company {companyId}.");
 
-            if (string.Equals(ticket.Status, "Approved", StringComparison.OrdinalIgnoreCase))
-                throw new InvalidOperationException("Ticket is already approved.");
+            return ticket;
+        }
 
-            if (!string.Equals(ticket.Status, "ReadyForApproval", StringComparison.OrdinalIgnoreCase))
-                throw new InvalidOperationException("Ticket must be in 'ReadyForApproval' status before approval.");
+        public async Task<List<InventoryCountsTicket>> GetStockCountTicketsByCompanyAsync(int companyId)
+        {
+            if (companyId <= 0) throw new ArgumentException("Invalid company id.", nameof(companyId));
 
-            if (!ticket.WarehouseId.HasValue)
-                throw new InvalidOperationException("Ticket has no warehouse.");
+            var items = await _context.InventoryCountsTickets
+                .Include(t => t.InventoryCountItems)
+                    .ThenInclude(i => i.Product)
+                .Include(t => t.Warehouse)
+                .Include(t => t.PerformedByNavigation)
+                .Where(t => t.Warehouse != null && t.Warehouse.CompanyId == companyId)
+                .OrderByDescending(t => t.CreatedAt)
+                .ToListAsync()
+                .ConfigureAwait(false);
 
-            var missingCounts = ticket.InventoryCountItems.Where(i => !i.CountedQuantity.HasValue).Select(i => i.Id).ToList();
-            if (missingCounts.Count > 0)
-                throw new InvalidOperationException("Some items are missing counted quantity. Please enter counted quantity for all items before approving.");
+            return items;
+        }
 
-            var now = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
-            var warehouseId = ticket.WarehouseId.Value;
+        public async Task<List<InventoryCountsTicket>> GetStockCountTicketsByStaffAsync(int companyId, int staffId)
+        {
+            if (companyId <= 0) throw new ArgumentException("Invalid company id.", nameof(companyId));
+            if (staffId <= 0) throw new ArgumentException("Invalid staff id.", nameof(staffId));
 
-            await using var tx = await _context.Database.BeginTransactionAsync().ConfigureAwait(false);
-            try
+            var items = await _context.InventoryCountsTickets
+                .Include(t => t.InventoryCountItems)
+                    .ThenInclude(i => i.Product)
+                .Include(t => t.Warehouse)
+                .Where(t => t.AssignedTo == staffId && t.Warehouse != null && t.Warehouse.CompanyId == companyId)
+                .OrderByDescending(t => t.CreatedAt)
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            return items;
+        }
+
+        public async Task<InventoryCountsTicket> UpdateStockCountItemsAsync(int ticketId, IEnumerable<InventoryCountItem> items, int performedBy)
+        {
+            if (ticketId <= 0) throw new ArgumentException("Invalid ticket id.", nameof(ticketId));
+            if (items == null) throw new ArgumentNullException(nameof(items));
+            if (performedBy <= 0) throw new ArgumentException("Invalid performedBy.", nameof(performedBy));
+
+            var ticket = await _context.InventoryCountsTickets
+                .Include(t => t.InventoryCountItems)
+                .FirstOrDefaultAsync(t => t.Id == ticketId)
+                .ConfigureAwait(false);
+
+            if (ticket == null)
+                throw new InvalidOperationException($"InventoryCountsTicket with id {ticketId} not found.");
+
+            var incomingProductIds = items
+                .Where(i => i.ProductId.HasValue)
+                .Select(i => i.ProductId!.Value)
+                .Distinct()
+                .ToList();
+
+            var incomingLocations = items
+                .Where(i => i.LocationId.HasValue)
+                .Select(i => (ProductId: i.ProductId, LocationId: i.LocationId))
+                .ToList();
+
+            if (incomingProductIds.Any())
             {
-                foreach (var item in ticket.InventoryCountItems)
+                await ValidateProductsAvailabilityAsync(incomingProductIds, incomingLocations, ticket.WarehouseId).ConfigureAwait(false);
+            }
+
+            var existingItems = ticket.InventoryCountItems.ToList();
+            var now = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
+
+            foreach (var incoming in items)
+            {
+                InventoryCountItem? existing = null;
+                if (incoming.Id > 0)
+                    existing = existingItems.FirstOrDefault(i => i.Id == incoming.Id);
+                else if (incoming.ProductId.HasValue)
+                    existing = existingItems.FirstOrDefault(i => i.ProductId == incoming.ProductId);
+
+                if (existing == null)
                 {
-                    if (!item.ProductId.HasValue) continue;
-
-                    var productId = item.ProductId.Value;
-                    var newQty = item.CountedQuantity!.Value;
-
-                    var inv = await _context.Inventories
-                        .FirstOrDefaultAsync(i => i.WarehouseId == warehouseId && i.ProductId == productId)
-                        .ConfigureAwait(false);
-
-                    var oldQty = inv?.Quantity ?? 0;
-                    if (inv == null)
+                    var newItem = new InventoryCountItem
                     {
-                        inv = new Inventory
-                        {
-                            WarehouseId = warehouseId,
-                            ProductId = productId,
-                            Quantity = newQty,
-                            ReservedQuantity = 0,
-                            LastUpdated = now
-                        };
-                        _context.Inventories.Add(inv);
-                    }
-                    else
+                        ProductId = incoming.ProductId,
+                        LocationId = incoming.LocationId,
+                        SystemQuantity = incoming.SystemQuantity,
+                        CountedQuantity = incoming.CountedQuantity,
+                        CountedBy = performedBy,
+                        CountedAt = now,
+                        Discrepancy = (incoming.CountedQuantity ?? 0) - (incoming.SystemQuantity ?? 0),
+                        Status = incoming.CountedQuantity.HasValue ? true : (bool?)null,
+                        FinalQuantity = incoming.CountedQuantity
+                    };
+                    ticket.InventoryCountItems.Add(newItem);
+                }
+                else
+                {
+                    if (incoming.CountedQuantity.HasValue)
                     {
-                        inv.Quantity = newQty;
-                        inv.LastUpdated = now;
+                        existing.CountedQuantity = incoming.CountedQuantity;
+                        existing.CountedBy = performedBy;
+                        existing.CountedAt = now;
+                        existing.Discrepancy = (existing.CountedQuantity ?? 0) - (existing.SystemQuantity ?? 0);
+                        existing.Status = true;
+                        existing.FinalQuantity = existing.CountedQuantity;
                     }
 
-                    var delta = newQty - oldQty;
-                    if (delta != 0)
+                    if (incoming.LocationId.HasValue)
+                        existing.LocationId = incoming.LocationId;
+                }
+            }
+
+            var allItems = ticket.InventoryCountItems;
+            var allHaveCount = allItems.Any() && allItems.All(i => i.CountedQuantity.HasValue);
+            var anyHaveCount = allItems.Any(i => i.CountedQuantity.HasValue);
+
+            if (allHaveCount)
+            {
+                ticket.Status = "Finished";
+                ticket.FinishedDay = now;
+            }
+            else if (anyHaveCount)
+            {
+                ticket.Status = "In Progress";
+            }
+
+            await _context.SaveChangesAsync().ConfigureAwait(false);
+            return ticket;
+        }
+
+        private async Task ValidateProductsAvailabilityAsync(
+            IEnumerable<int> productIdsEnumerable,
+            IEnumerable<(int? ProductId, int? LocationId)> productLocationPairs,
+            int? warehouseId)
+        {
+            var productIds = productIdsEnumerable.Distinct().Where(id => id > 0).ToList();
+            if (!productIds.Any()) return;
+
+
+            var availableFromInventoriesQuery = _context.Inventories
+                .AsNoTracking()
+                .Where(inv => inv.ProductId.HasValue && productIds.Contains(inv.ProductId.Value) && (inv.Quantity ?? 0) > 0);
+
+            if (warehouseId.HasValue)
+                availableFromInventoriesQuery = availableFromInventoriesQuery.Where(inv => inv.WarehouseId == warehouseId.Value);
+
+            var availableFromInventories = await availableFromInventoriesQuery
+                .Select(inv => inv.ProductId!.Value)
+                .Distinct()
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            var availableFromLocationsQuery = _context.InventoryLocations
+                .AsNoTracking()
+                .Include(il => il.Inventory)
+                .Where(il => (il.Quantity ?? 0) > 0 && il.Inventory != null && il.Inventory.ProductId.HasValue && productIds.Contains(il.Inventory.ProductId.Value));
+
+            if (warehouseId.HasValue)
+                availableFromLocationsQuery = availableFromLocationsQuery.Where(il => il.Inventory!.WarehouseId == warehouseId.Value);
+
+            var availableFromLocations = await availableFromLocationsQuery
+                .Select(il => il.Inventory!.ProductId!.Value)
+                .Distinct()
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            var availableSet = new HashSet<int>(availableFromInventories);
+            foreach (var id in availableFromLocations) availableSet.Add(id);
+
+            var missingProducts = productIds.Except(availableSet).ToList();
+
+            if (missingProducts.Any())
+            {
+                var productInfos = await _context.Products
+                    .AsNoTracking()
+                    .Where(p => missingProducts.Contains(p.Id))
+                    .Select(p => new { p.Id, p.Sku, p.Name })
+                    .ToListAsync()
+                    .ConfigureAwait(false);
+
+                var names = productInfos.Select(p => string.IsNullOrWhiteSpace(p.Sku) ? (p.Name ?? p.Id.ToString()) : p.Sku).ToList();
+                throw new InvalidOperationException($"Products without available inventory/locations with quantity > 0: {string.Join(", ", names)}");
+            }
+
+
+            var locationPairs = productLocationPairs.Where(p => p.LocationId.HasValue).ToList();
+            if (locationPairs.Any())
+            {
+                var locationIds = locationPairs.Select(p => p.LocationId!.Value).Distinct().ToList();
+                var locations = await _context.InventoryLocations
+                    .AsNoTracking()
+                    .Include(il => il.Inventory)
+                    .Include(il => il.Shelf)
+                        .ThenInclude(s => s.Zone)
+                    .Where(il => locationIds.Contains(il.Id))
+                    .ToListAsync()
+                    .ConfigureAwait(false);
+
+                var missingLocationIds = locationIds.Except(locations.Select(l => l.Id)).ToList();
+                if (missingLocationIds.Any())
+                    throw new InvalidOperationException($"InventoryLocation(s) not found: {string.Join(", ", missingLocationIds)}");
+
+
+                var invalidPairs = new List<string>();
+                foreach (var (prodIdNullable, locIdNullable) in locationPairs)
+                {
+                    var locId = locIdNullable!.Value;
+                    var prodId = prodIdNullable;
+                    var loc = locations.First(l => l.Id == locId);
+
+                    var locQuantity = loc.Quantity ?? 0;
+                    if (locQuantity <= 0)
+                        invalidPairs.Add($"Location #{locId} has no quantity.");
+
+                    var invProductId = loc.Inventory?.ProductId;
+                    if (prodId.HasValue && invProductId.HasValue && prodId.Value != invProductId.Value)
+                        invalidPairs.Add($"Location #{locId} does not belong to ProductId {prodId.Value}.");
+
+                    if (warehouseId.HasValue)
                     {
-                        _context.InventoryTransactions.Add(new InventoryTransaction
+                        // determine warehouse ownership via Inventory.WarehouseId or Shelf->Zone->WarehouseId fallback
+                        var invWarehouseId = loc.Inventory?.WarehouseId;
+                        if (!invWarehouseId.HasValue)
                         {
-                            WarehouseId = warehouseId,
-                            ProductId = productId,
-                            TransactionType = "InventoryCountAdjustment",
-                            QuantityChange = delta,
-                            ReferenceId = ticket.Id,
-                            PerformedBy = performedByUserId,
-                            CreatedAt = now
-                        });
+                            var shelfWarehouseId = loc.Shelf?.Zone?.WarehouseId;
+                            if (!shelfWarehouseId.HasValue || shelfWarehouseId.Value != warehouseId.Value)
+                                invalidPairs.Add($"Location #{locId} is not in warehouse {warehouseId.Value}.");
+                        }
+                        else if (invWarehouseId.Value != warehouseId.Value)
+                        {
+                            invalidPairs.Add($"Location #{locId} is not in warehouse {warehouseId.Value}.");
+                        }
                     }
                 }
 
-                ticket.Status = "Approved";
-                ticket.FinishedDay = now;
-                ticket.PerformedBy = performedByUserId;
-                ticket.ExecutedDay ??= now;
-
-                await _context.SaveChangesAsync().ConfigureAwait(false);
-                await tx.CommitAsync().ConfigureAwait(false);
-            }
-            catch
-            {
-                await tx.RollbackAsync().ConfigureAwait(false);
-                throw;
+                if (invalidPairs.Any())
+                    throw new InvalidOperationException($"Invalid location assignments: {string.Join(" ; ", invalidPairs)}");
             }
         }
     }

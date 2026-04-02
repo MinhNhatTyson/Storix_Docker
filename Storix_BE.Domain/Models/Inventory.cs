@@ -17,6 +17,8 @@ public partial class Inventory
 
     public DateTime? LastUpdated { get; set; }
 
+    public DateTime? LastCountedAt { get; set; }
+
     public virtual ICollection<InventoryLocation> InventoryLocations { get; set; } = new List<InventoryLocation>();
 
     public virtual Product? Product { get; set; }
