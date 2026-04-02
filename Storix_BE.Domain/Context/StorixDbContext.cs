@@ -701,7 +701,7 @@ public partial class StorixDbContext : DbContext
             entity.Property(e => e.Reason)
                 .HasColumnType("character varying")
                 .HasColumnName("reason");
-            entity.Ignore(e => e.ReferenceCode);
+            entity.Property(e => e.ReferenceCode).HasColumnName("reference_code");
 
             entity.HasOne(d => d.ApprovedByNavigation).WithMany(p => p.OutboundRequestApprovedByNavigations)
                 .HasForeignKey(d => d.ApprovedBy)

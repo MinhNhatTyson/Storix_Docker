@@ -20,10 +20,19 @@ namespace Storix_BE.Service.Interfaces
         Task<OutboundOrder> UpdateOutboundOrderStatusAsync(int outboundOrderId, int performedBy, string status);
 
         Task<List<OutboundRequestDto>> GetAllOutboundRequestsAsync(int companyId, int? warehouseId);
+        Task<List<OutboundRequestDto>> GetOutboundRequestsByWarehouseIdAsync(int warehouseId);
         Task<OutboundRequestDto> GetOutboundRequestByIdAsync(int companyId, int id);
         Task<List<OutboundOrderDto>> GetAllOutboundOrdersAsync(int companyId, int? warehouseId);
+        Task<List<OutboundOrderDto>> GetOutboundOrdersByWarehouseIdAsync(int warehouseId);
         Task<OutboundOrderDto> GetOutboundOrderByIdAsync(int companyId, int id);
         Task<List<OutboundOrderDto>> GetOutboundOrdersByStaffAsync(int companyId, int staffId);
+
+        Task<IReadOnlyList<OutboundOrderItemAvailableLocationsDto>> GetOutboundOrderItemAvailableLocationsAsync(int outboundOrderId);
+        Task<IReadOnlyList<OutboundOrderItemSelectedLocationDto>> GetOutboundOrderItemSelectedLocationsAsync(int outboundOrderId);
+
+        Task<OutboundIssueDto> CreateOutboundIssueAsync(int outboundOrderId, CreateOutboundIssueRequest request);
+        Task<OutboundIssueDto> UpdateOutboundIssueAsync(int outboundOrderId, int issueId, UpdateOutboundIssueRequest request);
+        Task<List<OutboundIssueDto>> GetOutboundIssuesByTicketAsync(int outboundOrderId);
     }
 
     public sealed record CreateOutboundOrderItemRequest(int ProductId, int Quantity);
@@ -61,12 +70,79 @@ namespace Storix_BE.Service.Interfaces
         int Id,
         int? ProductId,
         string? ProductName,
+        string? ProductSku,
         int? ExpectedQuantity,
         int? ReceivedQuantity,
         int? Quantity,
         double? Price,
         double? CostPrice,
-        string? PricingMethod);
+        string? PricingMethod,
+        double? DisplayPrice);
+
+    public sealed record OutboundAvailableShelfDto(
+        int ShelfId,
+        string? ShelfCode,
+        string? ShelfIdCode,
+        int? ZoneId,
+        int? WarehouseId,
+        int AvailableQuantity);
+
+    public sealed record OutboundAvailableBinDto(
+        int BinId,
+        string? BinCode,
+        string? BinIdCode,
+        int? LevelId,
+        int? ShelfId,
+        int? InventoryId,
+        int? Percentage,
+        double? Width,
+        double? Height,
+        double? Length);
+
+    public sealed record OutboundOrderItemAvailableLocationsDto(
+        int OutboundOrderItemId,
+        int ProductId,
+        string? ProductName,
+        int RequiredQuantity,
+        IReadOnlyList<OutboundAvailableShelfDto> AvailableShelves,
+        IReadOnlyList<OutboundAvailableBinDto> AvailableBins);
+
+    public sealed record OutboundOrderItemSelectedLocationDto(
+        int OutboundOrderItemId,
+        int ProductId,
+        string BinIdCode,
+        int Quantity,
+        DateTime? Timestamp);
+
+    public sealed record CreateOutboundIssueRequest(
+        int ReportedBy,
+        int OutboundOrderItemId,
+        int IssueQuantity,
+        string Reason,
+        string? Note,
+        string? ImageUrl);
+
+    public sealed record UpdateOutboundIssueRequest(
+        int UpdatedBy,
+        int? OutboundOrderItemId,
+        int? IssueQuantity,
+        string? Reason,
+        string? Note,
+        string? ImageUrl);
+
+    public sealed record OutboundIssueDto(
+        int IssueId,
+        int OutboundOrderId,
+        int OutboundOrderItemId,
+        int ProductId,
+        int IssueQuantity,
+        string Reason,
+        string? Note,
+        string? ImageUrl,
+        int ReportedBy,
+        DateTime? ReportedAt,
+        int? UpdatedBy,
+        DateTime? UpdatedAt);
 
     public sealed record OutboundRequestDto(
         int Id,

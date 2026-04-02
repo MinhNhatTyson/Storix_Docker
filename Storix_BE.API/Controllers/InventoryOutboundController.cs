@@ -2,6 +2,7 @@
 using Storix_BE.Service.Interfaces;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Security.Claims;
 
 namespace Storix_BE.API.Controllers
@@ -176,6 +177,88 @@ namespace Storix_BE.API.Controllers
             }
         }
 
+        [HttpPost("tickets/{ticketId:int}/issues")]
+        public async Task<IActionResult> CreateTicketIssue(int ticketId, [FromBody] CreateOutboundIssueRequest payload)
+        {
+            if (ticketId <= 0) return BadRequest(new { message = "Invalid ticket id." });
+
+            try
+            {
+                var authError = EnsureRole(4, "Only Staff (roleId=4) can create outbound issues.");
+                if (authError != null) return authError;
+
+                var issue = await _service.CreateOutboundIssueAsync(ticketId, payload);
+                return Ok(issue);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = ex.Message });
+            }
+        }
+
+        [HttpPut("tickets/{ticketId:int}/issues/{issueId:int}")]
+        public async Task<IActionResult> UpdateTicketIssue(int ticketId, int issueId, [FromBody] UpdateOutboundIssueRequest payload)
+        {
+            if (ticketId <= 0) return BadRequest(new { message = "Invalid ticket id." });
+            if (issueId <= 0) return BadRequest(new { message = "Invalid issue id." });
+
+            try
+            {
+                var authError = EnsureRole(4, "Only Staff (roleId=4) can update outbound issues.");
+                if (authError != null) return authError;
+
+                var issue = await _service.UpdateOutboundIssueAsync(ticketId, issueId, payload);
+                return Ok(issue);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = ex.Message });
+            }
+        }
+
+        [HttpGet("tickets/{ticketId:int}/issues")]
+        public async Task<IActionResult> GetTicketIssues(int ticketId)
+        {
+            if (ticketId <= 0) return BadRequest(new { message = "Invalid ticket id." });
+
+            try
+            {
+                var authError = EnsureRoleIn(new[] { 3, 4 }, "Only Manager (roleId=3) or Staff (roleId=4) can view outbound issues.");
+                if (authError != null) return authError;
+
+                var issues = await _service.GetOutboundIssuesByTicketAsync(ticketId);
+                return Ok(issues);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = ex.Message });
+            }
+        }
+
         [HttpGet("requests/{companyId:int}")]
         public async Task<IActionResult> GetAllRequests(int companyId, [FromQuery] int? warehouseId)
         {
@@ -186,6 +269,30 @@ namespace Storix_BE.API.Controllers
             try
             {
                 var items = await _service.GetAllOutboundRequestsAsync(companyId, warehouseId);
+                return Ok(items);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = ex.Message });
+            }
+        }
+
+        [HttpGet("requests/by-warehouse/{warehouseId:int}")]
+        public async Task<IActionResult> GetRequestsByWarehouse(int warehouseId)
+        {
+            if (warehouseId <= 0) return BadRequest(new { message = "Invalid warehouse id." });
+
+            try
+            {
+                var items = await _service.GetOutboundRequestsByWarehouseIdAsync(warehouseId);
                 return Ok(items);
             }
             catch (InvalidOperationException ex)
@@ -277,6 +384,30 @@ namespace Storix_BE.API.Controllers
                 return StatusCode(500, new { message = ex.Message });
             }
         }
+
+        [HttpGet("tickets/by-warehouse/{warehouseId:int}")]
+        public async Task<IActionResult> GetTicketsByWarehouse(int warehouseId)
+        {
+            if (warehouseId <= 0) return BadRequest(new { message = "Invalid warehouse id." });
+
+            try
+            {
+                var items = await _service.GetOutboundOrdersByWarehouseIdAsync(warehouseId);
+                return Ok(items);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = ex.Message });
+            }
+        }
         [HttpGet("get-outbound-orders-for-staff/{companyId:int}/{staffId:int}")]
         public async Task<IActionResult> GetOutboundTasksByStaff(int companyId, int staffId)
         {
@@ -302,6 +433,60 @@ namespace Storix_BE.API.Controllers
             }
         }
 
+        [HttpGet("tickets/{ticketId:int}/items/locations")]
+        public async Task<IActionResult> GetTicketItemAvailableLocations(int ticketId)
+        {
+            if (ticketId <= 0) return BadRequest(new { message = "Invalid ticket id." });
+
+            try
+            {
+                var authError = EnsureRoleIn(new[] { 3, 4 }, "Only Manager (roleId=3) or Staff (roleId=4) can view outbound item locations.");
+                if (authError != null) return authError;
+
+                var result = await _service.GetOutboundOrderItemAvailableLocationsAsync(ticketId).ConfigureAwait(false);
+                return Ok(result);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = ex.Message });
+            }
+        }
+
+        [HttpGet("tickets/{ticketId:int}/items/selected-locations")]
+        public async Task<IActionResult> GetTicketItemSelectedLocations(int ticketId)
+        {
+            if (ticketId <= 0) return BadRequest(new { message = "Invalid ticket id." });
+
+            try
+            {
+                var authError = EnsureRoleIn(new[] { 3, 4 }, "Only Manager (roleId=3) or Staff (roleId=4) can view outbound selected locations.");
+                if (authError != null) return authError;
+
+                var result = await _service.GetOutboundOrderItemSelectedLocationsAsync(ticketId).ConfigureAwait(false);
+                return Ok(result);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = ex.Message });
+            }
+        }
+
         private IActionResult? EnsureRole(int requiredRole, string forbiddenMessage, string? superAdminMessage = null)
         {
             if (User?.Identity?.IsAuthenticated != true)
@@ -318,6 +503,24 @@ namespace Storix_BE.API.Controllers
                 return StatusCode(403, new { message = superAdminMessage });
 
             if (roleId != requiredRole)
+                return StatusCode(403, new { message = forbiddenMessage });
+
+            return null;
+        }
+
+        private IActionResult? EnsureRoleIn(IEnumerable<int> allowedRoles, string forbiddenMessage)
+        {
+            if (User?.Identity?.IsAuthenticated != true)
+                return Unauthorized(new { message = "Authentication required." });
+
+            var roleClaim = User.FindFirst(ClaimTypes.Role)?.Value;
+            if (string.IsNullOrWhiteSpace(roleClaim))
+                return StatusCode(403, new { message = "Role claim is missing." });
+
+            if (!int.TryParse(roleClaim, out var roleId))
+                return StatusCode(403, new { message = "Invalid role claim." });
+
+            if (allowedRoles == null || !allowedRoles.Contains(roleId))
                 return StatusCode(403, new { message = forbiddenMessage });
 
             return null;

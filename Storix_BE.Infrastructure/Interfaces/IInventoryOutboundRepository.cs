@@ -19,6 +19,63 @@ namespace Storix_BE.Repository.Interfaces
 
         Task<OutboundOrder> UpdateOutboundOrderItemsAsync(int outboundOrderId, IEnumerable<OutboundOrderItem> items, IEnumerable<InventoryPlacementDto>? placements = null);
 
+        public sealed record OutboundAvailableShelfDto(
+            int ShelfId,
+            string? ShelfCode,
+            string? ShelfIdCode,
+            int? ZoneId,
+            int? WarehouseId,
+            int AvailableQuantity);
+
+        public sealed record OutboundAvailableBinDto(
+            int BinId,
+            string? BinCode,
+            string? BinIdCode,
+            int? LevelId,
+            int? ShelfId,
+            int? InventoryId,
+            int? Percentage,
+            double? Width,
+            double? Height,
+            double? Length);
+
+        public sealed record OutboundOrderItemAvailableLocationsDto(
+            int OutboundOrderItemId,
+            int ProductId,
+            string? ProductName,
+            int RequiredQuantity,
+            IReadOnlyList<OutboundAvailableShelfDto> AvailableShelves,
+            IReadOnlyList<OutboundAvailableBinDto> AvailableBins);
+
+        Task<IReadOnlyList<OutboundOrderItemAvailableLocationsDto>> GetOutboundOrderItemAvailableLocationsAsync(int outboundOrderId);
+
+        public sealed record OutboundOrderItemSelectedLocationDto(
+            int OutboundOrderItemId,
+            int ProductId,
+            string BinIdCode,
+            int Quantity,
+            DateTime? Timestamp);
+
+        Task<IReadOnlyList<OutboundOrderItemSelectedLocationDto>> GetOutboundOrderItemSelectedLocationsAsync(int outboundOrderId);
+
+        public sealed record OutboundIssueDto(
+            int IssueId,
+            int OutboundOrderId,
+            int OutboundOrderItemId,
+            int ProductId,
+            int IssueQuantity,
+            string Reason,
+            string? Note,
+            string? ImageUrl,
+            int ReportedBy,
+            DateTime? ReportedAt,
+            int? UpdatedBy,
+            DateTime? UpdatedAt);
+
+        Task<OutboundIssueDto> CreateOutboundIssueAsync(int outboundOrderId, int reportedBy, int outboundOrderItemId, int issueQuantity, string reason, string? note, string? imageUrl);
+        Task<OutboundIssueDto> UpdateOutboundIssueAsync(int outboundOrderId, int issueId, int updatedBy, int? outboundOrderItemId, int? issueQuantity, string? reason, string? note, string? imageUrl);
+        Task<List<OutboundIssueDto>> GetOutboundIssuesByTicketAsync(int outboundOrderId);
+
         Task<OutboundOrder> UpdateOutboundOrderStatusAsync(int outboundOrderId, int performedBy, string status);
 
         Task<OutboundOrder> ConfirmOutboundOrderAsync(
@@ -28,8 +85,10 @@ namespace Storix_BE.Repository.Interfaces
             IEnumerable<(int ProductId, int ShelfId, int Quantity)>? locationAllocations = null,
             string? note = null);
         Task<List<OutboundRequest>> GetAllOutboundRequestsAsync(int companyId, int? warehouseId);
+        Task<List<OutboundRequest>> GetOutboundRequestsByWarehouseIdAsync(int warehouseId);
         Task<OutboundRequest> GetOutboundRequestByIdAsync(int companyId, int id);
         Task<List<OutboundOrder>> GetAllOutboundOrdersAsync(int companyId, int? warehouseId);
+        Task<List<OutboundOrder>> GetOutboundOrdersByWarehouseIdAsync(int warehouseId);
         Task<OutboundOrder> GetOutboundOrderByIdAsync(int companyId, int id);
         Task<List<OutboundOrder>> GetOutboundOrdersByStaffAsync(int companyId, int staffId);
         Task<OutboundRequestExportDto?> GetOutboundRequestForExportAsync(int outboundRequestId);
