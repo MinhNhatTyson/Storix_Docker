@@ -13,7 +13,7 @@ namespace Storix_BE.API.Controllers
 {
     [ApiController]
     [Route("api/company-warehouses/{companyId:int}/assignments")]
-    [Authorize(Roles = "2")]
+    [Authorize]
     public class WarehouseAssignmentsController : ControllerBase
     {
         private readonly IWarehouseAssignmentService _assignmentService;
