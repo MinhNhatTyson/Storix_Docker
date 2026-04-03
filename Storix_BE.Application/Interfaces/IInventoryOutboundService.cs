@@ -11,6 +11,8 @@ namespace Storix_BE.Service.Interfaces
 
         Task<IReadOnlyList<InventoryAvailabilityResponse>> GetInventoryAvailabilityAsync(int warehouseId, IEnumerable<int> productIds);
 
+        Task<IReadOnlyList<WarehouseInventoryItemDto>> GetWarehouseInventoryAsync(int companyId, int warehouseId);
+
         Task<OutboundRequest> UpdateOutboundRequestStatusAsync(int requestId, int approverId, string status);
 
         Task<OutboundOrder> CreateOutboundOrderFromRequestAsync(int outboundRequestId, int createdBy, int? staffId, string? note, string? pricingMethod = "LastPurchasePrice");
@@ -62,6 +64,19 @@ namespace Storix_BE.Service.Interfaces
     public sealed record UpdateOutboundOrderStatusRequest(int PerformedBy, string Status);
 
     public sealed record InventoryAvailabilityResponse(int ProductId, int AvailableQuantity);
+
+    public sealed record WarehouseInventoryItemDto(
+        int InventoryId,
+        int WarehouseId,
+        int ProductId,
+        string? ProductName,
+        string? ProductSku,
+        int Quantity,
+        int ReservedQuantity,
+        int AvailableQuantity,
+        DateTime? LastUpdated,
+        DateTime? LastCountedAt);
+
     public sealed record OutboundWarehouseDto(int Id, string? Name);
 
     public sealed record OutboundUserDto(int Id, string? FullName, string? Email, string? Phone);

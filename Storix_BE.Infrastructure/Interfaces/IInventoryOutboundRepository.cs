@@ -11,6 +11,8 @@ namespace Storix_BE.Repository.Interfaces
 
         Task<IReadOnlyList<(int ProductId, int AvailableQuantity)>> GetInventoryAvailabilityAsync(int warehouseId, IEnumerable<int> productIds);
 
+        Task<IReadOnlyList<(int InventoryId, int WarehouseId, int ProductId, string? ProductName, string? ProductSku, int Quantity, int ReservedQuantity, DateTime? LastUpdated, DateTime? LastCountedAt)>> GetWarehouseInventoryAsync(int companyId, int warehouseId);
+
         Task<OutboundRequest> UpdateOutboundRequestStatusAsync(int requestId, int approverId, string status);
 
         Task<OutboundOrder> CreateOutboundOrderFromRequestAsync(int outboundRequestId, int createdBy, int? staffId, string? note, string? pricingMethod = "LastPurchasePrice");

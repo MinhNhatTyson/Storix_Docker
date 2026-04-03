@@ -54,6 +54,26 @@ namespace Storix_BE.Service.Implementation
             return data.Select(x => new InventoryAvailabilityResponse(x.ProductId, x.AvailableQuantity)).ToList();
         }
 
+        public async Task<IReadOnlyList<WarehouseInventoryItemDto>> GetWarehouseInventoryAsync(int companyId, int warehouseId)
+        {
+            if (companyId <= 0) throw new ArgumentException("Invalid company id.", nameof(companyId));
+            if (warehouseId <= 0) throw new ArgumentException("Invalid warehouse id.", nameof(warehouseId));
+
+            var items = await _repo.GetWarehouseInventoryAsync(companyId, warehouseId).ConfigureAwait(false);
+
+            return items.Select(x => new WarehouseInventoryItemDto(
+                x.InventoryId,
+                x.WarehouseId,
+                x.ProductId,
+                x.ProductName,
+                x.ProductSku,
+                x.Quantity,
+                x.ReservedQuantity,
+                x.Quantity - x.ReservedQuantity,
+                x.LastUpdated,
+                x.LastCountedAt)).ToList();
+        }
+
         public async Task<OutboundRequest> UpdateOutboundRequestStatusAsync(int requestId, int approverId, string status)
         {
             if (requestId <= 0) throw new ArgumentException("Invalid request id.", nameof(requestId));

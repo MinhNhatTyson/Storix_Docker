@@ -1,24 +1,33 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Storix_BE.Domain.Exception;
+using Storix_BE.Domain.Models;
 using Storix_BE.Repository.DTO;
+using Storix_BE.Service.Implementation;
 using Storix_BE.Service.Interfaces;
-using System.Collections.Generic;
+using System.Linq;
+using AssignWarehouseRequest = Storix_BE.Service.Interfaces.AssignWarehouseRequest;
+using CreateWarehouseRequest = Storix_BE.Service.Interfaces.CreateWarehouseRequest;
 
 namespace Storix_BE.API.Controllers
 {
     [ApiController]
     [Route("api/company-warehouses/{companyId:int}/assignments")]
-    [Authorize]
+    [Authorize(Roles = "2")]
     public class WarehouseAssignmentsController : ControllerBase
     {
         private readonly IWarehouseAssignmentService _assignmentService;
         private readonly IUserService _userService;
+        private readonly IInventoryOutboundService _inventoryOutboundService;
 
-        public WarehouseAssignmentsController(IWarehouseAssignmentService assignmentService, IUserService userService)
+        public WarehouseAssignmentsController(
+            IWarehouseAssignmentService assignmentService,
+            IUserService userService,
+            IInventoryOutboundService inventoryOutboundService)
         {
             _assignmentService = assignmentService;
             _userService = userService;
+            _inventoryOutboundService = inventoryOutboundService;
         }
 
         private int? GetRoleIdFromToken()
@@ -33,17 +42,11 @@ namespace Storix_BE.API.Controllers
             return User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value;
         }
 
-        private int? GetCompanyIdFromToken()
-        {
-            var companyIdStr = User.FindFirst("CompanyId")?.Value;
-            if (string.IsNullOrEmpty(companyIdStr)) return null;
-            return int.TryParse(companyIdStr, out var id) ? id : null;
-        }
         /// <summary>
         /// List all warehouses within the current company. Company Administrator only.
         /// </summary>
         [HttpGet("/api/company-warehouses/{companyId:int}/warehouses")]
-        [Authorize(Roles = "2,4")]
+        [Authorize(Roles = "2,3,4")]
         public async Task<IActionResult> GetWarehouses(int companyId)
         {
             if (companyId <= 0)
@@ -55,6 +58,12 @@ namespace Storix_BE.API.Controllers
 
             try
             {
+                var caller = await _userService.GetByEmailAsync(email);
+                if (caller?.CompanyId == null)
+                    return Unauthorized();
+                if (caller.CompanyId.Value != companyId)
+                    return Forbid();
+
                 var warehouses = await _assignmentService.GetWarehousesByCompanyAsync(companyId, roleId.Value);
                 return Ok(warehouses.Select(w => new WarehouseSummaryDto(
                     w.Id,
@@ -76,29 +85,84 @@ namespace Storix_BE.API.Controllers
                 return BadRequest(new { message = ex.Message });
             }
         }
+
+        [HttpGet("/api/company-warehouses/{companyId:int}/warehouses/{warehouseId:int}/inventory")]
+        [Authorize(Roles = "2,3,4")]
+        public async Task<IActionResult> GetWarehouseInventory(int companyId, int warehouseId)
+        {
+            if (companyId <= 0)
+                return BadRequest(new { message = "CompanyId is required." });
+            if (warehouseId <= 0)
+                return BadRequest(new { message = "WarehouseId is required." });
+
+            var roleId = GetRoleIdFromToken();
+            var email = GetEmailFromToken();
+            if (roleId == null || string.IsNullOrEmpty(email))
+                return Unauthorized();
+
+            try
+            {
+                var caller = await _userService.GetByEmailAsync(email);
+                if (caller?.CompanyId == null)
+                    return Unauthorized();
+                if (caller.CompanyId.Value != companyId)
+                    return Forbid();
+
+                var items = await _inventoryOutboundService.GetWarehouseInventoryAsync(companyId, warehouseId);
+                return Ok(items);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Forbid();
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
         /// <summary>
         /// List all warehouse assignments within the current company. Company Administrator only.
         /// </summary>
         [HttpGet]
         public async Task<IActionResult> GetAssignments(int companyId)
         {
+            if (companyId <= 0)
+                return BadRequest(new { message = "CompanyId is required." });
             var roleId = GetRoleIdFromToken();
             var email = GetEmailFromToken();
-            var tokenCompanyId = GetCompanyIdFromToken();
-            if (roleId == null || string.IsNullOrEmpty(email) || tokenCompanyId == null || tokenCompanyId.Value != companyId)
+            if (roleId == null || string.IsNullOrEmpty(email))
                 return Unauthorized();
 
             try
             {
                 var caller = await _userService.GetByEmailAsync(email);
-                if (caller?.CompanyId == null || caller.CompanyId.Value != companyId)
+                if (caller?.CompanyId == null)
                     return Unauthorized();
+                if (caller.CompanyId.Value != companyId)
+                    return Forbid();
                 var assignments = await _assignmentService.GetAssignmentsByCompanyAsync(companyId, roleId.Value);
-                return Ok(assignments);
+                return Ok(assignments.Select(MapAssignment));
             }
             catch (UnauthorizedAccessException)
             {
                 return Forbid();
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
             }
         }
 
@@ -108,28 +172,37 @@ namespace Storix_BE.API.Controllers
         [HttpGet("warehouse/{warehouseId:int}")]
         public async Task<IActionResult> GetAssignmentsByWarehouse(int companyId, int warehouseId)
         {
+            if (companyId <= 0)
+                return BadRequest(new { message = "CompanyId is required." });
+            if (warehouseId <= 0)
+                return BadRequest(new { message = "WarehouseId is required." });
             var roleId = GetRoleIdFromToken();
             var email = GetEmailFromToken();
-            var tokenCompanyId = GetCompanyIdFromToken();
-            if (roleId == null || string.IsNullOrEmpty(email) || tokenCompanyId == null || tokenCompanyId.Value != companyId)
+            if (roleId == null || string.IsNullOrEmpty(email))
                 return Unauthorized();
 
             try
             {
                 var caller = await _userService.GetByEmailAsync(email);
-                if (caller?.CompanyId == null || caller.CompanyId.Value != companyId)
+                if (caller?.CompanyId == null)
                     return Unauthorized();
+                if (caller.CompanyId.Value != companyId)
+                    return Forbid();
                 var assignments = await _assignmentService.GetAssignmentsByWarehouseAsync(
                     companyId,
                     roleId.Value,
                     warehouseId);
-                return Ok(assignments);
+                return Ok(assignments.Select(MapAssignment));
             }
             catch (UnauthorizedAccessException)
             {
                 return Forbid();
             }
             catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
             {
                 return BadRequest(new { message = ex.Message });
             }
@@ -141,25 +214,34 @@ namespace Storix_BE.API.Controllers
         [HttpPost]
         public async Task<IActionResult> AssignWarehouse(int companyId, [FromBody] AssignWarehouseRequest request)
         {
+            if (companyId <= 0)
+                return BadRequest(new { message = "CompanyId is required." });
+            if (request == null || request.UserId <= 0 || request.WarehouseId <= 0)
+                return BadRequest(new { message = "UserId and WarehouseId are required." });
             var roleId = GetRoleIdFromToken();
             var email = GetEmailFromToken();
-            var tokenCompanyId = GetCompanyIdFromToken();
-            if (roleId == null || string.IsNullOrEmpty(email) || tokenCompanyId == null || tokenCompanyId.Value != companyId)
+            if (roleId == null || string.IsNullOrEmpty(email))
                 return Unauthorized();
 
             try
             {
                 var caller = await _userService.GetByEmailAsync(email);
-                if (caller?.CompanyId == null || caller.CompanyId.Value != companyId)
+                if (caller?.CompanyId == null)
                     return Unauthorized();
+                if (caller.CompanyId.Value != companyId)
+                    return Forbid();
                 var assignment = await _assignmentService.AssignWarehouseAsync(companyId, roleId.Value, request);
-                return Ok(assignment);
+                return Ok(MapAssignment(assignment));
             }
             catch (UnauthorizedAccessException)
             {
                 return Forbid();
             }
             catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
             {
                 return BadRequest(new { message = ex.Message });
             }
@@ -171,17 +253,22 @@ namespace Storix_BE.API.Controllers
         [HttpDelete]
         public async Task<IActionResult> UnassignWarehouse(int companyId, [FromQuery] int userId, [FromQuery] int warehouseId)
         {
+            if (companyId <= 0)
+                return BadRequest(new { message = "CompanyId is required." });
+            if (userId <= 0 || warehouseId <= 0)
+                return BadRequest(new { message = "UserId and WarehouseId are required." });
             var roleId = GetRoleIdFromToken();
             var email = GetEmailFromToken();
-            var tokenCompanyId = GetCompanyIdFromToken();
-            if (roleId == null || string.IsNullOrEmpty(email) || tokenCompanyId == null || tokenCompanyId.Value != companyId)
+            if (roleId == null || string.IsNullOrEmpty(email))
                 return Unauthorized();
 
             try
             {
                 var caller = await _userService.GetByEmailAsync(email);
-                if (caller?.CompanyId == null || caller.CompanyId.Value != companyId)
+                if (caller?.CompanyId == null)
                     return Unauthorized();
+                if (caller.CompanyId.Value != companyId)
+                    return Forbid();
                 var removed = await _assignmentService.UnassignWarehouseAsync(companyId, roleId.Value, userId, warehouseId);
                 if (!removed)
                     return NotFound();
@@ -195,12 +282,47 @@ namespace Storix_BE.API.Controllers
             {
                 return BadRequest(new { message = ex.Message });
             }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        private static WarehouseAssignmentResponseDto MapAssignment(WarehouseAssignment assignment)
+        {
+            return new WarehouseAssignmentResponseDto(
+                assignment.Id,
+                assignment.UserId,
+                assignment.WarehouseId,
+                assignment.RoleInWarehouse,
+                assignment.AssignedAt,
+                assignment.User == null
+                    ? null
+                    : new UserSummaryDto(
+                        assignment.User.Id,
+                        assignment.User.CompanyId,
+                        assignment.User.FullName,
+                        assignment.User.Email,
+                        assignment.User.Phone,
+                        assignment.User.RoleId,
+                        assignment.User.Role?.Name,
+                        assignment.User.Status,
+                        assignment.User.CreatedAt,
+                        assignment.User.UpdatedAt),
+                assignment.Warehouse == null
+                    ? null
+                    : new WarehouseSummaryDto(
+                        assignment.Warehouse.Id,
+                        assignment.Warehouse.CompanyId,
+                        assignment.Warehouse.Name,
+                        assignment.Warehouse.Status)
+            );
         }
         /// <summary>
         /// Create new warehouse (Company Administrator only). Route: POST /api/company-warehouses/{companyId}
         /// </summary>
         [HttpPost]
-        [Authorize(Roles = "2,3")]
+        [Authorize(Roles = "2")]
         [Route("~/api/update-company-warehouse/{companyId:int}/structure/{warehouseId:int}")]
         public async Task<IActionResult> UpdateWarehouseStructure(int companyId, int warehouseId, [FromBody] CreateWarehouseRequest request)
         {

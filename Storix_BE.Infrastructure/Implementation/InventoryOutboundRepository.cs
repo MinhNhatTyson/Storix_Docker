@@ -154,6 +154,56 @@ namespace Storix_BE.Repository.Implementation
             return result;
         }
 
+        public async Task<IReadOnlyList<(int InventoryId, int WarehouseId, int ProductId, string? ProductName, string? ProductSku, int Quantity, int ReservedQuantity, DateTime? LastUpdated, DateTime? LastCountedAt)>> GetWarehouseInventoryAsync(int companyId, int warehouseId)
+        {
+            if (companyId <= 0) throw new ArgumentException("Invalid companyId.", nameof(companyId));
+            if (warehouseId <= 0) throw new ArgumentException("Invalid warehouseId.", nameof(warehouseId));
+
+            var warehouseExistsInCompany = await _context.Warehouses
+                .AsNoTracking()
+                .AnyAsync(w => w.Id == warehouseId && w.CompanyId == companyId)
+                .ConfigureAwait(false);
+
+            if (!warehouseExistsInCompany)
+                throw new InvalidOperationException($"Warehouse {warehouseId} does not belong to company {companyId}.");
+
+            var rawItems = await _context.Inventories
+                .AsNoTracking()
+                .Where(i => i.WarehouseId == warehouseId && i.ProductId.HasValue)
+                .Include(i => i.Product)
+                .OrderBy(i => i.Product!.Name)
+                .ThenBy(i => i.ProductId)
+                .Select(i => new
+                {
+                    InventoryId = i.Id,
+                    WarehouseId = i.WarehouseId ?? warehouseId,
+                    ProductId = i.ProductId!.Value,
+                    ProductName = i.Product != null ? i.Product.Name : null,
+                    ProductSku = i.Product != null ? i.Product.Sku : null,
+                    Quantity = i.Quantity ?? 0,
+                    ReservedQuantity = i.ReservedQuantity ?? 0,
+                    LastUpdated = i.LastUpdated,
+                    LastCountedAt = i.LastCountedAt
+                })
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            var items = rawItems
+                .Select(i => (
+                    i.InventoryId,
+                    i.WarehouseId,
+                    i.ProductId,
+                    i.ProductName,
+                    i.ProductSku,
+                    i.Quantity,
+                    i.ReservedQuantity,
+                    i.LastUpdated,
+                    i.LastCountedAt))
+                .ToList();
+
+            return items;
+        }
+
         public async Task<OutboundRequest> UpdateOutboundRequestStatusAsync(int requestId, int approverId, string status)
         {
             if (string.IsNullOrWhiteSpace(status)) throw new ArgumentException("Status is required.", nameof(status));
