@@ -317,6 +317,8 @@ namespace Storix_BE.Repository.Implementation
                     .ThenInclude(z => z.Shelves)
                         .ThenInclude(s => s.ShelfLevels)
                             .ThenInclude(l => l.ShelfLevelBins)
+                                .ThenInclude(b => b.Inventory)
+                                    .ThenInclude(i => i.Product)
                 .Include(w => w.StorageZones)
                     .ThenInclude(z => z.Shelves)
                         .ThenInclude(s => s.ShelfNodes)

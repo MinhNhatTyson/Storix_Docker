@@ -500,6 +500,7 @@ namespace Storix_BE.API.Controllers
                                             width = b.Width,
                                             height = b.Height,
                                             length = b.Length,
+                                            productId = b.Inventory?.ProductId
                                         }).ToList()
                                         : new List<object>()
                                 }).ToList()
