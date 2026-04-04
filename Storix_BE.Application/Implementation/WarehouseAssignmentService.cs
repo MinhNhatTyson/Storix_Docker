@@ -57,7 +57,6 @@ namespace Storix_BE.Service.Implementation
         public async Task<List<WarehouseAssignment>> GetAssignmentsByWarehouseAsync(int companyId, int callerRoleId, int warehouseId)
         {
             if (companyId <= 0) throw new InvalidOperationException("Invalid company id.");
-            EnsureCompanyAdministratorAsync(callerRoleId);
 
             var warehouse = await _assignmentRepository.GetWarehouseByIdAsync(warehouseId);
             if (warehouse == null)

@@ -1037,11 +1037,6 @@ namespace Storix_BE.Repository.Implementation
             if (user == null)
                 throw new InvalidOperationException($"User with id {savedBy} not found.");
 
-            if (!order.StaffId.HasValue || order.StaffId.Value != savedBy)
-                throw new InvalidOperationException("Only assigned staff can save path optimization for this outbound ticket.");
-
-            await EnsureStaffAssignedToWarehouseAsync(order.WarehouseId.Value, savedBy).ConfigureAwait(false);
-
             var payloadChecksum = ComputeSha256Hex(payloadJson);
 
             var latestLog = await _context.ActivityLogs

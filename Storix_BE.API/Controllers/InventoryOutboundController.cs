@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using Storix_BE.Service.Interfaces;
 using System;
 using System.Collections.Generic;
@@ -259,6 +260,7 @@ namespace Storix_BE.API.Controllers
             }
         }
 
+        [Authorize(Roles = "2,3,4")]
         [HttpPost("tickets/{ticketId:int}/path-optimization")]
         public async Task<IActionResult> SavePathOptimization(int ticketId, [FromBody] CreateOutboundPathOptimizationRequest payload)
         {
@@ -266,9 +268,6 @@ namespace Storix_BE.API.Controllers
 
             try
             {
-                var authError = EnsureRole(4, "Only Staff (roleId=4) can save outbound path optimization.");
-                if (authError != null) return authError;
-
                 var result = await _service.SaveOutboundPathOptimizationAsync(ticketId, payload);
                 return Ok(result);
             }
@@ -286,6 +285,7 @@ namespace Storix_BE.API.Controllers
             }
         }
 
+        [Authorize(Roles = "2,3,4")]
         [HttpGet("tickets/{ticketId:int}/path-optimization")]
         public async Task<IActionResult> GetPathOptimizationByTicket(int ticketId)
         {
@@ -293,9 +293,6 @@ namespace Storix_BE.API.Controllers
 
             try
             {
-                var authError = EnsureRoleIn(new[] { 3, 4 }, "Only Manager (roleId=3) or Staff (roleId=4) can view outbound path optimization.");
-                if (authError != null) return authError;
-
                 var result = await _service.GetOutboundPathOptimizationByTicketAsync(ticketId);
                 if (result == null)
                     return NotFound(new { code = "PATH_OPT_NOT_FOUND", message = "Path optimization not found for this ticket." });
