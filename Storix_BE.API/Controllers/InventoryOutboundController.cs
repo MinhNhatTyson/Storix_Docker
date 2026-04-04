@@ -259,6 +259,63 @@ namespace Storix_BE.API.Controllers
             }
         }
 
+        [HttpPost("tickets/{ticketId:int}/path-optimization")]
+        public async Task<IActionResult> SavePathOptimization(int ticketId, [FromBody] CreateOutboundPathOptimizationRequest payload)
+        {
+            if (ticketId <= 0) return BadRequest(new { code = "INVALID_TICKET_ID", message = "Invalid ticket id." });
+
+            try
+            {
+                var authError = EnsureRole(4, "Only Staff (roleId=4) can save outbound path optimization.");
+                if (authError != null) return authError;
+
+                var result = await _service.SaveOutboundPathOptimizationAsync(ticketId, payload);
+                return Ok(result);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { code = "PATH_OPT_OPERATION_INVALID", message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { code = "PATH_OPT_VALIDATION_FAILED", message = ex.Message, details = ex.ParamName });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { code = "PATH_OPT_INTERNAL_ERROR", message = ex.Message });
+            }
+        }
+
+        [HttpGet("tickets/{ticketId:int}/path-optimization")]
+        public async Task<IActionResult> GetPathOptimizationByTicket(int ticketId)
+        {
+            if (ticketId <= 0) return BadRequest(new { code = "INVALID_TICKET_ID", message = "Invalid ticket id." });
+
+            try
+            {
+                var authError = EnsureRoleIn(new[] { 3, 4 }, "Only Manager (roleId=3) or Staff (roleId=4) can view outbound path optimization.");
+                if (authError != null) return authError;
+
+                var result = await _service.GetOutboundPathOptimizationByTicketAsync(ticketId);
+                if (result == null)
+                    return NotFound(new { code = "PATH_OPT_NOT_FOUND", message = "Path optimization not found for this ticket." });
+
+                return Ok(result);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { code = "PATH_OPT_OPERATION_INVALID", message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { code = "PATH_OPT_VALIDATION_FAILED", message = ex.Message, details = ex.ParamName });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { code = "PATH_OPT_INTERNAL_ERROR", message = ex.Message });
+            }
+        }
+
         [HttpGet("requests/{companyId:int}")]
         public async Task<IActionResult> GetAllRequests(int companyId, [FromQuery] int? warehouseId)
         {

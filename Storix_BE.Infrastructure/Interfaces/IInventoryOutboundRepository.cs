@@ -1,5 +1,6 @@
 ﻿using Storix_BE.Domain.Models;
 using Storix_BE.Repository.DTO;
+using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 
@@ -74,9 +75,18 @@ namespace Storix_BE.Repository.Interfaces
             int? UpdatedBy,
             DateTime? UpdatedAt);
 
+        public sealed record OutboundPathOptimizationDto(
+            int OutboundOrderId,
+            string PayloadJson,
+            int SavedBy,
+            DateTime? SavedAt);
+
         Task<OutboundIssueDto> CreateOutboundIssueAsync(int outboundOrderId, int reportedBy, int outboundOrderItemId, int issueQuantity, string reason, string? note, string? imageUrl);
         Task<OutboundIssueDto> UpdateOutboundIssueAsync(int outboundOrderId, int issueId, int updatedBy, int? outboundOrderItemId, int? issueQuantity, string? reason, string? note, string? imageUrl);
         Task<List<OutboundIssueDto>> GetOutboundIssuesByTicketAsync(int outboundOrderId);
+
+        Task<OutboundPathOptimizationDto> SaveOutboundPathOptimizationAsync(int outboundOrderId, int savedBy, string payloadJson);
+        Task<OutboundPathOptimizationDto?> GetOutboundPathOptimizationByTicketAsync(int outboundOrderId);
 
         Task<OutboundOrder> UpdateOutboundOrderStatusAsync(int outboundOrderId, int performedBy, string status);
 

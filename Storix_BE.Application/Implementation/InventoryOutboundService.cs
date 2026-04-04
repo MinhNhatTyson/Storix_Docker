@@ -4,6 +4,7 @@ using Storix_BE.Service.Interfaces;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using System.Threading.Tasks;
 
 namespace Storix_BE.Service.Implementation
@@ -390,6 +391,66 @@ namespace Storix_BE.Service.Implementation
                 dto.ReportedAt,
                 dto.UpdatedBy,
                 dto.UpdatedAt)).ToList();
+        }
+
+        public async Task<OutboundPathOptimizationDto> SaveOutboundPathOptimizationAsync(int outboundOrderId, CreateOutboundPathOptimizationRequest request)
+        {
+            if (outboundOrderId <= 0) throw new ArgumentException("Invalid outboundOrderId.", nameof(outboundOrderId));
+            if (request == null) throw new ArgumentNullException(nameof(request));
+            if (request.SavedBy <= 0) throw new ArgumentException("Invalid savedBy.", nameof(request.SavedBy));
+
+            if (request.Payload.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null)
+                throw new ArgumentException("Payload is required.", nameof(request.Payload));
+
+            if (request.Payload.ValueKind != JsonValueKind.Array)
+                throw new ArgumentException("Payload must be a JSON array.", nameof(request.Payload));
+
+            var payloadArray = request.Payload;
+            if (payloadArray.GetArrayLength() == 0)
+                throw new ArgumentException("Payload array cannot be empty.", nameof(request.Payload));
+
+            foreach (var block in payloadArray.EnumerateArray())
+            {
+                if (block.ValueKind != JsonValueKind.Object)
+                    throw new ArgumentException("Each payload item must be a JSON object.", nameof(request.Payload));
+
+                if (!block.TryGetProperty("summary", out var summary) || summary.ValueKind != JsonValueKind.Object)
+                    throw new ArgumentException("Each payload item must contain object 'summary'.", nameof(request.Payload));
+
+                if (summary.TryGetProperty("totalDistance", out var totalDistance)
+                    && totalDistance.ValueKind == JsonValueKind.Number
+                    && totalDistance.TryGetDouble(out var distance)
+                    && distance < 0)
+                {
+                    throw new ArgumentException("summary.totalDistance cannot be negative.", nameof(request.Payload));
+                }
+            }
+
+            var payloadJson = request.Payload.GetRawText();
+            if (payloadJson.Length > 262_144)
+                throw new ArgumentException("Payload is too large. Max allowed is 256KB.", nameof(request.Payload));
+
+            var saved = await _repo.SaveOutboundPathOptimizationAsync(outboundOrderId, request.SavedBy, payloadJson).ConfigureAwait(false);
+
+            return new OutboundPathOptimizationDto(
+                saved.OutboundOrderId,
+                JsonSerializer.Deserialize<JsonElement>(saved.PayloadJson),
+                saved.SavedBy,
+                saved.SavedAt);
+        }
+
+        public async Task<OutboundPathOptimizationDto?> GetOutboundPathOptimizationByTicketAsync(int outboundOrderId)
+        {
+            if (outboundOrderId <= 0) throw new ArgumentException("Invalid outboundOrderId.", nameof(outboundOrderId));
+
+            var data = await _repo.GetOutboundPathOptimizationByTicketAsync(outboundOrderId).ConfigureAwait(false);
+            if (data == null) return null;
+
+            return new OutboundPathOptimizationDto(
+                data.OutboundOrderId,
+                JsonSerializer.Deserialize<JsonElement>(data.PayloadJson),
+                data.SavedBy,
+                data.SavedAt);
         }
     }
 }

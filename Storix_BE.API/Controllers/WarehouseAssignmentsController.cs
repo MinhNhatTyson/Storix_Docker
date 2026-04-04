@@ -170,6 +170,7 @@ namespace Storix_BE.API.Controllers
         /// List Manager/Staff assigned to a specific warehouse (within your company).
         /// </summary>
         [HttpGet("warehouse/{warehouseId:int}")]
+        [Authorize(Roles = "2,3,4")]
         public async Task<IActionResult> GetAssignmentsByWarehouse(int companyId, int warehouseId)
         {
             if (companyId <= 0)

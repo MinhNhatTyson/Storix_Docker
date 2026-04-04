@@ -10,6 +10,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -802,7 +803,7 @@ namespace Storix_BE.Repository.Implementation
                 throw new InvalidOperationException($"Issue quantity cannot exceed item quantity ({maxQty}).");
 
             var now = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
-            var issueId = (int)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            var issueId = Guid.NewGuid().ToString("N");
             var action = $"OUTBOUND_ISSUE_CREATE:ISSUE_ID={issueId};ORDER={outboundOrderId};ITEM={outboundOrderItemId};PRODUCT={item.ProductId.Value};QTY={issueQuantity};REASON={ToBase64(reason.Trim())};NOTE={ToBase64(note)};IMAGE={ToBase64(imageUrl)};REPORTED_BY={reportedBy}";
 
             _context.ActivityLogs.Add(new ActivityLog
@@ -1009,6 +1010,158 @@ namespace Storix_BE.Repository.Implementation
             }
 
             return map.Values.OrderByDescending(x => x.UpdatedAt ?? x.ReportedAt).ToList();
+        }
+
+        public async Task<IInventoryOutboundRepository.OutboundPathOptimizationDto> SaveOutboundPathOptimizationAsync(int outboundOrderId, int savedBy, string payloadJson)
+        {
+            if (outboundOrderId <= 0) throw new ArgumentException("Invalid outboundOrderId.", nameof(outboundOrderId));
+            if (savedBy <= 0) throw new ArgumentException("Invalid savedBy.", nameof(savedBy));
+            if (string.IsNullOrWhiteSpace(payloadJson)) throw new ArgumentException("Payload is required.", nameof(payloadJson));
+
+            var order = await _context.OutboundOrders
+                .AsNoTracking()
+                .FirstOrDefaultAsync(o => o.Id == outboundOrderId)
+                .ConfigureAwait(false);
+
+            if (order == null)
+                throw new InvalidOperationException($"OutboundOrder with id {outboundOrderId} not found.");
+
+            if (!order.WarehouseId.HasValue || order.WarehouseId.Value <= 0)
+                throw new InvalidOperationException("OutboundOrder must have a valid WarehouseId.");
+
+            var user = await _context.Users
+                .AsNoTracking()
+                .FirstOrDefaultAsync(u => u.Id == savedBy)
+                .ConfigureAwait(false);
+
+            if (user == null)
+                throw new InvalidOperationException($"User with id {savedBy} not found.");
+
+            if (!order.StaffId.HasValue || order.StaffId.Value != savedBy)
+                throw new InvalidOperationException("Only assigned staff can save path optimization for this outbound ticket.");
+
+            await EnsureStaffAssignedToWarehouseAsync(order.WarehouseId.Value, savedBy).ConfigureAwait(false);
+
+            var payloadChecksum = ComputeSha256Hex(payloadJson);
+
+            var latestLog = await _context.ActivityLogs
+                .AsNoTracking()
+                .Where(l => l.Entity == "OutboundPathOptimization"
+                            && l.EntityId == outboundOrderId
+                            && l.Action != null
+                            && l.Action.StartsWith("OUTBOUND_PATH_OPTIMIZATION_SAVE:"))
+                .OrderByDescending(l => l.Timestamp)
+                .FirstOrDefaultAsync()
+                .ConfigureAwait(false);
+
+            if (latestLog != null && !string.IsNullOrWhiteSpace(latestLog.Action))
+            {
+                var idxLatest = latestLog.Action.IndexOf(':');
+                if (idxLatest >= 0 && idxLatest < latestLog.Action.Length - 1)
+                {
+                    var payloadLatest = latestLog.Action.Substring(idxLatest + 1);
+                    var partsLatest = payloadLatest.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                    var kvLatest = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var part in partsLatest)
+                    {
+                        var kv = part.Split('=', 2, StringSplitOptions.TrimEntries);
+                        if (kv.Length == 2) kvLatest[kv[0]] = kv[1];
+                    }
+
+                    if (kvLatest.TryGetValue("CHECKSUM", out var latestChecksum)
+                        && string.Equals(latestChecksum, payloadChecksum, StringComparison.OrdinalIgnoreCase))
+                    {
+                        var latestSavedBy = (kvLatest.TryGetValue("SAVED_BY", out var lsbRaw) && int.TryParse(lsbRaw, out var lsb) && lsb > 0)
+                            ? lsb
+                            : (latestLog.UserId ?? savedBy);
+
+                        return new IInventoryOutboundRepository.OutboundPathOptimizationDto(
+                            outboundOrderId,
+                            payloadJson,
+                            latestSavedBy,
+                            latestLog.Timestamp);
+                    }
+                }
+            }
+
+            var now = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
+            var action = $"OUTBOUND_PATH_OPTIMIZATION_SAVE:ORDER={outboundOrderId};CHECKSUM={payloadChecksum};PAYLOAD={ToBase64(payloadJson)};SAVED_BY={savedBy}";
+
+            _context.ActivityLogs.Add(new ActivityLog
+            {
+                UserId = savedBy,
+                Entity = "OutboundPathOptimization",
+                EntityId = outboundOrderId,
+                Action = action,
+                Timestamp = now
+            });
+
+            await _context.SaveChangesAsync().ConfigureAwait(false);
+
+            return new IInventoryOutboundRepository.OutboundPathOptimizationDto(
+                outboundOrderId,
+                payloadJson,
+                savedBy,
+                now);
+        }
+
+        public async Task<IInventoryOutboundRepository.OutboundPathOptimizationDto?> GetOutboundPathOptimizationByTicketAsync(int outboundOrderId)
+        {
+            if (outboundOrderId <= 0) throw new ArgumentException("Invalid outboundOrderId.", nameof(outboundOrderId));
+
+            var order = await _context.OutboundOrders
+                .AsNoTracking()
+                .FirstOrDefaultAsync(o => o.Id == outboundOrderId)
+                .ConfigureAwait(false);
+
+            if (order == null)
+                throw new InvalidOperationException($"OutboundOrder with id {outboundOrderId} not found.");
+
+            var log = await _context.ActivityLogs
+                .AsNoTracking()
+                .Where(l => l.Entity == "OutboundPathOptimization"
+                            && l.EntityId == outboundOrderId
+                            && l.Action != null
+                            && l.Action.StartsWith("OUTBOUND_PATH_OPTIMIZATION_SAVE:"))
+                .OrderByDescending(l => l.Timestamp)
+                .FirstOrDefaultAsync()
+                .ConfigureAwait(false);
+
+            if (log == null || string.IsNullOrWhiteSpace(log.Action))
+                return null;
+
+            var idx = log.Action.IndexOf(':');
+            if (idx < 0 || idx >= log.Action.Length - 1)
+                return null;
+
+            var payload = log.Action.Substring(idx + 1);
+            var parts = payload.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            var kvMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var part in parts)
+            {
+                var kv = part.Split('=', 2, StringSplitOptions.TrimEntries);
+                if (kv.Length == 2) kvMap[kv[0]] = kv[1];
+            }
+
+            if (!kvMap.TryGetValue("PAYLOAD", out var encodedPayload))
+                return null;
+
+            var json = FromBase64(encodedPayload);
+            if (string.IsNullOrWhiteSpace(json))
+                return null;
+
+            var savedBy = (kvMap.TryGetValue("SAVED_BY", out var savedByRaw) && int.TryParse(savedByRaw, out var sb) && sb > 0)
+                ? sb
+                : (log.UserId ?? 0);
+
+            if (savedBy <= 0)
+                return null;
+
+            return new IInventoryOutboundRepository.OutboundPathOptimizationDto(
+                outboundOrderId,
+                json,
+                savedBy,
+                log.Timestamp);
         }
 
         public async Task<OutboundOrder> ConfirmOutboundOrderAsync(
@@ -1507,6 +1660,13 @@ namespace Storix_BE.Repository.Implementation
         {
             if (string.IsNullOrEmpty(value)) return string.Empty;
             return Convert.ToBase64String(Encoding.UTF8.GetBytes(value));
+        }
+
+        private static string ComputeSha256Hex(string input)
+        {
+            var bytes = Encoding.UTF8.GetBytes(input ?? string.Empty);
+            var hash = SHA256.HashData(bytes);
+            return Convert.ToHexString(hash);
         }
 
         private static string? FromBase64(string? encoded)

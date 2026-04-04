@@ -1,6 +1,7 @@
 ﻿using Storix_BE.Domain.Models;
 using System;
 using System.Collections.Generic;
+using System.Text.Json;
 using System.Threading.Tasks;
 
 namespace Storix_BE.Service.Interfaces
@@ -35,6 +36,9 @@ namespace Storix_BE.Service.Interfaces
         Task<OutboundIssueDto> CreateOutboundIssueAsync(int outboundOrderId, CreateOutboundIssueRequest request);
         Task<OutboundIssueDto> UpdateOutboundIssueAsync(int outboundOrderId, int issueId, UpdateOutboundIssueRequest request);
         Task<List<OutboundIssueDto>> GetOutboundIssuesByTicketAsync(int outboundOrderId);
+
+        Task<OutboundPathOptimizationDto> SaveOutboundPathOptimizationAsync(int outboundOrderId, CreateOutboundPathOptimizationRequest request);
+        Task<OutboundPathOptimizationDto?> GetOutboundPathOptimizationByTicketAsync(int outboundOrderId);
     }
 
     public sealed record CreateOutboundOrderItemRequest(int ProductId, int Quantity);
@@ -158,6 +162,16 @@ namespace Storix_BE.Service.Interfaces
         DateTime? ReportedAt,
         int? UpdatedBy,
         DateTime? UpdatedAt);
+
+    public sealed record CreateOutboundPathOptimizationRequest(
+        int SavedBy,
+        JsonElement Payload);
+
+    public sealed record OutboundPathOptimizationDto(
+        int OutboundOrderId,
+        JsonElement Payload,
+        int SavedBy,
+        DateTime? SavedAt);
 
     public sealed record OutboundRequestDto(
         int Id,
