@@ -12,10 +12,12 @@ namespace Storix_BE.Service.Implementation
     public class InventoryCountService : IInventoryCountService
     {
         private readonly IInventoryCountRepository _repo;
+        private readonly IActivityLogRepository _activityLogRepo;
 
-        public InventoryCountService(IInventoryCountRepository repo)
+        public InventoryCountService(IInventoryCountRepository repo, IActivityLogRepository activityLogRepo)
         {
             _repo = repo;
+            _activityLogRepo = activityLogRepo;
         }
 
         public async Task<InventoryCountsTicket> CreateStockCountTicketAsync(CreateStockCountTicketRequest request)
@@ -67,7 +69,17 @@ namespace Storix_BE.Service.Implementation
                 });
             }
 
-            return await _repo.CreateStockCountTicketAsync(ticket).ConfigureAwait(false);
+            var created = await _repo.CreateStockCountTicketAsync(ticket).ConfigureAwait(false);
+            var now = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
+            await _activityLogRepo.AddAsync(new ActivityLog
+            {
+                UserId = request.PerformedBy,
+                Action = "Create StockCountTicket",
+                Entity = "StockCountTicket",
+                EntityId = created.Id,
+                Timestamp = now
+            }).ConfigureAwait(false);
+            return created;
         }
 
         public async Task<InventoryCountsTicket> UpdateStockCountTicketStatusAsync(int ticketId, int approverId, string status)
@@ -77,6 +89,15 @@ namespace Storix_BE.Service.Implementation
             if (string.IsNullOrWhiteSpace(status)) throw new ArgumentException("Status is required.", nameof(status));
 
             var updated = await _repo.UpdateStockCountTicketStatusAsync(ticketId, approverId, status).ConfigureAwait(false);
+            var now = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
+            await _activityLogRepo.AddAsync(new ActivityLog
+            {
+                UserId = approverId,
+                Action = $"{status} StockCountTicket",
+                Entity = "StockCountTicket",
+                EntityId = updated.Id,
+                Timestamp = now
+            }).ConfigureAwait(false);
             return updated;
         }
 

@@ -30,6 +30,7 @@ namespace Storix_BE.API.Configuration
             services.AddTransient<IImageService, ImageService>();
             services.AddTransient<IEmailService, EmailService>();
             services.AddTransient<INotificationService, NotificationService>();
+            services.AddTransient<IActivityLogService, ActivityLogService>();
             services.AddSingleton<INotificationPublisher, SignalRNotificationPublisher>();
             // Filter kiểm tra subscription (Scoped vì phụ thuộc ISubscriptionService)
             // services.AddScoped<SubscriptionAccessFilter>(); // tạm tắt subscription

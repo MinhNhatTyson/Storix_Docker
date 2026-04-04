@@ -12,10 +12,12 @@ namespace Storix_BE.Service.Implementation
     public class SupplierService : ISupplierService
     {
         private readonly ISupplierRepository _repo;
+        private readonly IActivityLogRepository _activityLogRepo;
 
-        public SupplierService(ISupplierRepository repo)
+        public SupplierService(ISupplierRepository repo, IActivityLogRepository activityLogRepo)
         {
             _repo = repo;
+            _activityLogRepo = activityLogRepo;
         }
 
         public async Task<List<Supplier>> GetByCompanyAsync(int companyId)
@@ -53,7 +55,18 @@ namespace Storix_BE.Service.Implementation
                 Status = "Active"
             };
 
-            return await _repo.CreateAsync(supplier);
+            var created = await _repo.CreateAsync(supplier);
+            // Log supplier creation. Creator user id is not present in request model; UserId left null.
+            var now = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
+            await _activityLogRepo.AddAsync(new ActivityLog
+            {
+                UserId = null,
+                Action = "Create Supplier",
+                Entity = "Supplier",
+                EntityId = created.Id,
+                Timestamp = now
+            }).ConfigureAwait(false);
+            return created;
         }
 
         public async Task<Supplier?> UpdateAsync(int id, UpdateSupplierRequest request)

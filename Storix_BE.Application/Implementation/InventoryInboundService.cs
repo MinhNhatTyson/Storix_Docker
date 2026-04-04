@@ -9,16 +9,24 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using static Microsoft.EntityFrameworkCore.DbLoggerCategory;
 
 namespace Storix_BE.Service.Implementation
 {
     public class InventoryInboundService : IInventoryInboundService
     {
         private readonly IInventoryInboundRepository _repo;
+        private readonly INotificationService _notificationService;
+        private readonly IActivityLogRepository _activityLogRepo;
 
-        public InventoryInboundService(IInventoryInboundRepository repo)
+        public InventoryInboundService(
+            IInventoryInboundRepository repo,
+            INotificationService notificationService,
+            IActivityLogRepository activityLogRepo)
         {
             _repo = repo;
+            _notificationService = notificationService;
+            _activityLogRepo = activityLogRepo;
         }
 
         public async Task<InboundRequest> CreateInboundRequestAsync(CreateInboundRequestRequest request)
@@ -113,6 +121,16 @@ namespace Storix_BE.Service.Implementation
             }).ToList();
 
             var createdRequest = await _repo.CreateInventoryInboundTicketRequest(inboundRequest, productPrices);
+            // add activity log entry
+            var now = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
+            await _activityLogRepo.AddAsync(new ActivityLog
+            {
+                UserId = request.RequestedBy,
+                Action = "Create Inbound Request",
+                Entity = "InboundRequest",
+                EntityId = inboundRequest.Id,
+                Timestamp = now
+            }).ConfigureAwait(false);
             return createdRequest;
         }
         public async Task<InboundRequest> ImportInboundRequestAsync(IFormFile file)
@@ -189,8 +207,59 @@ namespace Storix_BE.Service.Implementation
             if (approverId <= 0) throw new ArgumentException("Invalid approver id.", nameof(approverId));
             if (string.IsNullOrWhiteSpace(status)) throw new ArgumentException("Status is required.", nameof(status));
 
-            var id = await _repo.UpdateInventoryInboundTicketRequestStatus(ticketRequestId, approverId, status);
-            return id;
+            var inbound = await _repo.UpdateInventoryInboundTicketRequestStatus(ticketRequestId, approverId, status);
+            var now = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
+            // log approval/change (status may be "Approved", "Rejected", etc.)
+            await _activityLogRepo.AddAsync(new ActivityLog
+            {
+                UserId = approverId,
+                Action = $"{status} Inbound Request",
+                Entity = "InboundRequest",
+                EntityId = inbound.Id,
+                Timestamp = now
+            }).ConfigureAwait(false);
+            // Send notification to managers when approved
+            if (string.Equals(status, "Approved", StringComparison.OrdinalIgnoreCase))
+            {
+                var companyId = inbound.RequestedByNavigation?.CompanyId ?? inbound.RequestedByNavigation?.CompanyId;
+                if (companyId.HasValue && companyId.Value > 0)
+                {
+                    var title = "Inbound request approved";
+                    var message = $"Inbound request '{inbound.Code}' has been approved.";
+                    await _notificationService.SendNotificationToManagersAsync(
+                        companyId.Value,
+                        title,
+                        message,
+                        type: "InboundRequest",
+                        category: "Inbound",
+                        referenceType: "InboundRequest",
+                        referenceId: inbound.Id,
+                        createdByUserId: approverId
+                    ).ConfigureAwait(false);
+                }
+            }
+            // Send notification to managers when approved
+            if (string.Equals(status, "Rejected", StringComparison.OrdinalIgnoreCase))
+            {
+                var companyId = inbound.RequestedByNavigation?.CompanyId ?? inbound.RequestedByNavigation?.CompanyId;
+                if (companyId.HasValue && companyId.Value > 0)
+                {
+                    var title = "Inbound request rejected";
+                    var message = $"Inbound request '{inbound.Code}' has been rejected.";
+                    await _notificationService.SendNotificationToManagersAsync(
+                        companyId.Value,
+                        title,
+                        message,
+                        type: "InboundRequest",
+                        category: "Inbound",
+                        referenceType: "InboundRequest",
+                        referenceId: inbound.Id,
+                        createdByUserId: approverId
+                    ).ConfigureAwait(false);
+                }
+            }
+
+            return inbound;
         }
 
         public async Task<InboundOrder> CreateTicketFromRequestAsync(int inboundRequestId, int createdBy, int? staffId)
@@ -199,7 +268,17 @@ namespace Storix_BE.Service.Implementation
             if (createdBy <= 0) throw new ArgumentException("Invalid createdBy.", nameof(createdBy));
             // staffId may be null (optional)
 
-            return await _repo.CreateInboundOrderFromRequestAsync(inboundRequestId, createdBy, staffId);
+            var ticket = await _repo.CreateInboundOrderFromRequestAsync(inboundRequestId, createdBy, staffId);
+            var now = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
+            await _activityLogRepo.AddAsync(new ActivityLog
+            {
+                UserId = createdBy,
+                Action = "Create Inbound Order",
+                Entity = "InboundOrder",
+                EntityId = ticket.Id,
+                Timestamp = now
+            }).ConfigureAwait(false);
+            return ticket;
         }
 
         public async Task<InboundOrder> UpdateTicketItemsAsync(int inboundOrderId, IEnumerable<UpdateInboundOrderItemRequest> items)

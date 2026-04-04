@@ -1,12 +1,10 @@
-﻿using Microsoft.Extensions.Configuration;
-using Storix_BE.Domain.Exception;
+﻿using Storix_BE.Domain.Exception;
 using Storix_BE.Domain.Models;
 using Storix_BE.Repository.Interfaces;
 using Storix_BE.Service.Interfaces;
+using Microsoft.Extensions.Configuration;
 using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
 
 namespace Storix_BE.Service.Implementation
@@ -16,12 +14,18 @@ namespace Storix_BE.Service.Implementation
         private readonly IUserRepository _userRepository;
         private readonly IWarehouseAssignmentRepository _assignmentRepository;
         private readonly IConfiguration _configuration;
+        private readonly IActivityLogRepository _activityLogRepo;
 
-        public WarehouseAssignmentService(IUserRepository userRepository, IWarehouseAssignmentRepository assignmentRepository, IConfiguration configuration)
+        public WarehouseAssignmentService(
+            IUserRepository userRepository,
+            IWarehouseAssignmentRepository assignmentRepository,
+            IConfiguration configuration,
+            IActivityLogRepository activityLogRepo)
         {
             _userRepository = userRepository;
             _assignmentRepository = assignmentRepository;
             _configuration = configuration;
+            _activityLogRepo = activityLogRepo;
         }
 
         private static void EnsureCompanyAdministratorAsync(int callerRoleId)
@@ -42,15 +46,16 @@ namespace Storix_BE.Service.Implementation
             var value = _configuration.GetValue<int?>("Policy:MaxUsersPerWarehouse");
             return value.HasValue && value.Value > 0 ? value.Value : null;
         }
+
         public async Task<List<Warehouse>> GetWarehousesByCompanyAsync(int companyId, int callerRoleId)
         {
             if (companyId <= 0) throw new InvalidOperationException("Invalid company id.");
             return await _assignmentRepository.GetWarehousesByCompanyIdAsync(companyId);
         }
+
         public async Task<List<WarehouseAssignment>> GetAssignmentsByCompanyAsync(int companyId, int callerRoleId)
         {
             if (companyId <= 0) throw new InvalidOperationException("Invalid company id.");
-            EnsureCompanyAdministratorAsync(callerRoleId);
             return await _assignmentRepository.GetAssignmentsByCompanyIdAsync(companyId);
         }
 
@@ -81,7 +86,6 @@ namespace Storix_BE.Service.Implementation
         public async Task<WarehouseAssignment> AssignWarehouseAsync(int companyId, int callerRoleId, AssignWarehouseRequest request)
         {
             if (companyId <= 0) throw new InvalidOperationException("Invalid company id.");
-            EnsureCompanyAdministratorAsync(callerRoleId);
 
             var user = await _userRepository.GetUserByIdWithRoleAsync(request.UserId);
             if (user == null)
@@ -105,8 +109,8 @@ namespace Storix_BE.Service.Implementation
             if (IsInactiveStatus(warehouse.Status))
                 throw new BusinessRuleException("BR-WH-02", "Warehouse is inactive.");
 
-            var existing = await _assignmentRepository.GetAssignmentAsync(request.UserId, request.WarehouseId);
-            if (existing != null)
+            var existingWarehouse = await _assignmentRepository.GetAssignmentAsync(request.UserId, request.WarehouseId);
+            if (existingWarehouse != null)
                 throw new BusinessRuleException("BR-WH-04", "User already assigned to this warehouse.");
 
             var maxUsers = GetMaxUsersPerWarehouse();
@@ -132,7 +136,6 @@ namespace Storix_BE.Service.Implementation
         public async Task<bool> UnassignWarehouseAsync(int companyId, int callerRoleId, int userId, int warehouseId)
         {
             if (companyId <= 0) throw new InvalidOperationException("Invalid company id.");
-            EnsureCompanyAdministratorAsync(callerRoleId);
 
             var assignment = await _assignmentRepository.GetAssignmentAsync(userId, warehouseId);
             if (assignment == null)
@@ -225,10 +228,20 @@ namespace Storix_BE.Service.Implementation
 
                 await _assignmentRepository.AddAssignmentAsync(assignment);
             }
+            var now = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
+            await _activityLogRepo.AddAsync(new ActivityLog
+            {
+                UserId = request.AssignedManagerUserId,
+                Action = "Create Warehouse",
+                Entity = "Warehouse",
+                EntityId = created.Id,
+                Timestamp = now
+            }).ConfigureAwait(false);
 
             return created;
         }
 
+        // New: update an existing warehouse structure (nodes, edges, zones)
         public async Task<Warehouse> UpdateWarehouseStructureAsync(int companyId, int warehouseId, CreateWarehouseRequest request)
         {
             if (companyId <= 0) throw new InvalidOperationException("Invalid company id.");
@@ -479,6 +492,15 @@ namespace Storix_BE.Service.Implementation
 
             // Return warehouse with refreshed structure
             var result = await _assignmentRepository.GetWarehouseWithStructureAsync(warehouseId) ?? throw new System.Exception("Failed to load updated warehouse.");
+            var time = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
+            await _activityLogRepo.AddAsync(new ActivityLog
+            {
+                UserId = null,
+                Action = "Update Warehouse Structure",
+                Entity = "Warehouse",
+                EntityId = warehouseId,
+                Timestamp = time
+            }).ConfigureAwait(false);
             return result;
         }
         public async Task<Warehouse> GetWarehouseStructureAsync(int companyId, int warehouseId)
