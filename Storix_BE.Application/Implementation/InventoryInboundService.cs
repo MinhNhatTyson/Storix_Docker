@@ -398,19 +398,42 @@ namespace Storix_BE.Service.Implementation
             // Basic validation
             foreach (var it in items)
             {
-                if (it.InboundProductId <= 0) throw new ArgumentException("Each storage recommendation must contain a valid inboundProductId.");
-                if (it.Recommendation == null) throw new ArgumentException("Recommendation is required for each storage recommendation.");
+                if (it.InboundProductId <= 0) throw new ArgumentException("Each storage recommendation item must contain a valid inboundProductId.");
+                if (it.Recommendations == null || !it.Recommendations.Any()) throw new ArgumentException("At least one Recommendation is required for each storage recommendation item.");
+                foreach (var rec in it.Recommendations)
+                {
+                    if (rec == null) throw new ArgumentException("Recommendation entry cannot be null.");
+                    if (string.IsNullOrWhiteSpace(rec.BinId)) throw new ArgumentException("Recommendation.BinId (ShelfLevelBin.IdCode) is required.");
+                    // Quantity is optional (int?), validate if provided and negative
+                    if (rec.Quantity.HasValue && rec.Quantity.Value < 0) throw new ArgumentException("Recommendation.Quantity cannot be negative.");
+                }
             }
 
-            // Map to repository DTOs
-            var repoDtos = items.Select(i => new IInventoryInboundRepository.StorageRecommendationCreateDto(
-                i.InboundProductId,
-                new IInventoryInboundRepository.RecommendationCreateDto(i.Recommendation.BinId, i.Recommendation.Path, i.Recommendation.DistanceInfo),
-                i.Reason
-            )).ToList();
+            // Map to repository DTOs (flatten: one repo dto per recommendation)
+            var repoDtos = new List<IInventoryInboundRepository.StorageRecommendationCreateDto>();
+            foreach (var item in items)
+            {
+                foreach (var rec in item.Recommendations)
+                {
+                    var recDto = new IInventoryInboundRepository.RecommendationCreateDto(
+                        rec.BinId,
+                        rec.Path,
+                        rec.DistanceInfo,
+                        rec.Quantity
+                    );
+
+                    repoDtos.Add(new IInventoryInboundRepository.StorageRecommendationCreateDto(
+                        item.InboundProductId,
+                        recDto,
+                        item.Reason
+                    ));
+                }
+            }
 
             await _repo.AddStorageRecommendationsAsync(repoDtos).ConfigureAwait(false);
         }
+
+        // Modified mapping when returning recommendations to include Recommendation.Quantity
         public async Task<List<InboundItemRecommendationsDto>> GetStorageRecommendationsByInboundOrderIdAsync(int inboundOrderId)
         {
             if (inboundOrderId <= 0) throw new ArgumentException("Invalid inbound order id.", nameof(inboundOrderId));
@@ -431,6 +454,7 @@ namespace Storix_BE.Service.Implementation
                             bin?.IdCode,
                             r?.Path,
                             r?.DistanceInfo,
+                            r?.Quantity,
                             sr.Reason,
                             sr.CreatedAt);
                     }).ToList();

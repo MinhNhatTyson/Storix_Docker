@@ -12,7 +12,7 @@ public partial class Recommendation
     public string? Path { get; set; }
 
     public double? DistanceInfo { get; set; }
-
+    public int? Quantity { get; set; }
     public virtual ShelfLevelBin? Bin { get; set; }
 
     public virtual ICollection<StorageRecommendation> StorageRecommendations { get; set; } = new List<StorageRecommendation>();

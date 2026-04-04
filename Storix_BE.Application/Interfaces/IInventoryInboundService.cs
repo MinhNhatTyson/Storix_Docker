@@ -32,8 +32,8 @@ namespace Storix_BE.Service.Interfaces
         byte[] ExportInboundOrderToCsv(InboundOrderExportDto order);
         byte[] ExportInboundOrderToExcel(InboundOrderExportDto order);
         Task<InboundRequest> ImportInboundRequestAsync(IFormFile file);
-        public sealed record RecommendationPayload(string BinId, string? Path, double? DistanceInfo);
-        public sealed record StorageRecommendationItemRequest(int InboundProductId, RecommendationPayload Recommendation, string? Reason);
+        public sealed record RecommendationPayload(string BinId, string? Path, double? DistanceInfo, int? Quantity);
+        public sealed record StorageRecommendationItemRequest(int InboundProductId, IEnumerable<RecommendationPayload> Recommendations, string? Reason);
         public sealed record AddStorageRecommendationsRequest(IEnumerable<StorageRecommendationItemRequest> StorageRecommendations);
 
         Task AddStorageRecommendationsAsync(AddStorageRecommendationsRequest request);
@@ -109,14 +109,15 @@ namespace Storix_BE.Service.Interfaces
     public sealed record LocationAssignmentRequest(string BinId, int Quantity);
     public sealed record UpdateInboundOrderItemRequest(int Id, int ProductId, int? ExpectedQuantity, int? ReceivedQuantity, IEnumerable<LocationAssignmentRequest>? Locations);
     public sealed record StorageRecommendationDto(
-            int Id,
-            int? RecommendationId,
-            int? BinId,
-            string? BinIdCode,
-            string? Path,
-            double? DistanceInfo,
-            string? Reason,
-            DateTime? CreatedAt);
+        int Id,
+        int? RecommendationId,
+        int? BinId,
+        string? BinIdCode,
+        string? Path,
+        double? DistanceInfo,
+        int? Quantity,
+        string? Reason,
+        DateTime? CreatedAt);
 
     public sealed record InboundItemRecommendationsDto(
         int InboundOrderItemId,

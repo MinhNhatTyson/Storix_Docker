@@ -190,8 +190,8 @@ namespace Storix_BE.API.Controllers
                 if (caller.CompanyId.Value != companyId)
                     return Forbid();
                 var assignments = await _assignmentService.GetAssignmentsByWarehouseAsync(
-                    companyId,
-                    roleId.Value,
+                        companyId,
+                        roleId.Value,
                     warehouseId);
                 return Ok(assignments.Select(MapAssignment));
             }

@@ -357,6 +357,34 @@ namespace Storix_BE.API.Controllers
         {
             try
             {
+                // Basic controller-side validation for the new payload shape (many recommendations per inbound product)
+                if (request == null) return BadRequest(new { message = "Request body is required." });
+
+                var items = request.StorageRecommendations?.ToList();
+                if (items == null || !items.Any())
+                    return BadRequest(new { message = "storageRecommendations payload is required and cannot be empty." });
+
+                foreach (var it in items)
+                {
+                    if (it.InboundProductId <= 0)
+                        return BadRequest(new { message = "Each storage recommendation item must contain a valid inboundProductId." });
+
+                    if (it.Recommendations == null || !it.Recommendations.Any())
+                        return BadRequest(new { message = "Each storage recommendation item must contain one or more Recommendations." });
+
+                    foreach (var rec in it.Recommendations)
+                    {
+                        if (rec == null)
+                            return BadRequest(new { message = "Recommendation entries cannot be null." });
+
+                        if (string.IsNullOrWhiteSpace(rec.BinId))
+                            return BadRequest(new { message = "Recommendation.BinId (ShelfLevelBin.IdCode) is required." });
+
+                        if (rec.Quantity.HasValue && rec.Quantity.Value < 0)
+                            return BadRequest(new { message = "Recommendation.Quantity cannot be negative." });
+                    }
+                }
+
                 await _service.AddStorageRecommendationsAsync(request);
                 return Ok(new { message = "Storage recommendations added successfully." });
             }

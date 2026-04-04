@@ -991,7 +991,8 @@ namespace Storix_BE.Repository.Implementation
                     {
                         BinId = bin.Id,
                         Path = req.Recommendation.Path,
-                        DistanceInfo = req.Recommendation.DistanceInfo
+                        DistanceInfo = req.Recommendation.DistanceInfo,
+                        Quantity = req.Recommendation.Quantity
                     };
 
                     // Create StorageRecommendation with navigation to Recommendation so EF will insert both and set FK.

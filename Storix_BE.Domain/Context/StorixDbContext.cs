@@ -175,6 +175,7 @@ public partial class StorixDbContext : DbContext
             entity.Property(e => e.BinId).HasColumnName("bin_id");
             entity.Property(e => e.DistanceInfo).HasColumnName("distance_info");
             entity.Property(e => e.Path).HasColumnName("path");
+            entity.Property(e => e.Quantity).HasColumnName("quantity");
 
             entity.HasOne(d => d.Bin).WithMany(p => p.Recommendations)
                 .HasForeignKey(d => d.BinId)
