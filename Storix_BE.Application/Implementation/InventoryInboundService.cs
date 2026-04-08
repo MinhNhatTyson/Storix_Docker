@@ -278,6 +278,29 @@ namespace Storix_BE.Service.Implementation
                 EntityId = ticket.Id,
                 Timestamp = now
             }).ConfigureAwait(false);
+            if (staffId.HasValue && staffId.Value > 0)
+            {
+                try
+                {
+                    var title = "New inbound ticket assigned";
+                    var message = $"Inbound ticket #{ticket.Id} has been created and assigned to you.";
+                    await _notificationService.SendNotificationToUserAsync(
+                        staffId.Value,
+                        title,
+                        message,
+                        type: "InboundOrder",
+                        category: "Inbound",
+                        referenceType: "InboundOrder",
+                        referenceId: ticket.Id,
+                        createdByUserId: createdBy
+                    ).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Failed to send notification to staff {staffId}: {ex.Message}");
+                }
+            }
+
             return ticket;
         }
 
@@ -307,7 +330,34 @@ namespace Storix_BE.Service.Implementation
                 )))
                 .ToList();
 
-            return await _repo.UpdateInboundOrderItemsAsync(inboundOrderId, domainItems, placements).ConfigureAwait(false);
+            var updated = await _repo.UpdateInboundOrderItemsAsync(inboundOrderId, domainItems, placements).ConfigureAwait(false);
+
+            // Notify managers when staff updated/finished inbound ticket (best-effort)
+            try
+            {
+                var companyId = updated.Warehouse?.CompanyId ?? updated.InboundRequest?.RequestedByNavigation?.CompanyId;
+                if (companyId.HasValue && companyId.Value > 0)
+                {
+                    var title = "Inbound ticket updated by staff";
+                    var message = $"Inbound ticket #{updated.Id} has new updates from staff.";
+                    await _notificationService.SendNotificationToManagersAsync(
+                        companyId.Value,
+                        title,
+                        message,
+                        type: "InboundOrder",
+                        category: "Inbound",
+                        referenceType: "InboundOrder",
+                        referenceId: updated.Id,
+                        createdByUserId: updated.StaffId
+                    ).ConfigureAwait(false);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Failed to notify managers for inbound order {inboundOrderId}: {ex.Message}");
+            }
+
+            return updated;
         }
         private static SupplierDto? MapSupplier(Supplier? s)
         {

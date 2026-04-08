@@ -12,10 +12,14 @@ namespace Storix_BE.Service.Implementation
     public class InventoryOutboundService : IInventoryOutboundService
     {
         private readonly IInventoryOutboundRepository _repo;
+        private readonly INotificationService _notificationService;
+        private readonly IUserRepository _userRepo;
 
-        public InventoryOutboundService(IInventoryOutboundRepository repo)
+        public InventoryOutboundService(IInventoryOutboundRepository repo, INotificationService notificationService, IUserRepository userRepo)
         {
             _repo = repo;
+            _notificationService = notificationService;
+            _userRepo = userRepo;
         }
 
         public async Task<OutboundRequest> CreateOutboundRequestAsync(CreateOutboundRequestRequest request)
@@ -81,7 +85,45 @@ namespace Storix_BE.Service.Implementation
             if (approverId <= 0) throw new ArgumentException("Invalid approver id.", nameof(approverId));
             if (string.IsNullOrWhiteSpace(status)) throw new ArgumentException("Status is required.", nameof(status));
 
-            return await _repo.UpdateOutboundRequestStatusAsync(requestId, approverId, status);
+            var outbound = await _repo.UpdateOutboundRequestStatusAsync(requestId, approverId, status).ConfigureAwait(false);
+
+            // Notify managers when approved/rejected by admin (similar to inbound flow)
+            if (string.Equals(status, "Approved", StringComparison.OrdinalIgnoreCase) || string.Equals(status, "Rejected", StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    // try resolve company via request.Warehouse -> repository may not include navigation; fallback to approver's company
+                    int? companyId = null;
+                    if (outbound.Warehouse != null) companyId = outbound.Warehouse.CompanyId;
+                    if (!companyId.HasValue)
+                    {
+                        var user = await _userRepo.GetUserByIdWithRoleAsync(approverId).ConfigureAwait(false);
+                        companyId = user?.CompanyId;
+                    }
+
+                    if (companyId.HasValue && companyId.Value > 0)
+                    {
+                        var title = $"Outbound request {status.ToLowerInvariant()}";
+                        var message = $"Outbound request #{outbound.Id} has been {status.ToLowerInvariant()}.";
+                        await _notificationService.SendNotificationToManagersAsync(
+                            companyId.Value,
+                            title,
+                            message,
+                            type: "OutboundRequest",
+                            category: "Outbound",
+                            referenceType: "OutboundRequest",
+                            referenceId: outbound.Id,
+                            createdByUserId: approverId
+                        ).ConfigureAwait(false);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Failed to notify managers for outbound request {outbound.Id} status change: {ex.Message}");
+                }
+            }
+
+            return outbound;
         }
 
         public async Task<OutboundOrder> CreateOutboundOrderFromRequestAsync(int outboundRequestId, int createdBy, int? staffId, string? note, string? pricingMethod = "LastPurchasePrice")
@@ -96,7 +138,34 @@ namespace Storix_BE.Service.Implementation
                 throw new ArgumentException("Invalid pricing method. Allowed: LastPurchasePrice, SpecificIdentification.", nameof(pricingMethod));
             }
 
-            return await _repo.CreateOutboundOrderFromRequestAsync(outboundRequestId, createdBy, staffId, note, method);
+            var outboundOrder = await _repo.CreateOutboundOrderFromRequestAsync(outboundRequestId, createdBy, staffId, note, pricingMethod).ConfigureAwait(false);
+
+            // notify assigned staff (if manager created the ticket and staff assigned)
+            if (staffId.HasValue && staffId.Value > 0)
+            {
+                try
+                {
+                    var title = "New outbound ticket assigned";
+                    var message = $"Outbound ticket #{outboundOrder.Id} has been created and assigned to you.";
+                    await _notificationService.SendNotificationToUserAsync(
+                        staffId.Value,
+                        title,
+                        message,
+                        type: "OutboundOrder",
+                        category: "Outbound",
+                        referenceType: "OutboundOrder",
+                        referenceId: outboundOrder.Id,
+                        createdByUserId: createdBy
+                    ).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    // best-effort: do not fail ticket creation due to notification issues
+                    Console.WriteLine($"Failed to send notification to staff {staffId}: {ex.Message}");
+                }
+            }
+
+            return outboundOrder;
         }
 
         public async Task<OutboundOrder> UpdateOutboundOrderItemsAsync(int outboundOrderId, IEnumerable<UpdateOutboundOrderItemRequest> items)
