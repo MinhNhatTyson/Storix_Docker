@@ -1,10 +1,12 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using Storix_BE.Service.Interfaces;
 
 namespace Storix_BE.API.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
+    [Authorize]
     public class InventoryInboundController : ControllerBase
     {
         private readonly IInventoryInboundService _service;
@@ -14,6 +16,7 @@ namespace Storix_BE.API.Controllers
             _service = service;
         }
         [HttpPost("create-inbound-request")]
+        [Authorize(Roles = "2,3")]
         public async Task<IActionResult> CreateRequest([FromBody] CreateInboundRequestRequest request)
         {
             try
@@ -36,6 +39,7 @@ namespace Storix_BE.API.Controllers
         }
 
         [HttpPut("update-inbound-request/{id}/status")]
+        [Authorize(Roles = "2,3")]
         public async Task<IActionResult> UpdateStatus(int id, [FromBody] UpdateInboundRequestStatusRequest request)
         {
             try
@@ -58,6 +62,7 @@ namespace Storix_BE.API.Controllers
         }
 
         [HttpPost("create-inbound-ticket/{requestId}/tickets")]
+        [Authorize(Roles = "2,3")]
         public async Task<IActionResult> CreateTicketFromRequest(int requestId, [FromBody] CreateTicketFromRequestRequest payload)
         {
             try
@@ -85,6 +90,7 @@ namespace Storix_BE.API.Controllers
         /// Accepts location assignments to record where received units are stored (bin id code + quantity).
         /// </summary>
         [HttpPut("update-tickets/{ticketId}/items")]
+        [Authorize(Roles = "2,3,4")]
         public async Task<IActionResult> UpdateTicketItems(int ticketId, [FromBody] IEnumerable<UpdateInboundOrderItemRequest> items)
         {
             try
@@ -346,7 +352,7 @@ namespace Storix_BE.API.Controllers
                 return StatusCode(500, new { message = ex.Message });
             }
         }
-        [HttpPost("import-excel")]
+        [HttpPost("import-inbound-request-from-excel")]
         public async Task<IActionResult> ImportInboundExcel(IFormFile file)
         {
             var result = await _service.ImportInboundRequestAsync(file);

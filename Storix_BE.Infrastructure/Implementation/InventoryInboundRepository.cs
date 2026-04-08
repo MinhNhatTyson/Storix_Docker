@@ -1,6 +1,7 @@
 ﻿using ClosedXML.Excel;
 using CsvHelper;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Storix_BE.Domain.Context;
 using Storix_BE.Domain.Models;
 using Storix_BE.Repository.DTO;
@@ -18,10 +19,12 @@ namespace Storix_BE.Repository.Implementation
     public class InventoryInboundRepository : IInventoryInboundRepository
     {
         private readonly StorixDbContext _context;
+        private readonly ILogger<InventoryInboundRepository> _logger;
 
-        public InventoryInboundRepository(StorixDbContext context)
+        public InventoryInboundRepository(StorixDbContext context, ILogger<InventoryInboundRepository> logger)
         {
             _context = context;
+            _logger = logger;
         }
 
         public async Task<InboundRequest> CreateInventoryInboundTicketRequest(InboundRequest request, IEnumerable<ProductPrice>? productPrices = null)
@@ -264,6 +267,8 @@ namespace Storix_BE.Repository.Implementation
                     throw new InvalidOperationException($"One or more provided bins do not belong to the order warehouse.");
             }
 
+            _logger.LogInformation("Updating inbound order items for order {OrderId}. Incoming items: {Count}. Placements: {PlacementCount}", inboundOrderId, incomingList.Count, placementList.Count);
+
             await using var tx = await _context.Database.BeginTransactionAsync().ConfigureAwait(false);
             try
             {
@@ -342,6 +347,8 @@ namespace Storix_BE.Repository.Implementation
                         };
                         _context.Inventories.Add(inventory);
                         inventories.Add(inventory);
+
+                        _logger.LogInformation("Created new inventory for product {ProductId} in warehouse {WarehouseId} with initial quantity {Qty}", productId, order.WarehouseId, delta);
                     }
                     else
                     {
@@ -354,6 +361,8 @@ namespace Storix_BE.Repository.Implementation
 
                         inventory.Quantity = newQty;
                         inventory.LastUpdated = now;
+
+                        _logger.LogInformation("Updated inventory for product {ProductId} in warehouse {WarehouseId}: delta {Delta}, newQty {NewQty}", productId, order.WarehouseId, delta, inventory.Quantity);
                     }
 
                     // create inventory transaction
@@ -382,8 +391,9 @@ namespace Storix_BE.Repository.Implementation
                             // Ensure inventory exists (it should after the update above)
                             var inv = inventories.First(i => i.ProductId == productId);
 
-                            // Link bin to inventory (assign bin to this product inventory)
-                            bin.InventoryId = inv.Id;
+                            // Link bin to inventory using navigation (fix: do not rely on inv.Id which may be 0 for new entities)
+                            bin.Inventory = inv;
+                            _logger.LogInformation("Assigned bin {BinCode} to inventory (ProductId {ProductId}). Inventory tracked id (EF): {TrackedId}", bin.IdCode, productId, inv.Id);
 
                             // Find shelf id (bin -> level -> shelf)
                             var shelf = bin.Level?.Shelf;
@@ -391,10 +401,14 @@ namespace Storix_BE.Repository.Implementation
                                 throw new InvalidOperationException($"Shelf for bin {bin.IdCode} not found.");
 
                             // Update or create InventoryLocation for this inventory/shelf
-                            var invLoc = await _context.InventoryLocations
-                                .FirstOrDefaultAsync(il => il.InventoryId == inv.Id && il.ShelfId == shelf.Id)
-                                .ConfigureAwait(false);
-
+                            InventoryLocation? invLoc = null;
+                            if (inv.Id > 0)
+                            {
+                                invLoc = await _context.InventoryLocations
+                                    .FirstOrDefaultAsync(il => il.InventoryId == inv.Id && il.ShelfId == shelf.Id)
+                                    .ConfigureAwait(false);
+                            }
+                            // If inv.Id == 0 (new inventory) we won't find an existing InventoryLocation; proceed to create
                             if (invLoc == null)
                             {
                                 invLoc = new InventoryLocation
@@ -405,11 +419,13 @@ namespace Storix_BE.Repository.Implementation
                                     UpdatedAt = now
                                 };
                                 _context.InventoryLocations.Add(invLoc);
+                                _logger.LogInformation("Created new InventoryLocation for product {ProductId} on shelf {ShelfId} quantity {Qty}", productId, shelf.Id, p.Quantity);
                             }
                             else
                             {
                                 invLoc.Quantity = (invLoc.Quantity ?? 0) + p.Quantity;
                                 invLoc.UpdatedAt = now;
+                                _logger.LogInformation("Updated InventoryLocation (InventoryId {InventoryId}, ShelfId {ShelfId}) new quantity {Qty}", invLoc.InventoryId, invLoc.ShelfId, invLoc.Quantity);
                             }
                         }
                     }
@@ -473,6 +489,8 @@ namespace Storix_BE.Repository.Implementation
                         {
                             bin.Status = true;
                         }
+
+                        _logger.LogInformation("Recalculated bin {BinCode} percentage {Percentage}", bin.IdCode, bin.Percentage);
                     }
 
                     var allItems = order.InboundOrderItems;
@@ -484,12 +502,17 @@ namespace Storix_BE.Repository.Implementation
                     else if (anyReceived)
                         order.Status = "Partially Completed";
 
+                    _logger.LogInformation("Order {OrderId} status updated to {Status}", order.Id, order.Status);
+
                     await _context.SaveChangesAsync().ConfigureAwait(false);
                     await tx.CommitAsync().ConfigureAwait(false);
+
+                    _logger.LogInformation("UpdateInboundOrderItemsAsync completed and committed for order {OrderId}", order.Id);
                 }
             }
-            catch
+            catch (Exception ex)
             {
+                _logger.LogError(ex, "Error while updating inbound order items for order {OrderId}", inboundOrderId);
                 await tx.RollbackAsync().ConfigureAwait(false);
                 throw;
             }
