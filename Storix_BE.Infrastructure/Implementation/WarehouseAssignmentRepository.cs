@@ -201,15 +201,46 @@ namespace Storix_BE.Repository.Implementation
             await using var tx = await _context.Database.BeginTransactionAsync();
             try
             {
-                // Remove existing structure items (edges, nodes, zones). Rely on cascade or explicit removal.
-                if (existing.NavEdges != null && existing.NavEdges.Any())
-                    _context.NavEdges.RemoveRange(existing.NavEdges);
+                // Explicitly remove nested children to avoid leftover duplicates when cascade is not configured
+                // Remove shelf level bins
+                var bins = existing.StorageZones?
+                    .SelectMany(z => z.Shelves ?? Enumerable.Empty<Shelf>())
+                    .SelectMany(s => s.ShelfLevels ?? Enumerable.Empty<ShelfLevel>())
+                    .SelectMany(l => l.ShelfLevelBins ?? Enumerable.Empty<ShelfLevelBin>())
+                    .ToList() ?? new List<ShelfLevelBin>();
+                if (bins.Any()) _context.ShelfLevelBins.RemoveRange(bins);
 
-                if (existing.StorageZones != null && existing.StorageZones.Any())
-                    _context.StorageZones.RemoveRange(existing.StorageZones);
+                // Remove shelf levels
+                var levels = existing.StorageZones?
+                    .SelectMany(z => z.Shelves ?? Enumerable.Empty<Shelf>())
+                    .SelectMany(s => s.ShelfLevels ?? Enumerable.Empty<ShelfLevel>())
+                    .ToList() ?? new List<ShelfLevel>();
+                if (levels.Any()) _context.ShelfLevels.RemoveRange(levels);
 
-                if (existing.NavNodes != null && existing.NavNodes.Any())
-                    _context.NavNodes.RemoveRange(existing.NavNodes);
+                // Remove shelf nodes (associations)
+                var shelfNodes = existing.StorageZones?
+                    .SelectMany(z => z.Shelves ?? Enumerable.Empty<Shelf>())
+                    .SelectMany(s => s.ShelfNodes ?? Enumerable.Empty<ShelfNode>())
+                    .ToList() ?? new List<ShelfNode>();
+                if (shelfNodes.Any()) _context.ShelfNodes.RemoveRange(shelfNodes);
+
+                // Remove shelves
+                var shelves = existing.StorageZones?
+                    .SelectMany(z => z.Shelves ?? Enumerable.Empty<Shelf>())
+                    .ToList() ?? new List<Shelf>();
+                if (shelves.Any()) _context.Shelves.RemoveRange(shelves);
+
+                // Remove zones
+                var zones = existing.StorageZones?.ToList() ?? new List<StorageZone>();
+                if (zones.Any()) _context.StorageZones.RemoveRange(zones);
+
+                // Remove nav edges
+                var edges = existing.NavEdges?.ToList() ?? new List<NavEdge>();
+                if (edges.Any()) _context.NavEdges.RemoveRange(edges);
+
+                // Remove nav nodes
+                var nodes = existing.NavNodes?.ToList() ?? new List<NavNode>();
+                if (nodes.Any()) _context.NavNodes.RemoveRange(nodes);
 
                 await _context.SaveChangesAsync();
 
@@ -220,14 +251,20 @@ namespace Storix_BE.Repository.Implementation
 
                 var now = System.DateTime.SpecifyKind(System.DateTime.UtcNow, System.DateTimeKind.Unspecified);
 
+                // Keep track of nodes we add to avoid adding the same logical node twice
+                var addedNodesByIdCode = new Dictionary<string, NavNode>(System.StringComparer.OrdinalIgnoreCase);
+
                 // Add new NavNodes (if any)
                 if (warehouseStructure.NavNodes != null)
                 {
                     foreach (var n in warehouseStructure.NavNodes)
                     {
+                        // Use the provided IdCode as key; avoid adding duplicate node instances
                         n.Warehouse = existing;
                         n.Id = 0;
                         _context.NavNodes.Add(n);
+                        if (!string.IsNullOrWhiteSpace(n.IdCode) && !addedNodesByIdCode.ContainsKey(n.IdCode))
+                            addedNodesByIdCode[n.IdCode] = n;
                     }
                 }
 
@@ -240,8 +277,7 @@ namespace Storix_BE.Repository.Implementation
                         z.Id = 0;
                         z.CreatedAt = z.CreatedAt ?? now;
                         _context.StorageZones.Add(z);
-                        // EF will pick up nested children if they are attached to z
-                        // ensure nested entities have CreatedAt where appropriate
+
                         if (z.Shelves != null)
                         {
                             foreach (var s in z.Shelves)
@@ -249,6 +285,7 @@ namespace Storix_BE.Repository.Implementation
                                 s.Zone = z;
                                 s.Id = 0;
                                 s.CreatedAt = s.CreatedAt ?? now;
+
                                 if (s.ShelfLevels != null)
                                 {
                                     foreach (var lvl in s.ShelfLevels)
@@ -272,12 +309,24 @@ namespace Storix_BE.Repository.Implementation
                                     {
                                         sn.Shelf = s;
                                         sn.Id = 0;
+
                                         if (sn.Node != null)
                                         {
-
-                                            sn.Node.Warehouse = existing;
-                                            sn.Node.Id = 0;
-                                            _context.NavNodes.Add(sn.Node);
+                                            // If the node was added previously in NavNodes collection, reuse it.
+                                            if (!string.IsNullOrWhiteSpace(sn.Node.IdCode) && addedNodesByIdCode.TryGetValue(sn.Node.IdCode, out var existingNode))
+                                            {
+                                                // reuse existing tracked node instance
+                                                sn.Node = existingNode;
+                                            }
+                                            else
+                                            {
+                                                // add node and register it
+                                                sn.Node.Warehouse = existing;
+                                                sn.Node.Id = 0;
+                                                _context.NavNodes.Add(sn.Node);
+                                                if (!string.IsNullOrWhiteSpace(sn.Node.IdCode))
+                                                    addedNodesByIdCode[sn.Node.IdCode] = sn.Node;
+                                            }
                                         }
                                     }
                                 }
@@ -286,11 +335,22 @@ namespace Storix_BE.Repository.Implementation
                     }
                 }
 
-                // Add new NavEdges (after nodes are added)
+                // Add new NavEdges (after nodes are added) and ensure they reference tracked node instances
                 if (warehouseStructure.NavEdges != null)
                 {
                     foreach (var e in warehouseStructure.NavEdges)
                     {
+                        // If edge object contains NodeFromNavigation/NodeToNavigation with IdCode, try to replace with tracked instance
+                        if (e.NodeFromNavigation != null && !string.IsNullOrWhiteSpace(e.NodeFromNavigation.IdCode) && addedNodesByIdCode.TryGetValue(e.NodeFromNavigation.IdCode, out var fromNode))
+                        {
+                            e.NodeFromNavigation = fromNode;
+                        }
+
+                        if (e.NodeToNavigation != null && !string.IsNullOrWhiteSpace(e.NodeToNavigation.IdCode) && addedNodesByIdCode.TryGetValue(e.NodeToNavigation.IdCode, out var toNode))
+                        {
+                            e.NodeToNavigation = toNode;
+                        }
+
                         e.Warehouse = existing;
                         e.Id = 0;
                         _context.NavEdges.Add(e);
