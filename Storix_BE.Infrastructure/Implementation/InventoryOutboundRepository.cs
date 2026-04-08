@@ -494,6 +494,7 @@ namespace Storix_BE.Repository.Implementation
             if (string.IsNullOrWhiteSpace(status)) throw new ArgumentException("Status is required.", nameof(status));
 
             var order = await _context.OutboundOrders
+                .Include(o => o.OutboundOrderItems)
                 .FirstOrDefaultAsync(o => o.Id == outboundOrderId)
                 .ConfigureAwait(false);
 
@@ -530,13 +531,72 @@ namespace Storix_BE.Repository.Implementation
             var now = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
             var oldStatus = order.Status;
 
-            // Staff reaches final handover step => close outbound ticket immediately.
+            // Staff reaches final handover step => close outbound ticket and deduct inventory.
             var finalStatus = string.Equals(normalized, "LoadHandover", StringComparison.OrdinalIgnoreCase)
                 ? "Completed"
                 : normalized;
 
-            order.Status = finalStatus;
-            await _context.SaveChangesAsync().ConfigureAwait(false);
+            await using var tx = await _context.Database.BeginTransactionAsync().ConfigureAwait(false);
+            try
+            {
+                // Deduct inventory when outbound is completed by staff flow.
+                if (string.Equals(finalStatus, "Completed", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (!order.WarehouseId.HasValue || order.WarehouseId.Value <= 0)
+                        throw new InvalidOperationException("OutboundOrder must specify WarehouseId to update inventory.");
+
+                    var itemGroups = order.OutboundOrderItems
+                        .Where(i => i.ProductId.HasValue)
+                        .GroupBy(i => i.ProductId!.Value)
+                        .Select(g => new
+                        {
+                            ProductId = g.Key,
+                            Quantity = g.Sum(x => x.Quantity ?? x.ReceivedQuantity ?? x.ExpectedQuantity ?? 0)
+                        })
+                        .Where(x => x.Quantity > 0)
+                        .ToList();
+
+                    if (!itemGroups.Any())
+                        throw new InvalidOperationException("Outbound order has no valid items to deduct inventory.");
+
+                    var productIds = itemGroups.Select(x => x.ProductId).Distinct().ToList();
+                    var inventories = await _context.Inventories
+                        .Where(i => i.WarehouseId == order.WarehouseId && i.ProductId.HasValue && productIds.Contains(i.ProductId.Value))
+                        .ToListAsync()
+                        .ConfigureAwait(false);
+
+                    foreach (var item in itemGroups)
+                    {
+                        var inventory = inventories.FirstOrDefault(i => i.ProductId == item.ProductId);
+                        var available = inventory?.Quantity ?? 0;
+                        if (inventory == null || available < item.Quantity)
+                            throw new InvalidOperationException($"Insufficient stock for ProductId {item.ProductId}. Available: {available}, Requested: {item.Quantity}");
+
+                        inventory.Quantity = available - item.Quantity;
+                        inventory.LastUpdated = now;
+
+                        _context.InventoryTransactions.Add(new InventoryTransaction
+                        {
+                            WarehouseId = order.WarehouseId,
+                            ProductId = item.ProductId,
+                            TransactionType = "Outbound",
+                            QuantityChange = -item.Quantity,
+                            ReferenceId = order.Id,
+                            PerformedBy = performedBy,
+                            CreatedAt = now
+                        });
+                    }
+                }
+
+                order.Status = finalStatus;
+                await _context.SaveChangesAsync().ConfigureAwait(false);
+                await tx.CommitAsync().ConfigureAwait(false);
+            }
+            catch
+            {
+                await tx.RollbackAsync().ConfigureAwait(false);
+                throw;
+            }
 
             // Best-effort audit logging: outbound status update should not fail
             // just because the history table is missing/misconfigured.
