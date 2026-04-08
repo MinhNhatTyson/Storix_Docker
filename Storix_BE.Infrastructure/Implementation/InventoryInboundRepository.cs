@@ -6,10 +6,10 @@ using Storix_BE.Domain.Models;
 using Storix_BE.Repository.DTO;
 using Storix_BE.Repository.Interfaces;
 using System;
-using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text;
+using System.Text.Json;
 using System.Threading.Tasks;
 using static Storix_BE.Repository.Interfaces.IInventoryInboundRepository;
 
@@ -120,6 +120,7 @@ namespace Storix_BE.Repository.Implementation
             if (string.IsNullOrWhiteSpace(status)) throw new ArgumentException("Status is required.", nameof(status));
 
             var inbound = await _context.InboundRequests
+                .Include(r => r.RequestedByNavigation) // <- ensure company info available via RequestedByNavigation.CompanyId
                 .FirstOrDefaultAsync(r => r.Id == ticketRequestId)
                 .ConfigureAwait(false);
 
@@ -339,8 +340,7 @@ namespace Storix_BE.Repository.Implementation
                             Quantity = delta,
                             LastUpdated = now
                         };
-                         _context.Inventories.Add(inventory);
-                        await _context.SaveChangesAsync().ConfigureAwait(false);
+                        _context.Inventories.Add(inventory);
                         inventories.Add(inventory);
                     }
                     else
@@ -947,6 +947,8 @@ namespace Storix_BE.Repository.Implementation
             workbook.SaveAs(stream);
             return stream.ToArray();
         }
+
+
         public async Task AddStorageRecommendationsAsync(IEnumerable<IInventoryInboundRepository.StorageRecommendationCreateDto> requests)
         {
             if (requests == null) throw new ArgumentNullException(nameof(requests));
