@@ -323,7 +323,7 @@ namespace Storix_BE.API.Controllers
         /// Create new warehouse (Company Administrator only). Route: POST /api/company-warehouses/{companyId}
         /// </summary>
         [HttpPost]
-        [Authorize(Roles = "2")]
+        [Authorize(Roles = "2,3")]
         [Route("~/api/update-company-warehouse/{companyId:int}/structure/{warehouseId:int}")]
         public async Task<IActionResult> UpdateWarehouseStructure(int companyId, int warehouseId, [FromBody] CreateWarehouseRequest request)
         {
