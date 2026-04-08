@@ -492,7 +492,7 @@ namespace Storix_BE.Service.Implementation
 
             // Return warehouse with refreshed structure
             var result = await _assignmentRepository.GetWarehouseWithStructureAsync(warehouseId) ?? throw new System.Exception("Failed to load updated warehouse.");
-            var time = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
+            /*var time = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
             await _activityLogRepo.AddAsync(new ActivityLog
             {
                 UserId = null,
@@ -500,7 +500,7 @@ namespace Storix_BE.Service.Implementation
                 Entity = "Warehouse",
                 EntityId = warehouseId,
                 Timestamp = time
-            }).ConfigureAwait(false);
+            }).ConfigureAwait(false);*/
             return result;
         }
         public async Task<Warehouse> GetWarehouseStructureAsync(int companyId, int warehouseId)
