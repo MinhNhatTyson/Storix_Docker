@@ -359,6 +359,7 @@ namespace Storix_BE.Repository.Implementation
 
                 await _context.SaveChangesAsync();
                 await tx.CommitAsync();
+                _context.ChangeTracker.Clear();
                 return true;
             }
             catch
