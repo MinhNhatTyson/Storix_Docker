@@ -698,7 +698,6 @@ public partial class StorixDbContext : DbContext
             entity.Property(e => e.TotalPrice).HasColumnName("total_price");
             entity.Property(e => e.WarehouseId).HasColumnName("warehouse_id");
 
-            // DB-first schema currently does not contain these columns.
             entity.Property(e => e.Reason)
                 .HasColumnType("character varying")
                 .HasColumnName("reason");
@@ -1032,9 +1031,8 @@ public partial class StorixDbContext : DbContext
             entity.Property(e => e.PlannedAt)
                 .HasColumnType("timestamp without time zone")
                 .HasColumnName("planned_at");
-            entity.Property(e => e.ScopeId).HasColumnName("scope_id");
             entity.Property(e => e.ScopeType)
-                .HasMaxLength(50)
+                .HasColumnType("character varying")
                 .HasColumnName("scope_type");
             entity.Property(e => e.Status)
                 .HasColumnType("character varying")
@@ -1052,9 +1050,21 @@ public partial class StorixDbContext : DbContext
                 .HasForeignKey(d => d.WarehouseId)
                 .HasConstraintName("fk_stock_counts_tickets_warehouse_id");
 
-            entity.HasOne(d => d.Scope).WithMany(p => p.StockCountsTickets)
-                .HasForeignKey(d => d.ScopeId)
-                .HasConstraintName("fk_stock_counts_tickets_scope_id");
+            entity.HasMany(d => d.StorageZones).WithMany(p => p.InventoryCountsTickets)
+                .UsingEntity<Dictionary<string, object>>(
+                    "InventoryCountsTicketStorageZone",
+                    r => r.HasOne<StorageZone>().WithMany()
+                        .HasForeignKey("StorageZoneId")
+                        .HasConstraintName("FK_StorageZone"),
+                    l => l.HasOne<InventoryCountsTicket>().WithMany()
+                        .HasForeignKey("InventoryCountsTicketId")
+                        .HasConstraintName("FK_Ticket"),
+                    j =>
+                    {
+                        j.HasKey("InventoryCountsTicketId", "StorageZoneId");
+                        j.ToTable("InventoryCountsTicketStorageZone");
+                        j.HasIndex(new[] { "StorageZoneId" }, "IX_TicketStorageZone_StorageZoneId");
+                    });
         });
 
         modelBuilder.Entity<StorageForecast>(entity =>

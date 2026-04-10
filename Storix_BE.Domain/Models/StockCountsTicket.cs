@@ -26,11 +26,7 @@ public partial class InventoryCountsTicket
     public DateTime? FinishedDay { get; set; }
 
     public string? Description { get; set; }
-
     public string? ScopeType { get; set; }
-
-    public int? ScopeId { get; set; }
-
     public DateTime? PlannedAt { get; set; }
 
     public int? ApprovedBy { get; set; }
@@ -43,6 +39,5 @@ public partial class InventoryCountsTicket
 
     public virtual Warehouse? Warehouse { get; set; }
 
-
-    public virtual StorageZone? Scope { get; set; }
+    public virtual ICollection<StorageZone> StorageZones { get; set; } = new List<StorageZone>();
 }

@@ -23,7 +23,30 @@ namespace Storix_BE.Repository.Implementation
             if (ticket == null) throw new ArgumentNullException(nameof(ticket));
             if (ticket.InventoryCountItems == null || !ticket.InventoryCountItems.Any())
                 throw new InvalidOperationException("Ticket must contain at least one InventoryCountItem.");
+            var providedZoneIds = ticket.StorageZones?.Where(z => z.Id > 0).Select(z => z.Id).Distinct().ToList();
+            if (providedZoneIds != null && providedZoneIds.Any())
+            {
+                var zones = await _context.StorageZones
+                    .Where(z => providedZoneIds.Contains(z.Id))
+                    .ToListAsync()
+                    .ConfigureAwait(false);
 
+                var missing = providedZoneIds.Except(zones.Select(z => z.Id)).ToList();
+                if (missing.Any())
+                    throw new InvalidOperationException($"StorageZone(s) not found: {string.Join(", ", missing)}");
+
+                if (ticket.WarehouseId.HasValue)
+                {
+                    var invalidWarehouseZones = zones.Where(z => z.WarehouseId != ticket.WarehouseId.Value).Select(z => z.Id).ToList();
+                    if (invalidWarehouseZones.Any())
+                        throw new InvalidOperationException($"StorageZone(s) do not belong to warehouse {ticket.WarehouseId}: {string.Join(", ", invalidWarehouseZones)}");
+                }
+
+                // replace placeholders with tracked entities so EF will persist the many-to-many properly
+                ticket.StorageZones.Clear();
+                foreach (var z in zones)
+                    ticket.StorageZones.Add(z);
+            }
             ticket.CreatedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
             if (string.IsNullOrWhiteSpace(ticket.Status))
                 ticket.Status = "Pending";

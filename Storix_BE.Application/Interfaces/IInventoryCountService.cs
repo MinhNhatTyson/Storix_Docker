@@ -16,7 +16,7 @@ namespace Storix_BE.Service.Interfaces
         Task<List<InventoryCountsTicket>> GetStockCountTicketsByStaffAsync(int companyId, int staffId);
     }
 
-    public sealed record CreateInventoryCountItemRequest(int ProductId, int? LocationId);
+    public sealed record CreateInventoryCountItemRequest(int ProductId);
     public sealed record CreateStockCountTicketRequest(
         int? WarehouseId,
         int PerformedBy,
@@ -24,11 +24,11 @@ namespace Storix_BE.Service.Interfaces
         string? Name,
         string? Description,
         string? ScopeType,
-        int? ScopeId,
+        IEnumerable<int>? StorageZoneIds,
         DateTime? PlannedAt,
         IEnumerable<CreateInventoryCountItemRequest> Items);
 
-    public sealed record UpdateInventoryCountItemRequest(int StockCountItemId, int? ProductId, int? CountedQuantity, int? LocationId);
+    public sealed record UpdateInventoryCountItemRequest(int StockCountItemId, int? ProductId, int? CountedQuantity, string? BinId);
     public sealed record UpdateStockCountItemsRequest(int PerformedBy, IEnumerable<UpdateInventoryCountItemRequest> Items);
     public sealed record UpdateStockCountTicketStatusRequest(int ApproverId, string Status);
 

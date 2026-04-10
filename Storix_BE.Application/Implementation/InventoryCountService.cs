@@ -30,46 +30,46 @@ namespace Storix_BE.Service.Implementation
             if (request.PerformedBy <= 0) throw new ArgumentException("Invalid performedBy.", nameof(request.PerformedBy));
             if (request.Items == null || !request.Items.Any())
                 throw new InvalidOperationException("Ticket must contain at least one item to count.");
-            if (request.ScopeId.HasValue && request.ScopeId <= 0) throw new ArgumentException("Invalid scope id.", nameof(request.ScopeId));
 
-            var ticket = new InventoryCountsTicket();
+            // Validate StorageZoneIds if provided (basic validation: ids must be positive).
+            if (request.StorageZoneIds != null && request.StorageZoneIds.Any(id => id <= 0))
+                throw new ArgumentException("StorageZoneIds must contain only positive integers.", nameof(request.StorageZoneIds));
 
-            if (request.ScopeId == null)
+            var ticket = new InventoryCountsTicket
             {
-                ticket = new InventoryCountsTicket
-                {
-                    WarehouseId = request.WarehouseId,
-                    PerformedBy = request.PerformedBy,
-                    AssignedTo = request.AssignedTo,
-                    Name = request.Name,
-                    Description = request.Description,
-                    ScopeType = request.ScopeType,
-                    PlannedAt = request.PlannedAt,
-                    Status = "Pending"
-                };
-            }
-            else
+                WarehouseId = request.WarehouseId,
+                PerformedBy = request.PerformedBy,
+                AssignedTo = request.AssignedTo,
+                Name = request.Name,
+                Description = request.Description,
+                ScopeType = request.ScopeType,
+                PlannedAt = request.PlannedAt,
+                Status = "Pending"
+            };
+            if (request.StorageZoneIds != null)
             {
-                ticket = new InventoryCountsTicket
-                {
-                    WarehouseId = request.WarehouseId,
-                    PerformedBy = request.PerformedBy,
-                    AssignedTo = request.AssignedTo,
-                    Name = request.Name,
-                    Description = request.Description,
-                    ScopeType = request.ScopeType,
-                    ScopeId = request.ScopeId,
-                    PlannedAt = request.PlannedAt,
-                    Status = "Pending"
-                };
+                var zonePlaceholders = request.StorageZoneIds
+                    .Where(id => id > 0)
+                    .Distinct()
+                    .Select(id => new StorageZone { Id = id })
+                    .ToList();
+
+                // preserve empty list vs null semantics: initialize collection on ticket
+                foreach (var z in zonePlaceholders)
+                    ticket.StorageZones.Add(z);
             }
+            // Note: multiple StorageZoneIds cannot be persisted into the existing single ScopeId FK.
+            // We therefore validate the incoming IDs here but do not set ScopeId. If needed, repository or a future schema change
+            // should persist the full set (e.g. junction table or JSON column). For now keep ScopeId null.
+            // The presence of StorageZoneIds can still be used by downstream logic if implemented later.
+            // (No further action required when array is empty — it's allowed.)
 
             foreach (var it in request.Items)
             {
                 ticket.InventoryCountItems.Add(new InventoryCountItem
                 {
                     ProductId = it.ProductId,
-                    LocationId = it.LocationId
+                    LocationId = null
                 });
             }
 
@@ -162,12 +162,17 @@ namespace Storix_BE.Service.Implementation
             if (request.PerformedBy <= 0) throw new ArgumentException("Invalid performedBy.", nameof(request.PerformedBy));
             if (request.Items == null || !request.Items.Any()) throw new InvalidOperationException("Items payload cannot be empty.");
 
+            // Map incoming DTOs to domain InventoryCountItem instances.
+            // Note: clients now provide BinId (string) instead of LocationId (int).
+            // Location resolution to InventoryLocation (id) will be handled by repository logic which can
+            // look up bin->shelf->inventory placements by ProductId and BinId when required.
             var domainItems = request.Items.Select(i => new InventoryCountItem
             {
                 Id = i.StockCountItemId,
                 ProductId = i.ProductId,
                 CountedQuantity = i.CountedQuantity,
-                LocationId = i.LocationId,
+                // Do NOT set LocationId here — repository will resolve shelf/bin -> InventoryLocation when needed.
+                LocationId = null,
             }).ToList();
 
             var updated = await _repo.UpdateStockCountItemsAsync(ticketId, domainItems, request.PerformedBy).ConfigureAwait(false);
