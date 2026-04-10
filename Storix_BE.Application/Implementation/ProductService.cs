@@ -13,6 +13,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using static Storix_BE.Service.Interfaces.IProductService;
 
 namespace Storix_BE.Service.Implementation
 {
@@ -329,9 +330,28 @@ namespace Storix_BE.Service.Implementation
             if (existing == null) return false;
             return await _repo.RemoveCategoryAsync(existing);
         }
-        public async Task UpdateProductPopularityAsync()
+        public async Task<IReadOnlyList<ProductInventoryLocationDto>> GetProductInventoryLocationsAsync(int companyId, int warehouseId, int productId)
         {
-            await _repo.UpdateProductPopularityAsync();
+            if (companyId <= 0) throw new ArgumentException("Invalid company id.", nameof(companyId));
+            if (warehouseId <= 0) throw new ArgumentException("Invalid warehouse id.", nameof(warehouseId));
+            if (productId <= 0) throw new ArgumentException("Invalid product id.", nameof(productId));
+
+            // Ensure product exists and belongs to the company
+            var product = await _repo.GetByIdAsync(productId, companyId);
+            if (product == null)
+                throw new InvalidOperationException($"Product with id {productId} not found for company {companyId}.");
+
+            var locations = await _repo.GetProductInventoryLocationsAsync(warehouseId, productId).ConfigureAwait(false);
+
+            return locations.Select(il => new ProductInventoryLocationDto(
+                il.Id,
+                il.InventoryId ?? 0,
+                il.ShelfId ?? 0,
+                il.Shelf?.Code,
+                il.Shelf?.IdCode,
+                il.Shelf?.ZoneId,
+                il.Quantity ?? 0,
+                il.UpdatedAt)).ToList();
         }
     }
 }

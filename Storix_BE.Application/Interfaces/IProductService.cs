@@ -36,7 +36,17 @@ namespace Storix_BE.Service.Interfaces
         List<ProductExportDto> ParseProductsFromCsv(IFormFile file);
         List<ProductExportDto> ParseProductsFromExcel(IFormFile file);
         Task ImportProductsAsync(List<ProductExportDto> dtos);
-            Task UpdateProductPopularityAsync();
+        Task<IReadOnlyList<ProductInventoryLocationDto>> GetProductInventoryLocationsAsync(int companyId, int warehouseId, int productId);
+
+        public sealed record ProductInventoryLocationDto(
+            int InventoryLocationId,
+            int InventoryId,
+            int ShelfId,
+            string? ShelfCode,
+            string? ShelfIdCode,
+            int? ZoneId,
+            int Quantity,
+            DateTime? UpdatedAt);
     }
     public sealed record CreateProductTypeRequest(int CompanyId, string Name);
     public sealed record UpdateProductTypeRequest(string Name);

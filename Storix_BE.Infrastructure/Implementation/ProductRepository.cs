@@ -539,7 +539,28 @@ namespace Storix_BE.Repository.Implementation
             await _context.SaveChangesAsync();
             return true;
         }
+        public async Task<IReadOnlyList<InventoryLocation>> GetProductInventoryLocationsAsync(int warehouseId, int productId)
+        {
+            if (warehouseId <= 0) throw new ArgumentException("Invalid warehouse id.", nameof(warehouseId));
+            if (productId <= 0) throw new ArgumentException("Invalid product id.", nameof(productId));
 
+            var inventory = await _context.Inventories
+                .AsNoTracking()
+                .FirstOrDefaultAsync(i => i.WarehouseId == warehouseId && i.ProductId == productId)
+                .ConfigureAwait(false);
+
+            if (inventory == null) return Array.Empty<InventoryLocation>();
+
+            var locations = await _context.InventoryLocations
+                .AsNoTracking()
+                .Where(il => il.InventoryId == inventory.Id)
+                .Include(il => il.Shelf)
+                    .ThenInclude(s => s!.Zone)
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            return locations;
+        }
         public async Task UpdateProductPopularityAsync()
         {
             // Example using Raw SQL in Entity Framework
