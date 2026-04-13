@@ -13,5 +13,6 @@ namespace Storix_BE.Repository.Interfaces
         Task<UserNotification> CreateUserNotificationAsync(UserNotification userNotification);
         Task<List<UserNotification>> GetUserNotificationsAsync(int userId, int skip = 0, int take = 50);
         Task<int> MarkUserNotificationAsReadAsync(int userNotificationId, int userId);
+        Task<bool> DeleteUserNotificationAsync(int userNotificationId, int userId);
     }
 }
