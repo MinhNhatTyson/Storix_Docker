@@ -30,5 +30,15 @@ namespace Storix_BE.API.Controllers
             if (!ok) return NotFound(new { message = "Notification not found or not owned by user." });
             return Ok(new { message = "Marked as read." });
         }
+        [HttpDelete("delete/{userId:int}/{userNotificationId:int}")]
+        public async Task<IActionResult> Delete(int userId, int userNotificationId)
+        {
+            if (userId <= 0 || userNotificationId <= 0) return BadRequest(new { message = "Invalid parameters." });
+
+            var ok = await _service.DeleteUserNotificationAsync(userNotificationId, userId).ConfigureAwait(false);
+            if (!ok) return NotFound(new { message = "Notification not found or not owned by user." });
+
+            return Ok(new { message = "Notification deleted." });
+        }
     }
 }

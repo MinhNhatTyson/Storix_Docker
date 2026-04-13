@@ -129,5 +129,22 @@ namespace Storix_BE.Service.Implementation
             var affected = await _notificationRepo.MarkUserNotificationAsReadAsync(userNotificationId, userId).ConfigureAwait(false);
             return affected > 0;
         }
+        public async Task<bool> DeleteUserNotificationAsync(int userNotificationId, int userId)
+        {
+            var deleted = await _notificationRepo.DeleteUserNotificationAsync(userNotificationId, userId).ConfigureAwait(false);
+            if (!deleted) return false;
+
+            // Notify client(s) that the notification was deleted so UI can update in real time
+            try
+            {
+                await _publisher.PublishToUserAsync(userId, new { Action = "Deleted", UserNotificationId = userNotificationId }).ConfigureAwait(false);
+            }
+            catch
+            {
+                throw new InvalidOperationException($"Failed to publish deletion of notification {userNotificationId} for user {userId}.");
+            }
+
+            return true;
+        }
     }
 }

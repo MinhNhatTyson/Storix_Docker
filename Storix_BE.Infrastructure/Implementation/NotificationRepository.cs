@@ -68,5 +68,20 @@ namespace Storix_BE.Repository.Implementation
             _context.UserNotifications.Update(un);
             return await _context.SaveChangesAsync().ConfigureAwait(false);
         }
+        public async Task<bool> DeleteUserNotificationAsync(int userNotificationId, int userId)
+        {
+            if (userNotificationId <= 0) throw new ArgumentException("Invalid userNotificationId.", nameof(userNotificationId));
+            if (userId <= 0) throw new ArgumentException("Invalid userId.", nameof(userId));
+
+            var un = await _context.UserNotifications
+                .FirstOrDefaultAsync(u => u.Id == userNotificationId && u.UserId == userId)
+                .ConfigureAwait(false);
+
+            if (un == null) return false;
+            un.IsHidden = true;
+            _context.UserNotifications.Update(un);
+            var changed = await _context.SaveChangesAsync().ConfigureAwait(false);
+            return changed > 0;
+        }
     }
 }
