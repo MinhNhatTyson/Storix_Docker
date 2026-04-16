@@ -110,6 +110,64 @@ namespace Storix_BE.Service.Implementation
                     report.DataJson = JsonSerializer.Serialize(inbound, jsonOptions);
                     report.SchemaVersion = ReportSchemaVersions.InboundKpiBasic;
                 }
+                else if (string.Equals(payload.ReportType, ReportTypes.InventorySnapshot, StringComparison.Ordinal))
+                {
+                    var snapshot = await _repo.GetInventorySnapshotAsync(companyId, null, payload.WarehouseId, payload.TimeFrom, payload.TimeTo)
+                        .ConfigureAwait(false);
+
+                    report.SummaryJson = JsonSerializer.Serialize(new
+                    {
+                        totalSkus = snapshot.TotalSkus,
+                        totalQuantity = snapshot.TotalQuantity,
+                        totalValue = snapshot.TotalValue
+                    }, jsonOptions);
+                    report.DataJson = JsonSerializer.Serialize(snapshot, jsonOptions);
+                    report.SchemaVersion = ReportSchemaVersions.InventorySnapshot;
+                }
+                else if (string.Equals(payload.ReportType, ReportTypes.InventoryLedger, StringComparison.Ordinal))
+                {
+                    var ledger = await _repo.GetInventoryLedgerAsync(companyId, null, payload.WarehouseId, payload.ProductId, payload.TimeFrom, payload.TimeTo)
+                        .ConfigureAwait(false);
+
+                    report.SummaryJson = JsonSerializer.Serialize(new
+                    {
+                        openingQuantity = ledger.OpeningQuantity,
+                        closingQuantity = ledger.ClosingQuantity,
+                        entries = ledger.Rows.Count
+                    }, jsonOptions);
+                    report.DataJson = JsonSerializer.Serialize(ledger, jsonOptions);
+                    report.SchemaVersion = ReportSchemaVersions.InventoryLedger;
+                }
+                else if (string.Equals(payload.ReportType, ReportTypes.InventoryInOutBalance, StringComparison.Ordinal))
+                {
+                    var inOut = await _repo.GetInventoryInOutBalanceAsync(companyId, null, payload.WarehouseId, payload.TimeFrom, payload.TimeTo)
+                        .ConfigureAwait(false);
+
+                    report.SummaryJson = JsonSerializer.Serialize(new
+                    {
+                        totalOpeningQty = inOut.TotalOpeningQty,
+                        totalInboundQty = inOut.TotalInboundQty,
+                        totalOutboundQty = inOut.TotalOutboundQty,
+                        totalClosingQty = inOut.TotalClosingQty,
+                        totalClosingValue = inOut.TotalClosingValue
+                    }, jsonOptions);
+                    report.DataJson = JsonSerializer.Serialize(inOut, jsonOptions);
+                    report.SchemaVersion = ReportSchemaVersions.InventoryInOutBalance;
+                }
+                else if (string.Equals(payload.ReportType, ReportTypes.StocktakeVariance, StringComparison.Ordinal))
+                {
+                    var stocktake = await _repo.GetStocktakeVarianceAsync(companyId, null, payload.WarehouseId, payload.InventoryCountTicketId, payload.TimeFrom, payload.TimeTo)
+                        .ConfigureAwait(false);
+
+                    report.SummaryJson = JsonSerializer.Serialize(new
+                    {
+                        totalItems = stocktake.TotalItems,
+                        totalVarianceQty = stocktake.TotalVarianceQty,
+                        totalVarianceValue = stocktake.TotalVarianceValue
+                    }, jsonOptions);
+                    report.DataJson = JsonSerializer.Serialize(stocktake, jsonOptions);
+                    report.SchemaVersion = ReportSchemaVersions.StocktakeVariance;
+                }
                 else
                 {
                     throw new InvalidOperationException($"Unsupported report type '{payload.ReportType}'.");
@@ -210,6 +268,30 @@ namespace Storix_BE.Service.Implementation
                 var data = JsonSerializer.Deserialize<InboundKpiBasicReportData>(report.DataJson, jsonOptions)
                     ?? throw new InvalidOperationException("Failed to deserialize report data.");
                 pdfBytes = GenerateInboundKpiBasicPdf(report, data);
+            }
+            else if (string.Equals(report.ReportType, ReportTypes.InventorySnapshot, StringComparison.Ordinal))
+            {
+                var data = JsonSerializer.Deserialize<InventorySnapshotReportData>(report.DataJson, jsonOptions)
+                    ?? throw new InvalidOperationException("Failed to deserialize report data.");
+                pdfBytes = GenerateInventorySnapshotPdf(report, data);
+            }
+            else if (string.Equals(report.ReportType, ReportTypes.InventoryLedger, StringComparison.Ordinal))
+            {
+                var data = JsonSerializer.Deserialize<InventoryLedgerReportData>(report.DataJson, jsonOptions)
+                    ?? throw new InvalidOperationException("Failed to deserialize report data.");
+                pdfBytes = GenerateInventoryLedgerPdf(report, data);
+            }
+            else if (string.Equals(report.ReportType, ReportTypes.InventoryInOutBalance, StringComparison.Ordinal))
+            {
+                var data = JsonSerializer.Deserialize<InventoryInOutBalanceReportData>(report.DataJson, jsonOptions)
+                    ?? throw new InvalidOperationException("Failed to deserialize report data.");
+                pdfBytes = GenerateInventoryInOutBalancePdf(report, data);
+            }
+            else if (string.Equals(report.ReportType, ReportTypes.StocktakeVariance, StringComparison.Ordinal))
+            {
+                var data = JsonSerializer.Deserialize<StocktakeVarianceReportData>(report.DataJson, jsonOptions)
+                    ?? throw new InvalidOperationException("Failed to deserialize report data.");
+                pdfBytes = GenerateStocktakeVariancePdf(report, data);
             }
             else
             {
@@ -641,6 +723,199 @@ namespace Storix_BE.Service.Implementation
             return plot.GetImageBytes(800, 350, ScottPlot.ImageFormat.Png);
         }
 
+        private static byte[] GenerateInventorySnapshotPdf(Report report, InventorySnapshotReportData data)
+        {
+            var document = Document.Create(container =>
+            {
+                container.Page(page =>
+                {
+                    page.Size(PageSizes.A4);
+                    page.Margin(25);
+                    page.DefaultTextStyle(x => x.FontSize(10));
+
+                    page.Header().Text($"Report: {report.ReportType} (#{report.Id})").SemiBold().FontSize(14);
+                    page.Content().Column(col =>
+                    {
+                        col.Spacing(8);
+                        col.Item().Text($"Total SKU: {data.TotalSkus} | Total Qty: {data.TotalQuantity} | Total Value: {data.TotalValue:0.##}");
+                        col.Item().Table(table =>
+                        {
+                            table.ColumnsDefinition(c => { c.RelativeColumn(); c.ConstantColumn(80); c.ConstantColumn(80); c.ConstantColumn(90); });
+                            table.Header(h =>
+                            {
+                                h.Cell().Text("Product");
+                                h.Cell().AlignRight().Text("Qty");
+                                h.Cell().AlignRight().Text("Unit cost");
+                                h.Cell().AlignRight().Text("Value");
+                            });
+                            foreach (var item in data.Items.Take(30))
+                            {
+                                table.Cell().Text($"{item.ProductName ?? "(unknown)"} ({item.Sku ?? "-"})");
+                                table.Cell().AlignRight().Text(item.Quantity.ToString());
+                                table.Cell().AlignRight().Text(item.UnitCost.ToString("0.##"));
+                                table.Cell().AlignRight().Text(item.InventoryValue.ToString("0.##"));
+                            }
+                        });
+                    });
+                });
+            });
+
+            return document.GeneratePdf();
+        }
+
+        private static byte[] GenerateInventoryLedgerPdf(Report report, InventoryLedgerReportData data)
+        {
+            var document = Document.Create(container =>
+            {
+                container.Page(page =>
+                {
+                    page.Size(PageSizes.A4);
+                    page.Margin(20);
+                    page.DefaultTextStyle(x => x.FontSize(9));
+
+                    page.Header().Text($"Report: {report.ReportType} (#{report.Id})").SemiBold().FontSize(14);
+                    page.Content().Column(col =>
+                    {
+                        col.Spacing(6);
+                        col.Item().Text($"Opening: {data.OpeningQuantity} | Closing: {data.ClosingQuantity}");
+                        col.Item().Table(table =>
+                        {
+                            table.ColumnsDefinition(c => { c.ConstantColumn(70); c.RelativeColumn(); c.ConstantColumn(65); c.ConstantColumn(55); c.ConstantColumn(55); c.ConstantColumn(70); });
+                            table.Header(h =>
+                            {
+                                h.Cell().Text("Date");
+                                h.Cell().Text("Product");
+                                h.Cell().Text("Type");
+                                h.Cell().AlignRight().Text("In");
+                                h.Cell().AlignRight().Text("Out");
+                                h.Cell().AlignRight().Text("Running");
+                            });
+                            foreach (var r in data.Rows.Take(120))
+                            {
+                                table.Cell().Text(r.Day.ToString("yyyy-MM-dd"));
+                                table.Cell().Text($"{r.ProductName ?? "(unknown)"} ({r.Sku ?? "-"})");
+                                table.Cell().Text(r.TransactionType ?? "-");
+                                table.Cell().AlignRight().Text(r.QuantityIn.ToString());
+                                table.Cell().AlignRight().Text(r.QuantityOut.ToString());
+                                table.Cell().AlignRight().Text(r.RunningQuantity.ToString());
+                            }
+                        });
+                    });
+                });
+            });
+
+            return document.GeneratePdf();
+        }
+
+        private static byte[] GenerateInventoryInOutBalancePdf(Report report, InventoryInOutBalanceReportData data)
+        {
+            var chart = BuildInventoryInOutBalanceChart(data);
+            var document = Document.Create(container =>
+            {
+                container.Page(page =>
+                {
+                    page.Size(PageSizes.A4);
+                    page.Margin(25);
+                    page.DefaultTextStyle(x => x.FontSize(10));
+
+                    page.Header().Text($"Report: {report.ReportType} (#{report.Id})").SemiBold().FontSize(14);
+                    page.Content().Column(col =>
+                    {
+                        col.Spacing(8);
+                        col.Item().Text($"Opening: {data.TotalOpeningQty} | In: {data.TotalInboundQty} | Out: {data.TotalOutboundQty} | Closing: {data.TotalClosingQty} | Closing value: {data.TotalClosingValue:0.##}");
+                        if (chart != null) col.Item().Image(chart);
+                        col.Item().Table(table =>
+                        {
+                            table.ColumnsDefinition(c => { c.RelativeColumn(); c.ConstantColumn(55); c.ConstantColumn(55); c.ConstantColumn(55); c.ConstantColumn(55); c.ConstantColumn(80); });
+                            table.Header(h =>
+                            {
+                                h.Cell().Text("Product");
+                                h.Cell().AlignRight().Text("Open");
+                                h.Cell().AlignRight().Text("In");
+                                h.Cell().AlignRight().Text("Out");
+                                h.Cell().AlignRight().Text("Close");
+                                h.Cell().AlignRight().Text("Value");
+                            });
+                            foreach (var p in data.ByProduct.Take(30))
+                            {
+                                table.Cell().Text($"{p.ProductName ?? "(unknown)"} ({p.Sku ?? "-"})");
+                                table.Cell().AlignRight().Text(p.OpeningQty.ToString());
+                                table.Cell().AlignRight().Text(p.InboundQty.ToString());
+                                table.Cell().AlignRight().Text(p.OutboundQty.ToString());
+                                table.Cell().AlignRight().Text(p.ClosingQty.ToString());
+                                table.Cell().AlignRight().Text(p.ClosingValue.ToString("0.##"));
+                            }
+                        });
+                    });
+                });
+            });
+
+            return document.GeneratePdf();
+        }
+
+        private static byte[]? BuildInventoryInOutBalanceChart(InventoryInOutBalanceReportData data)
+        {
+            if (data.ByDay == null || data.ByDay.Count == 0) return null;
+            var days = data.ByDay.Select(d => d.Day).ToList();
+            var x = Enumerable.Range(0, days.Count).Select(i => (double)i).ToArray();
+            var inValues = data.ByDay.Select(d => (double)d.InboundQty).ToArray();
+            var outValues = data.ByDay.Select(d => (double)d.OutboundQty).ToArray();
+
+            var plot = new Plot();
+            var inBars = plot.Add.Bars(x, inValues);
+            inBars.LegendText = "Inbound";
+            var outBars = plot.Add.Bars(x.Select(v => v + 0.4).ToArray(), outValues);
+            outBars.LegendText = "Outbound";
+            plot.ShowLegend();
+            var ticks = new ScottPlot.TickGenerators.NumericManual();
+            for (int i = 0; i < days.Count; i++) ticks.AddMajor(i + 0.2, days[i].ToString("MM-dd"));
+            plot.Axes.Bottom.TickGenerator = ticks;
+            plot.Axes.Bottom.TickLabelStyle.Rotation = 45;
+            return plot.GetImageBytes(800, 320, ScottPlot.ImageFormat.Png);
+        }
+
+        private static byte[] GenerateStocktakeVariancePdf(Report report, StocktakeVarianceReportData data)
+        {
+            var document = Document.Create(container =>
+            {
+                container.Page(page =>
+                {
+                    page.Size(PageSizes.A4);
+                    page.Margin(25);
+                    page.DefaultTextStyle(x => x.FontSize(10));
+
+                    page.Header().Text($"Report: {report.ReportType} (#{report.Id})").SemiBold().FontSize(14);
+                    page.Content().Column(col =>
+                    {
+                        col.Spacing(8);
+                        col.Item().Text($"Items: {data.TotalItems} | Total variance qty: {data.TotalVarianceQty} | Total variance value: {data.TotalVarianceValue:0.##}");
+                        col.Item().Table(table =>
+                        {
+                            table.ColumnsDefinition(c => { c.RelativeColumn(); c.ConstantColumn(55); c.ConstantColumn(55); c.ConstantColumn(55); c.ConstantColumn(80); });
+                            table.Header(h =>
+                            {
+                                h.Cell().Text("Product");
+                                h.Cell().AlignRight().Text("System");
+                                h.Cell().AlignRight().Text("Counted");
+                                h.Cell().AlignRight().Text("Var");
+                                h.Cell().AlignRight().Text("Var value");
+                            });
+                            foreach (var r in data.Items.Take(40))
+                            {
+                                table.Cell().Text($"{r.ProductName ?? "(unknown)"} ({r.Sku ?? "-"})");
+                                table.Cell().AlignRight().Text(r.SystemQty.ToString());
+                                table.Cell().AlignRight().Text(r.CountedQty.ToString());
+                                table.Cell().AlignRight().Text(r.VarianceQty.ToString());
+                                table.Cell().AlignRight().Text(r.VarianceValue.ToString("0.##"));
+                            }
+                        });
+                    });
+                });
+            });
+
+            return document.GeneratePdf();
+        }
+
         public async Task<List<ReportRequestListItemDto>> ListReportsAsync(
             int companyId,
             string? reportType,
@@ -669,6 +944,7 @@ namespace Storix_BE.Service.Implementation
                 r.CompletedAt,
                 r.ErrorMessage)).ToList();
         }
+
     }
 }
 

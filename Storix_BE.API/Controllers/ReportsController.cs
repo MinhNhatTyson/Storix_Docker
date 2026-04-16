@@ -30,7 +30,13 @@ namespace Storix_BE.API.Controllers
 
             try
             {
-                var payload = new CreateReportRequest(request.ReportType, request.WarehouseId, request.TimeFrom, request.TimeTo);
+                var payload = new CreateReportRequest(
+                    request.ReportType,
+                    request.WarehouseId,
+                    request.ProductId,
+                    request.InventoryCountTicketId,
+                    request.TimeFrom,
+                    request.TimeTo);
                 var result = await _reportingService.CreateReportAsync(effectiveCompanyId, caller!.Id, payload);
                 return Ok(result);
             }
@@ -123,6 +129,7 @@ namespace Storix_BE.API.Controllers
             }
         }
 
+
         /// <summary>
         /// Resolves the authenticated caller and effective companyId for Company Admin scope.
         /// Returns (errorResult, effectiveCompanyId, caller). If errorResult is non-null, return it immediately.
@@ -149,8 +156,11 @@ namespace Storix_BE.API.Controllers
 
     public sealed record CreateReportApiRequest(
         string ReportType,
+        int? BranchId,
         int? WarehouseId,
+        int? ProductId,
         DateTime TimeFrom,
         DateTime TimeTo,
+        int? InventoryCountTicketId,
         int? CompanyId);
 }

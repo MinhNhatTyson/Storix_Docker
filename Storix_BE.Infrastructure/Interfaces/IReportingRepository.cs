@@ -24,6 +24,11 @@ namespace Storix_BE.Repository.Interfaces
         Task<OutboundKpiBasicReportData> GetOutboundKpiBasicAsync(int companyId, int? warehouseId, DateTime from, DateTime to);
         Task<InventoryTrackingReportData> GetInventoryTrackingAsync(int companyId, int? warehouseId, DateTime from, DateTime to);
         Task<InboundKpiBasicReportData> GetInboundKpiBasicAsync(int companyId, int? warehouseId, DateTime from, DateTime to);
+
+        Task<InventorySnapshotReportData> GetInventorySnapshotAsync(int companyId, int? branchId, int? warehouseId, DateTime from, DateTime to);
+        Task<InventoryLedgerReportData> GetInventoryLedgerAsync(int companyId, int? branchId, int? warehouseId, int? productId, DateTime from, DateTime to);
+        Task<InventoryInOutBalanceReportData> GetInventoryInOutBalanceAsync(int companyId, int? branchId, int? warehouseId, DateTime from, DateTime to);
+        Task<StocktakeVarianceReportData> GetStocktakeVarianceAsync(int companyId, int? branchId, int? warehouseId, int? inventoryCountTicketId, DateTime from, DateTime to);
     }
 
     // ── OutboundKpiBasic ──────────────────────────────────────────────────────
@@ -72,5 +77,90 @@ namespace Storix_BE.Repository.Interfaces
         int TotalReceivedQty,
         IReadOnlyList<InboundKpiBasicDayPoint> ByDay,
         IReadOnlyList<InboundKpiBasicSupplierRow> BySupplier);
+
+    public sealed record InventorySnapshotRow(
+        int ProductId,
+        string? ProductName,
+        string? Sku,
+        int Quantity,
+        decimal UnitCost,
+        decimal InventoryValue);
+
+    public sealed record InventorySnapshotReportData(
+        DateTime TimeFrom,
+        DateTime TimeTo,
+        int? BranchId,
+        int? WarehouseId,
+        int TotalSkus,
+        int TotalQuantity,
+        decimal TotalValue,
+        IReadOnlyList<InventorySnapshotRow> Items);
+
+    public sealed record InventoryLedgerRow(
+        DateTime Day,
+        int ProductId,
+        string? ProductName,
+        string? Sku,
+        string? TransactionType,
+        int QuantityIn,
+        int QuantityOut,
+        int RunningQuantity);
+
+    public sealed record InventoryLedgerReportData(
+        DateTime TimeFrom,
+        DateTime TimeTo,
+        int? BranchId,
+        int? WarehouseId,
+        int? ProductId,
+        int OpeningQuantity,
+        int ClosingQuantity,
+        IReadOnlyList<InventoryLedgerRow> Rows);
+
+    public sealed record InventoryInOutBalanceDayPoint(DateTime Day, int InboundQty, int OutboundQty);
+
+    public sealed record InventoryInOutBalanceProductRow(
+        int ProductId,
+        string? ProductName,
+        string? Sku,
+        int OpeningQty,
+        int InboundQty,
+        int OutboundQty,
+        int ClosingQty,
+        decimal UnitCost,
+        decimal ClosingValue);
+
+    public sealed record InventoryInOutBalanceReportData(
+        DateTime TimeFrom,
+        DateTime TimeTo,
+        int? BranchId,
+        int? WarehouseId,
+        int TotalOpeningQty,
+        int TotalInboundQty,
+        int TotalOutboundQty,
+        int TotalClosingQty,
+        decimal TotalClosingValue,
+        IReadOnlyList<InventoryInOutBalanceDayPoint> ByDay,
+        IReadOnlyList<InventoryInOutBalanceProductRow> ByProduct);
+
+    public sealed record StocktakeVarianceRow(
+        int ProductId,
+        string? ProductName,
+        string? Sku,
+        int SystemQty,
+        int CountedQty,
+        int VarianceQty,
+        decimal UnitCost,
+        decimal VarianceValue);
+
+    public sealed record StocktakeVarianceReportData(
+        DateTime TimeFrom,
+        DateTime TimeTo,
+        int? BranchId,
+        int? WarehouseId,
+        int? InventoryCountTicketId,
+        int TotalItems,
+        int TotalVarianceQty,
+        decimal TotalVarianceValue,
+        IReadOnlyList<StocktakeVarianceRow> Items);
 }
 

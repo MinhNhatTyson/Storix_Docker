@@ -26,6 +26,10 @@ namespace Storix_BE.Service.Interfaces
         public const string OutboundKpiBasic = "OutboundKpiBasic";
         public const string InventoryTracking = "InventoryTracking";
         public const string InboundKpiBasic = "InboundKpiBasic";
+        public const string InventorySnapshot = "InventorySnapshot";
+        public const string InventoryLedger = "InventoryLedger";
+        public const string InventoryInOutBalance = "InventoryInOutBalance";
+        public const string StocktakeVariance = "StocktakeVariance";
     }
 
     public static class ReportStatus
@@ -40,11 +44,17 @@ namespace Storix_BE.Service.Interfaces
         public const string OutboundKpiBasic = "1";
         public const string InventoryTracking = "1";
         public const string InboundKpiBasic = "1";
+        public const string InventorySnapshot = "1";
+        public const string InventoryLedger = "1";
+        public const string InventoryInOutBalance = "1";
+        public const string StocktakeVariance = "1";
     }
 
     public sealed record CreateReportRequest(
         string ReportType,
         int? WarehouseId,
+        int? ProductId,
+        int? InventoryCountTicketId,
         DateTime TimeFrom,
         DateTime TimeTo);
 
@@ -69,6 +79,7 @@ namespace Storix_BE.Service.Interfaces
         string? FileName,
         string? ContentHash,
         DateTime? GeneratedAt);
+
 
     public sealed record ReportDetailDto(
         int Id,
