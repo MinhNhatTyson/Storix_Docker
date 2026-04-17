@@ -66,7 +66,7 @@ namespace Storix_BE.Repository.Implementation
             }
             ticket.CreatedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
             if (string.IsNullOrWhiteSpace(ticket.Status))
-                ticket.Status = "Approved";
+                ticket.Status = "Pending";
 
             var productIds = ticket.InventoryCountItems.Where(i => i.ProductId.HasValue).Select(i => i.ProductId!.Value).Distinct().ToList();
             Dictionary<int, int> systemQty = new();

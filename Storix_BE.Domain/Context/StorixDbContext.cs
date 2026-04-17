@@ -1042,7 +1042,15 @@ public partial class StorixDbContext : DbContext
                 .HasColumnName("type");
             entity.Property(e => e.WarehouseId).HasColumnName("warehouse_id");
 
-            entity.HasOne(d => d.PerformedByNavigation).WithMany(p => p.InventoryCountsTickets)
+            entity.HasOne(d => d.ApprovedByNavigation).WithMany(p => p.StockCountsTicketApprovedByNavigations)
+                .HasForeignKey(d => d.ApprovedBy)
+                .HasConstraintName("fk_stock_counts_tickets_approved_by");
+
+            entity.HasOne(d => d.AssignedToNavigation).WithMany(p => p.StockCountsTicketAssignedToNavigations)
+                .HasForeignKey(d => d.AssignedTo)
+                .HasConstraintName("fk_stock_counts_tickets_assigned_to");
+
+            entity.HasOne(d => d.PerformedByNavigation).WithMany(p => p.StockCountsTicketPerformedByNavigations)
                 .HasForeignKey(d => d.PerformedBy)
                 .HasConstraintName("fk_stock_counts_tickets_performed_by");
 
