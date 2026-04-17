@@ -27,9 +27,7 @@ namespace Storix_BE.Repository.Implementation
                     .ThenInclude(i => i.Product)
                 .Include(t => t.Warehouse)
                 .Include(t => t.PerformedByNavigation)
-                .Where(t => t.Warehouse != null
-                            && t.Warehouse.CompanyId == companyId
-                            && t.WarehouseId == warehouseId)
+                .Where(t => t.WarehouseId == warehouseId && t.Warehouse.CompanyId == companyId)
                 .OrderByDescending(t => t.CreatedAt)
                 .ToListAsync()
                 .ConfigureAwait(false);
