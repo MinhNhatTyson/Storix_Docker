@@ -1207,10 +1207,20 @@ public partial class StorixDbContext : DbContext
                 .HasColumnName("created_at");
             entity.Property(e => e.CreatedBy).HasColumnName("created_by");
             entity.Property(e => e.DestinationWarehouseId).HasColumnName("destination_warehouse_id");
+            entity.Property(e => e.InboundTicketId).HasColumnName("inbound_ticket_id");
+            entity.Property(e => e.OutboundTicketId).HasColumnName("outbound_ticket_id");
             entity.Property(e => e.SourceWarehouseId).HasColumnName("source_warehouse_id");
             entity.Property(e => e.Status)
                 .HasColumnType("character varying")
                 .HasColumnName("status");
+
+            entity.HasOne(d => d.InboundTicket).WithMany(p => p.TransferOrders)
+                .HasForeignKey(d => d.InboundTicketId)
+                .HasConstraintName("fk_transfer_orders_inbound_ticket_id");
+
+            entity.HasOne(d => d.OutboundTicket).WithMany(p => p.TransferOrders)
+                .HasForeignKey(d => d.OutboundTicketId)
+                .HasConstraintName("fk_transfer_orders_outbound_ticket_id");
 
             entity.HasOne(d => d.CreatedByNavigation).WithMany(p => p.TransferOrders)
                 .HasForeignKey(d => d.CreatedBy)
@@ -1323,6 +1333,7 @@ public partial class StorixDbContext : DbContext
             entity.HasOne(d => d.Company).WithMany(p => p.Warehouses)
                 .HasForeignKey(d => d.CompanyId)
                 .HasConstraintName("fk_warehouses_company_id");
+
         });
 
         modelBuilder.Entity<WarehouseAssignment>(entity =>
