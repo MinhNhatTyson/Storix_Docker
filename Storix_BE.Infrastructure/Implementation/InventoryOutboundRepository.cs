@@ -29,7 +29,6 @@ namespace Storix_BE.Repository.Implementation
 
         private async Task UpdateProductPopularityAsync()
         {
-            // Example using Raw SQL in Entity Framework
             var sql = @"UPDATE products
                     SET popularity_score = sub.new_score
                     FROM (
@@ -155,7 +154,7 @@ namespace Storix_BE.Repository.Implementation
             return result;
         }
 
-        public async Task<IReadOnlyList<(int InventoryId, int WarehouseId, int ProductId, string? ProductName, string? ProductSku, int Quantity, int ReservedQuantity, DateTime? LastUpdated, DateTime? LastCountedAt)>> GetWarehouseInventoryAsync(int companyId, int warehouseId)
+        public async Task<IReadOnlyList<IInventoryOutboundRepository.WarehouseInventoryItemDto>> GetWarehouseInventoryAsync(int companyId, int warehouseId)
         {
             if (companyId <= 0) throw new ArgumentException("Invalid companyId.", nameof(companyId));
             if (warehouseId <= 0) throw new ArgumentException("Invalid warehouseId.", nameof(warehouseId));
@@ -189,8 +188,47 @@ namespace Storix_BE.Repository.Implementation
                 .ToListAsync()
                 .ConfigureAwait(false);
 
+            var inventoryIds = rawItems.Select(i => i.InventoryId).ToList();
+
+            var locationRows = await _context.ShelfLevelBins
+                .AsNoTracking()
+                .Where(b => b.InventoryId.HasValue && inventoryIds.Contains(b.InventoryId.Value))
+                .Include(b => b.Level)
+                    .ThenInclude(l => l!.Shelf)
+                        .ThenInclude(s => s!.Zone)
+                .Select(b => new
+                {
+                    InventoryId = b.InventoryId!.Value,
+                    ZoneId = b.Level != null && b.Level.Shelf != null ? b.Level.Shelf.ZoneId : null,
+                    ZoneCode = b.Level != null && b.Level.Shelf != null && b.Level.Shelf.Zone != null ? b.Level.Shelf.Zone.Code : null,
+                    ShelfId = b.Level != null ? b.Level.ShelfId : null,
+                    ShelfCode = b.Level != null && b.Level.Shelf != null ? b.Level.Shelf.Code : null,
+                    BinId = (int?)b.Id,
+                    BinCode = b.Code,
+                    BinIdCode = b.IdCode,
+                    Quantity = (int?)b.Percentage
+                })
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            var locationsByInventory = locationRows
+                .GroupBy(x => x.InventoryId)
+                .ToDictionary(
+                    g => g.Key,
+                    g => (IReadOnlyList<IInventoryOutboundRepository.WarehouseInventoryLocationDto>)g
+                        .Select(x => new IInventoryOutboundRepository.WarehouseInventoryLocationDto(
+                            x.ZoneId,
+                            x.ZoneCode,
+                            x.ShelfId,
+                            x.ShelfCode,
+                            x.BinId,
+                            x.BinCode,
+                            x.BinIdCode,
+                            x.Quantity ?? 0))
+                        .ToList());
+
             var items = rawItems
-                .Select(i => (
+                .Select(i => new IInventoryOutboundRepository.WarehouseInventoryItemDto(
                     i.InventoryId,
                     i.WarehouseId,
                     i.ProductId,
@@ -199,7 +237,10 @@ namespace Storix_BE.Repository.Implementation
                     i.Quantity,
                     i.ReservedQuantity,
                     i.LastUpdated,
-                    i.LastCountedAt))
+                    i.LastCountedAt,
+                    locationsByInventory.TryGetValue(i.InventoryId, out var locations)
+                        ? locations
+                        : Array.Empty<IInventoryOutboundRepository.WarehouseInventoryLocationDto>()))
                 .ToList();
 
             return items;

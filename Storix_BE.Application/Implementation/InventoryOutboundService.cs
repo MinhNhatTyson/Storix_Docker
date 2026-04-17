@@ -76,7 +76,16 @@ namespace Storix_BE.Service.Implementation
                 x.ReservedQuantity,
                 x.Quantity - x.ReservedQuantity,
                 x.LastUpdated,
-                x.LastCountedAt)).ToList();
+                x.LastCountedAt,
+                x.Locations.Select(l => new WarehouseLocationDto(
+                    l.ZoneId,
+                    l.ZoneCode,
+                    l.ShelfId,
+                    l.ShelfCode,
+                    l.BinId,
+                    l.BinCode,
+                    l.BinIdCode,
+                    l.Quantity)).ToList())).ToList();
         }
 
         public async Task<OutboundRequest> UpdateOutboundRequestStatusAsync(int requestId, int approverId, string status)

@@ -69,6 +69,16 @@ namespace Storix_BE.Service.Interfaces
 
     public sealed record InventoryAvailabilityResponse(int ProductId, int AvailableQuantity);
 
+    public sealed record WarehouseLocationDto(
+        int? ZoneId,
+        string? ZoneCode,
+        int? ShelfId,
+        string? ShelfCode,
+        int? BinId,
+        string? BinCode,
+        string? BinIdCode,
+        int Quantity);
+
     public sealed record WarehouseInventoryItemDto(
         int InventoryId,
         int WarehouseId,
@@ -79,7 +89,8 @@ namespace Storix_BE.Service.Interfaces
         int ReservedQuantity,
         int AvailableQuantity,
         DateTime? LastUpdated,
-        DateTime? LastCountedAt);
+        DateTime? LastCountedAt,
+        IReadOnlyList<WarehouseLocationDto> Locations);
 
     public sealed record OutboundWarehouseDto(int Id, string? Name);
 
