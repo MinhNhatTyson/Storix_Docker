@@ -163,16 +163,23 @@ namespace Storix_BE.Service.Implementation
             if (request.Items == null || !request.Items.Any()) throw new InvalidOperationException("Items payload cannot be empty.");
 
             // Map incoming DTOs to domain InventoryCountItem instances.
-            // Note: clients now provide BinId (string) instead of LocationId (int).
-            // Location resolution to InventoryLocation (id) will be handled by repository logic which can
-            // look up bin->shelf->inventory placements by ProductId and BinId when required.
-            var domainItems = request.Items.Select(i => new InventoryCountItem
+            // Note: clients provide BinId (string). If BinId is an integer representation of an InventoryLocation.Id we use it.
+            // Otherwise we preserve the BinId string in Description so repository or operators can resolve it later if needed.
+            var domainItems = request.Items.Select(i =>
             {
-                Id = i.StockCountItemId,
-                ProductId = i.ProductId,
-                CountedQuantity = i.CountedQuantity,
-                // Do NOT set LocationId here — repository will resolve shelf/bin -> InventoryLocation when needed.
-                LocationId = null,
+                int? locationId = null;
+                if (!string.IsNullOrWhiteSpace(i.BinId) && int.TryParse(i.BinId, out var parsedLocationId) && parsedLocationId > 0)
+                    locationId = parsedLocationId;
+
+                return new InventoryCountItem
+                {
+                    Id = i.StockCountItemId,
+                    ProductId = i.ProductId,
+                    CountedQuantity = i.CountedQuantity,
+                    // if BinId is numeric -> set LocationId; otherwise preserve BinId in Description for downstream resolution
+                    LocationId = locationId,
+                    Description = locationId == null ? i.BinId : null
+                };
             }).ToList();
 
             var updated = await _repo.UpdateStockCountItemsAsync(ticketId, domainItems, request.PerformedBy).ConfigureAwait(false);

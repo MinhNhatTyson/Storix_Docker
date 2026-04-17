@@ -214,10 +214,30 @@ namespace Storix_BE.Repository.Implementation
             foreach (var incoming in items)
             {
                 InventoryCountItem? existing = null;
+
+                // 1) If client provided an explicit item Id, match by it.
                 if (incoming.Id > 0)
+                {
                     existing = existingItems.FirstOrDefault(i => i.Id == incoming.Id);
-                else if (incoming.ProductId.HasValue)
-                    existing = existingItems.FirstOrDefault(i => i.ProductId == incoming.ProductId);
+                }
+                else
+                {
+                    // 2) If incoming specifies both ProductId and LocationId, prefer an existing item that matches both
+                    if (incoming.ProductId.HasValue && incoming.LocationId.HasValue)
+                    {
+                        existing = existingItems.FirstOrDefault(i => i.ProductId == incoming.ProductId && i.LocationId == incoming.LocationId);
+                    }
+
+                    // 3) If still not found and incoming did NOT specify a LocationId, match a product-level item (LocationId == null)
+                    if (existing == null && incoming.ProductId.HasValue && !incoming.LocationId.HasValue)
+                    {
+                        existing = existingItems.FirstOrDefault(i => i.ProductId == incoming.ProductId && !i.LocationId.HasValue);
+                    }
+
+                    // Note: if incoming has LocationId but only a product-level existing item exists, we DO NOT match it.
+                    // This prevents overwriting location-specific counts with a separate location update; a new InventoryCountItem
+                    // will be created instead so multiple bins/locations for the same product can be represented.
+                }
 
                 if (existing == null)
                 {
@@ -231,7 +251,8 @@ namespace Storix_BE.Repository.Implementation
                         CountedAt = now,
                         Discrepancy = (incoming.CountedQuantity ?? 0) - (incoming.SystemQuantity ?? 0),
                         Status = incoming.CountedQuantity.HasValue ? true : (bool?)null,
-                        FinalQuantity = incoming.CountedQuantity
+                        FinalQuantity = incoming.CountedQuantity,
+                        Description = incoming.Description
                     };
                     ticket.InventoryCountItems.Add(newItem);
                 }
@@ -239,6 +260,7 @@ namespace Storix_BE.Repository.Implementation
                 {
                     if (incoming.CountedQuantity.HasValue)
                     {
+                        // If this is an existing item, update counted fields.
                         existing.CountedQuantity = incoming.CountedQuantity;
                         existing.CountedBy = performedBy;
                         existing.CountedAt = now;
@@ -247,8 +269,14 @@ namespace Storix_BE.Repository.Implementation
                         existing.FinalQuantity = existing.CountedQuantity;
                     }
 
-                    if (incoming.LocationId.HasValue)
+                    // If incoming explicitly provides a LocationId and existing has none, assign it.
+                    // Do not overwrite an existing LocationId with a different one.
+                    if (incoming.LocationId.HasValue && !existing.LocationId.HasValue)
                         existing.LocationId = incoming.LocationId;
+
+                    // Preserve description if provided (helps carry BinId strings that couldn't be resolved earlier)
+                    if (!string.IsNullOrWhiteSpace(incoming.Description))
+                        existing.Description = incoming.Description;
                 }
             }
 
