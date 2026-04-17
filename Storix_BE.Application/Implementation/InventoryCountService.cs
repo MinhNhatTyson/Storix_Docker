@@ -23,7 +23,13 @@ namespace Storix_BE.Service.Implementation
             _notificationService = notificationService;
             _userRepository = userRepository;
         }
+        public Task<List<InventoryCountsTicket>> GetStockCountTicketsByWarehouseAsync(int companyId, int warehouseId)
+        {
+            if (companyId <= 0) throw new ArgumentException("Invalid company id.", nameof(companyId));
+            if (warehouseId <= 0) throw new ArgumentException("Invalid warehouse id.", nameof(warehouseId));
 
+            return _repo.GetStockCountTicketsByWarehouseAsync(companyId, warehouseId);
+        }
         public async Task<InventoryCountsTicket> CreateStockCountTicketAsync(CreateStockCountTicketRequest request)
         {
             if (request == null) throw new ArgumentNullException(nameof(request));

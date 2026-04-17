@@ -14,6 +14,7 @@ namespace Storix_BE.Service.Interfaces
         Task<List<InventoryCountsTicket>> GetStockCountTicketsByCompanyAsync(int companyId);
         Task<InventoryCountsTicket> GetStockCountTicketByIdAsync(int companyId, int id);
         Task<List<InventoryCountsTicket>> GetStockCountTicketsByStaffAsync(int companyId, int staffId);
+        Task<List<InventoryCountsTicket>> GetStockCountTicketsByWarehouseAsync(int companyId, int warehouseId);
     }
 
     public sealed record CreateInventoryCountItemRequest(int ProductId);

@@ -58,7 +58,30 @@ namespace Storix_BE.API.Controllers
                 return StatusCode(500, new { message = ex.Message });
             }
         }
+        [HttpGet("get-tickets-with/{companyId:int}/warehouse/{warehouseId:int}")]
+        public async Task<IActionResult> GetTicketsByWarehouse(int companyId, int warehouseId)
+        {
+            if (companyId <= 0) return BadRequest(new { message = "Invalid company id." });
+            if (warehouseId <= 0) return BadRequest(new { message = "Invalid warehouse id." });
 
+            try
+            {
+                var items = await _service.GetStockCountTicketsByWarehouseAsync(companyId, warehouseId);
+                return Ok(items);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = ex.Message });
+            }
+        }
         [HttpPut("tickets/{ticketId}/items")]
         public async Task<IActionResult> UpdateTicketItems(int ticketId, [FromBody] UpdateStockCountItemsRequest request)
         {

@@ -12,5 +12,6 @@ namespace Storix_BE.Repository.Interfaces
         Task<List<InventoryCountsTicket>> GetStockCountTicketsByCompanyAsync(int companyId);
         Task<List<InventoryCountsTicket>> GetStockCountTicketsByStaffAsync(int companyId, int staffId);
         Task<InventoryCountsTicket> UpdateStockCountItemsAsync(int ticketId, IEnumerable<InventoryCountItem> items, int performedBy);
+        Task<List<InventoryCountsTicket>> GetStockCountTicketsByWarehouseAsync(int companyId, int warehouseId);
     }
 }
