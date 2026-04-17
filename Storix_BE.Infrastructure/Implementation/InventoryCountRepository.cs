@@ -27,7 +27,9 @@ namespace Storix_BE.Repository.Implementation
                     .ThenInclude(i => i.Product)
                 .Include(t => t.Warehouse)
                 .Include(t => t.PerformedByNavigation)
-                .Where(t => t.WarehouseId == warehouseId && t.Warehouse.CompanyId == companyId)
+                .Where(t => t.Warehouse != null
+                            && t.Warehouse.CompanyId == companyId
+                            && t.WarehouseId == warehouseId)
                 .OrderByDescending(t => t.CreatedAt)
                 .ToListAsync()
                 .ConfigureAwait(false);
@@ -64,9 +66,10 @@ namespace Storix_BE.Repository.Implementation
                 foreach (var z in zones)
                     ticket.StorageZones.Add(z);
             }
+
             ticket.CreatedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
             if (string.IsNullOrWhiteSpace(ticket.Status))
-                ticket.Status = "Pending";
+                ticket.Status = "Approved";
 
             var productIds = ticket.InventoryCountItems.Where(i => i.ProductId.HasValue).Select(i => i.ProductId!.Value).Distinct().ToList();
             Dictionary<int, int> systemQty = new();
