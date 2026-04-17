@@ -21,6 +21,7 @@ public partial class OutboundOrder
 
     public DateTime? CreatedAt { get; set; }
 
+    public virtual ICollection<TransferOrder> TransferOrders { get; set; } = new List<TransferOrder>();
     public virtual User? CreatedByNavigation { get; set; }
 
     public virtual ICollection<OutboundOrderItem> OutboundOrderItems { get; set; } = new List<OutboundOrderItem>();

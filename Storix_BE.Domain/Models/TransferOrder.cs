@@ -17,6 +17,9 @@ public partial class TransferOrder
 
     public DateTime? CreatedAt { get; set; }
 
+    public int? InboundTicketId { get; set; }
+
+    public int? OutboundTicketId { get; set; }
     public virtual User? CreatedByNavigation { get; set; }
 
     public virtual Warehouse? DestinationWarehouse { get; set; }
@@ -24,4 +27,8 @@ public partial class TransferOrder
     public virtual Warehouse? SourceWarehouse { get; set; }
 
     public virtual ICollection<TransferOrderItem> TransferOrderItems { get; set; } = new List<TransferOrderItem>();
+
+    public virtual InboundOrder? InboundTicket { get; set; }
+
+    public virtual OutboundOrder? OutboundTicket { get; set; }
 }
