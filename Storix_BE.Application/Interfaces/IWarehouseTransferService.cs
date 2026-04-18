@@ -15,7 +15,7 @@ namespace Storix_BE.Service.Interfaces
         Task<TransferOrderDetailDto> AssignCarrierAsync(int companyId, int actorUserId, int transferOrderId, int carrierUserId);
 
         Task<TransferOrderDetailDto> SubmitAsync(int companyId, int actorUserId, int transferOrderId);
-        Task<TransferOrderDetailDto> ApproveAsync(int companyId, int actorUserId, int transferOrderId);
+        Task<TransferOrderDetailDto> ApproveAsync(int companyId, int actorUserId, int transferOrderId, int? receiverStaffId = null);
         Task<TransferOrderDetailDto> RejectAsync(int companyId, int actorUserId, int transferOrderId, string reason);
 
         Task<TransferOrderDetailDto> StartPickingAsync(int companyId, int actorUserId, int transferOrderId);
@@ -59,7 +59,13 @@ namespace Storix_BE.Service.Interfaces
     public sealed record TransferQualityCheckItemRequest(int ProductId, int OkQuantity, int BadQuantity, string? Note);
     public sealed record TransferQualityCheckRequest(IEnumerable<TransferQualityCheckItemRequest> Items, string? Note);
 
-    public sealed record TransferOrderItemDto(int Id, int? ProductId, string? ProductName, int? Quantity);
+    public sealed record TransferOrderItemDto(
+        int Id,
+        int? ProductId,
+        string? ProductName,
+        int? Quantity,
+        int? OutboundOrderItemId,
+        int? InboundOrderItemId);
 
     public sealed record TransferOrderListDto(
         int Id,

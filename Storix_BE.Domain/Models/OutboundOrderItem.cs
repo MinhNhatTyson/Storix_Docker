@@ -33,4 +33,5 @@ public partial class OutboundOrderItem
     public virtual OutboundRequest? OutboundRequest { get; set; }
 
     public virtual Product? Product { get; set; }
+    public virtual ICollection<TransferOrderItem> TransferOrderItems { get; set; } = new List<TransferOrderItem>();
 }

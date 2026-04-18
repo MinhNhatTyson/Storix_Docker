@@ -27,4 +27,5 @@ public partial class InboundOrderItem
     public virtual Product? Product { get; set; }
 
     public virtual ICollection<StorageRecommendation> StorageRecommendations { get; set; } = new List<StorageRecommendation>();
+    public virtual ICollection<TransferOrderItem> TransferOrderItems { get; set; } = new List<TransferOrderItem>();
 }

@@ -224,9 +224,9 @@ namespace Storix_BE.API.Controllers
 
         [HttpPost("{transferOrderId:int}/approve")]
         [Authorize(Roles = "3")]
-        public async Task<IActionResult> Approve(int transferOrderId)
+        public async Task<IActionResult> Approve(int transferOrderId, [FromBody] ApproveTransferOrderRequest? request)
         {
-            return await ExecuteManagerTransition(transferOrderId, (companyId, userId) => _service.ApproveAsync(companyId, userId, transferOrderId)).ConfigureAwait(false);
+            return await ExecuteManagerTransition(transferOrderId, (companyId, userId) => _service.ApproveAsync(companyId, userId, transferOrderId, request?.ReceiverStaffId)).ConfigureAwait(false);
         }
 
         [HttpPost("{transferOrderId:int}/reject")]
@@ -432,6 +432,7 @@ namespace Storix_BE.API.Controllers
         }
     }
 
+    public sealed record ApproveTransferOrderRequest(int? ReceiverStaffId);
     public sealed record RejectTransferOrderRequest(string Reason);
     public sealed record CancelTransferOrderRequest(string? Reason);
     public sealed record AssignTransferCarrierRequest(int CarrierUserId);
