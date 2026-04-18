@@ -25,7 +25,6 @@ namespace Storix_BE.Repository.Implementation
             var items = await _context.InventoryCountsTickets
                 .Include(t => t.InventoryCountItems)
                     .ThenInclude(i => i.Product)
-                .Include(t => t.Warehouse)
                 .Include(t => t.PerformedByNavigation)
                 .Where(t => t.Warehouse != null
                             && t.Warehouse.CompanyId == companyId
