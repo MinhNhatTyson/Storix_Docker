@@ -1250,9 +1250,19 @@ public partial class StorixDbContext : DbContext
             entity.ToTable("transfer_order_items");
 
             entity.Property(e => e.Id).HasColumnName("id");
+            entity.Property(e => e.InboundOrderItemId).HasColumnName("inbound_order_item_id");
+            entity.Property(e => e.OutboundOrderItemId).HasColumnName("outbound_order_item_id");
             entity.Property(e => e.ProductId).HasColumnName("product_id");
             entity.Property(e => e.Quantity).HasColumnName("quantity");
             entity.Property(e => e.TransferOrderId).HasColumnName("transfer_order_id");
+
+            entity.HasOne(d => d.InboundOrderItem).WithMany(p => p.TransferOrderItems)
+                .HasForeignKey(d => d.InboundOrderItemId)
+                .HasConstraintName("fk_transfer_order_items_inbound_order_item_id");
+
+            entity.HasOne(d => d.OutboundOrderItem).WithMany(p => p.TransferOrderItems)
+                .HasForeignKey(d => d.OutboundOrderItemId)
+                .HasConstraintName("fk_transfer_order_items_outbound_order_item_id");
 
             entity.HasOne(d => d.Product).WithMany(p => p.TransferOrderItems)
                 .HasForeignKey(d => d.ProductId)
