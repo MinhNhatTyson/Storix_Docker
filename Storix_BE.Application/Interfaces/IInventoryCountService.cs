@@ -11,12 +11,23 @@ namespace Storix_BE.Service.Interfaces
         Task<InventoryCountsTicket> CreateStockCountTicketAsync(CreateStockCountTicketRequest request);
         Task<InventoryCountsTicket> UpdateStockCountTicketStatusAsync(int ticketId, int approverId, string status);
         Task<InventoryCountsTicket> UpdateStockCountItemsAsync(int ticketId, UpdateStockCountItemsRequest request);
-        Task<List<InventoryCountsTicket>> GetStockCountTicketsByCompanyAsync(int companyId);
-        Task<InventoryCountsTicket> GetStockCountTicketByIdAsync(int companyId, int id);
-        Task<List<InventoryCountsTicket>> GetStockCountTicketsByStaffAsync(int companyId, int staffId);
-        Task<List<InventoryCountsTicket>> GetStockCountTicketsByWarehouseAsync(int companyId, int warehouseId);
+        Task<List<StockCountTicketDto>> GetStockCountTicketsByCompanyAsync(int companyId);
+        Task<StockCountTicketDto> GetStockCountTicketByIdAsync(int companyId, int id);
+        Task<List<StockCountTicketDto>> GetStockCountTicketsByStaffAsync(int companyId, int staffId);
+        Task<List<StockCountTicketDto>> GetStockCountTicketsByWarehouseAsync(int companyId, int warehouseId);
     }
-
+    public sealed record StorageZoneDto(string? IdCode, string? Code);
+    public sealed record StockCountItemDto(int? ProductId, string? ProductName, int? SystemQuantity, int? CountedQuantity, int? Discrepancy);
+    public sealed record StockCountTicketDto(
+        int Id,
+        int? WarehouseId,
+        int? AssignedTo,
+        DateTime? CreatedAt,
+        DateTime? ExecutedDay,
+        string? Description,
+        string? ScopeType,
+        IEnumerable<StorageZoneDto> StorageZones,
+        IEnumerable<StockCountItemDto> Items);
     public sealed record CreateInventoryCountItemRequest(int ProductId);
     public sealed record CreateStockCountTicketRequest(
         int? WarehouseId,
@@ -29,7 +40,7 @@ namespace Storix_BE.Service.Interfaces
         DateTime? PlannedAt,
         IEnumerable<CreateInventoryCountItemRequest> Items);
 
-    public sealed record UpdateInventoryCountItemRequest(int StockCountItemId, int? ProductId, int? CountedQuantity, string? BinId);
+    public sealed record UpdateInventoryCountItemRequest(int StockCountItemId, int? ProductId, int? CountedQuantity, string? ShelfId);
     public sealed record UpdateStockCountItemsRequest(int PerformedBy, IEnumerable<UpdateInventoryCountItemRequest> Items);
     public sealed record UpdateStockCountTicketStatusRequest(int ApproverId, string Status);
 
