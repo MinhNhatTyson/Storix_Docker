@@ -248,6 +248,7 @@ namespace Storix_BE.Service.Implementation
                 receiverStaffId,
                 carrierId);
 
+            await EnsureTicketAndItemLinksAsync(order);
             return await GetByIdAsync(companyId, order.Id);
         }
 
@@ -306,6 +307,7 @@ namespace Storix_BE.Service.Implementation
             var order = await GetOrderInCompanyAsync(companyId, transferOrderId);
             await EnsureStaffAssignedToWarehouseAsync(actorUserId, order.DestinationWarehouseId ?? 0, companyId);
             EnsureStatus(order, TransferStatuses.InTransit);
+            await EnsureTicketAndItemLinksAsync(order);
 
             var lines = request.Items?.ToList() ?? new List<ReceiveTransferItemRequest>();
             if (!lines.Any()) throw new InvalidOperationException("receive items required");
@@ -327,6 +329,7 @@ namespace Storix_BE.Service.Implementation
             var order = await GetOrderInCompanyAsync(companyId, transferOrderId);
             await EnsureStaffAssignedToWarehouseAsync(actorUserId, order.SourceWarehouseId ?? 0, companyId);
             EnsureStatus(order, TransferStatuses.Approved);
+            await EnsureTicketAndItemLinksAsync(order);
 
             var items = request.Items?.ToList() ?? new List<TransferQualityCheckItemRequest>();
             if (!items.Any()) throw new InvalidOperationException("quality items required");
@@ -345,7 +348,7 @@ namespace Storix_BE.Service.Implementation
                     throw new InvalidOperationException($"QUALITY_OVERFLOW ProductId={line.ProductId}");
             }
 
-            var outboundId = await ResolveLinkedOutboundIdAsync(order.Id);
+            var outboundId = order.OutboundTicketId ?? await ResolveLinkedOutboundIdAsync(order.Id);
             if (outboundId == null)
                 throw new InvalidOperationException("Linked outbound order not found.");
 
@@ -411,6 +414,7 @@ namespace Storix_BE.Service.Implementation
             if ((order.SourceWarehouse?.CompanyId ?? 0) != companyId || (order.DestinationWarehouse?.CompanyId ?? 0) != companyId)
                 throw new InvalidOperationException("Transfer order out of company scope.");
 
+            await EnsureTicketAndItemLinksAsync(order);
             var timeline = (await _warehouseTransferRepository.GetActivitiesAsync(order.Id))
                 .Select(a => new TransferOrderTimelineDto(a.Id, a.Action, a.Timestamp, a.UserId, a.User?.FullName))
                 .ToList();
@@ -512,12 +516,59 @@ namespace Storix_BE.Service.Implementation
 
         private async Task<int?> ResolveLinkedOutboundIdAsync(int transferOrderId)
         {
-            var action = await _warehouseTransferRepository.GetLatestActivityActionAsync(transferOrderId, "LINK_OUTBOUND:");
+            return await ResolveLinkedTicketIdFromActivityAsync(transferOrderId, "LINK_OUTBOUND:");
+        }
 
+        private async Task<int?> ResolveLinkedInboundIdAsync(int transferOrderId)
+        {
+            return await ResolveLinkedTicketIdFromActivityAsync(transferOrderId, "LINK_INBOUND:");
+        }
+
+        private async Task<int?> ResolveLinkedTicketIdFromActivityAsync(int transferOrderId, string prefix)
+        {
+            var action = await _warehouseTransferRepository.GetLatestActivityActionAsync(transferOrderId, prefix);
             if (string.IsNullOrWhiteSpace(action)) return null;
             var parts = action.Split(':');
             if (parts.Length != 2) return null;
             return int.TryParse(parts[1], out var id) ? id : null;
+        }
+
+        private async Task EnsureTicketAndItemLinksAsync(TransferOrder order)
+        {
+            var ticketChanged = false;
+
+            if (!order.OutboundTicketId.HasValue)
+            {
+                var outboundId = await ResolveLinkedOutboundIdAsync(order.Id);
+                if (outboundId.HasValue)
+                {
+                    order.OutboundTicketId = outboundId.Value;
+                    ticketChanged = true;
+                }
+            }
+
+            if (!order.InboundTicketId.HasValue)
+            {
+                var inboundId = await ResolveLinkedInboundIdAsync(order.Id);
+                if (inboundId.HasValue)
+                {
+                    order.InboundTicketId = inboundId.Value;
+                    ticketChanged = true;
+                }
+            }
+
+            if (ticketChanged)
+            {
+                await _warehouseTransferRepository.SaveChangesAsync();
+            }
+
+            if (order.OutboundTicketId.HasValue || order.InboundTicketId.HasValue)
+            {
+                await _warehouseTransferRepository.BackfillTransferItemLinksAsync(
+                    order.Id,
+                    order.OutboundTicketId,
+                    order.InboundTicketId);
+            }
         }
 
         private async Task<int?> ResolveCarrierUserIdAsync(int transferOrderId)

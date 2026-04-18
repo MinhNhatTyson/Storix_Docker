@@ -357,5 +357,63 @@ namespace Storix_BE.Repository.Implementation
                 throw;
             }
         }
+
+        public async Task<int> BackfillTransferItemLinksAsync(int transferOrderId, int? outboundTicketId, int? inboundTicketId)
+        {
+            var transferItems = await _context.TransferOrderItems
+                .Where(i => i.TransferOrderId == transferOrderId)
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            if (!transferItems.Any())
+                return 0;
+
+            Dictionary<int, int> outboundByProduct = new();
+            if (outboundTicketId.HasValue)
+            {
+                outboundByProduct = await _context.OutboundOrderItems
+                    .Where(i => i.OutboundOrderId == outboundTicketId.Value && i.ProductId.HasValue)
+                    .GroupBy(i => i.ProductId!.Value)
+                    .Select(g => g.OrderBy(x => x.Id).First())
+                    .ToDictionaryAsync(i => i.ProductId!.Value, i => i.Id)
+                    .ConfigureAwait(false);
+            }
+
+            Dictionary<int, int> inboundByProduct = new();
+            if (inboundTicketId.HasValue)
+            {
+                inboundByProduct = await _context.InboundOrderItems
+                    .Where(i => i.InboundOrderId == inboundTicketId.Value && i.ProductId.HasValue)
+                    .GroupBy(i => i.ProductId!.Value)
+                    .Select(g => g.OrderBy(x => x.Id).First())
+                    .ToDictionaryAsync(i => i.ProductId!.Value, i => i.Id)
+                    .ConfigureAwait(false);
+            }
+
+            var changed = 0;
+            foreach (var transferItem in transferItems.Where(i => i.ProductId.HasValue))
+            {
+                var productId = transferItem.ProductId!.Value;
+
+                if (!transferItem.OutboundOrderItemId.HasValue && outboundByProduct.TryGetValue(productId, out var outboundItemId))
+                {
+                    transferItem.OutboundOrderItemId = outboundItemId;
+                    changed++;
+                }
+
+                if (!transferItem.InboundOrderItemId.HasValue && inboundByProduct.TryGetValue(productId, out var inboundItemId))
+                {
+                    transferItem.InboundOrderItemId = inboundItemId;
+                    changed++;
+                }
+            }
+
+            if (changed > 0)
+            {
+                await _context.SaveChangesAsync().ConfigureAwait(false);
+            }
+
+            return changed;
+        }
     }
 }

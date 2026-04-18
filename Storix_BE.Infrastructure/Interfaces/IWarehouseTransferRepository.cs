@@ -52,5 +52,7 @@ namespace Storix_BE.Repository.Interfaces
             TransferOrder order,
             IReadOnlyCollection<(int ProductId, int ReceivedQuantity)> receiveLines,
             IReadOnlyDictionary<int, int> requiredByProduct);
+
+        Task<int> BackfillTransferItemLinksAsync(int transferOrderId, int? outboundTicketId, int? inboundTicketId);
     }
 }
