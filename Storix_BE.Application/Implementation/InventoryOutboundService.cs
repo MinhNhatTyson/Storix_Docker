@@ -6,7 +6,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
-using static Storix_BE.Repository.Interfaces.IInventoryOutboundRepository;
 
 namespace Storix_BE.Service.Implementation
 {

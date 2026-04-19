@@ -1,39 +1,16 @@
 ﻿using Storix_BE.Domain.Models;
-using Storix_BE.Repository.DTO;
 using System;
 using System.Collections.Generic;
+using System.Text.Json;
 using System.Threading.Tasks;
 
-namespace Storix_BE.Repository.Interfaces
+namespace Storix_BE.Service.Interfaces
 {
-    public interface IInventoryOutboundRepository
+    public interface IInventoryOutboundService
     {
-        Task<OutboundRequest> CreateOutboundRequestAsync(OutboundRequest request);
+        Task<OutboundRequest> CreateOutboundRequestAsync(CreateOutboundRequestRequest request);
 
-        Task<IReadOnlyList<(int ProductId, int AvailableQuantity)>> GetInventoryAvailabilityAsync(int warehouseId, IEnumerable<int> productIds);
-
-        public sealed record WarehouseInventoryLocationDto(
-            int? ZoneId,
-            string? ZoneCode,
-            int? ShelfId,
-            string? ShelfCode,
-            int? BinId,
-            string? BinCode,
-            string? BinIdCode,
-            int Quantity);
-
-        public sealed record WarehouseInventoryItemDto(
-            int InventoryId,
-            int WarehouseId,
-            int ProductId,
-            string? ProductName,
-            string? ProductSku,
-            string? ProductImage,
-            int Quantity,
-            int ReservedQuantity,
-            DateTime? LastUpdated,
-            DateTime? LastCountedAt,
-            IReadOnlyList<WarehouseInventoryLocationDto> Locations);
+        Task<IReadOnlyList<InventoryAvailabilityResponse>> GetInventoryAvailabilityAsync(int warehouseId, IEnumerable<int> productIds);
 
         Task<IReadOnlyList<WarehouseInventoryItemDto>> GetWarehouseInventoryAsync(int companyId, int warehouseId);
 
@@ -41,98 +18,200 @@ namespace Storix_BE.Repository.Interfaces
 
         Task<OutboundOrder> CreateOutboundOrderFromRequestAsync(int outboundRequestId, int createdBy, int? staffId, string? note, string? pricingMethod = "LastPurchasePrice");
 
-        public sealed record InventoryPlacementDto(int OutboundOrderItemId, int ProductId, int Quantity, string BinIdCode);
-
-        Task<OutboundOrder> UpdateOutboundOrderItemsAsync(int outboundOrderId, IEnumerable<OutboundOrderItem> items, IEnumerable<InventoryPlacementDto>? placements = null);
-
-        public sealed record OutboundAvailableShelfDto(
-            int ShelfId,
-            string? ShelfCode,
-            string? ShelfIdCode,
-            int? ZoneId,
-            int? WarehouseId,
-            int AvailableQuantity);
-
-        public sealed record OutboundAvailableBinDto(
-            int BinId,
-            string? BinCode,
-            string? BinIdCode,
-            int? LevelId,
-            int? ShelfId,
-            int? InventoryId,
-            int? Percentage,
-            double? Width,
-            double? Height,
-            double? Length);
-
-        public sealed record OutboundOrderItemAvailableLocationsDto(
-            int OutboundOrderItemId,
-            int ProductId,
-            string? ProductName,
-            int RequiredQuantity,
-            IReadOnlyList<OutboundAvailableShelfDto> AvailableShelves,
-            IReadOnlyList<OutboundAvailableBinDto> AvailableBins);
-
-        Task<IReadOnlyList<OutboundOrderItemAvailableLocationsDto>> GetOutboundOrderItemAvailableLocationsAsync(int outboundOrderId);
-
-        public sealed record OutboundOrderItemSelectedLocationDto(
-            int OutboundOrderItemId,
-            int ProductId,
-            string BinIdCode,
-            int Quantity,
-            DateTime? Timestamp);
-
-        Task<IReadOnlyList<OutboundOrderItemSelectedLocationDto>> GetOutboundOrderItemSelectedLocationsAsync(int outboundOrderId);
-
-        public sealed record OutboundIssueDto(
-            int IssueId,
-            int OutboundOrderId,
-            int OutboundOrderItemId,
-            int ProductId,
-            int IssueQuantity,
-            string Reason,
-            string? Note,
-            string? ImageUrl,
-            int ReportedBy,
-            DateTime? ReportedAt,
-            int? UpdatedBy,
-            DateTime? UpdatedAt);
-
-        public sealed record OutboundPathOptimizationDto(
-            int OutboundOrderId,
-            string PayloadJson,
-            int SavedBy,
-            DateTime? SavedAt);
-
-        Task<OutboundIssueDto> CreateOutboundIssueAsync(int outboundOrderId, int reportedBy, int outboundOrderItemId, int issueQuantity, string reason, string? note, string? imageUrl);
-        Task<OutboundIssueDto> UpdateOutboundIssueAsync(int outboundOrderId, int issueId, int updatedBy, int? outboundOrderItemId, int? issueQuantity, string? reason, string? note, string? imageUrl);
-        Task<List<OutboundIssueDto>> GetOutboundIssuesByTicketAsync(int outboundOrderId);
-
-        Task<OutboundPathOptimizationDto> SaveOutboundPathOptimizationAsync(int outboundOrderId, int savedBy, string payloadJson);
-        Task<OutboundPathOptimizationDto?> GetOutboundPathOptimizationByTicketAsync(int outboundOrderId);
+        Task<OutboundOrder> UpdateOutboundOrderItemsAsync(int outboundOrderId, IEnumerable<UpdateOutboundOrderItemRequest> items);
 
         Task<OutboundOrder> UpdateOutboundOrderStatusAsync(int outboundOrderId, int performedBy, string status);
 
-        Task<OutboundOrder> ConfirmOutboundOrderAsync(
-            int outboundOrderId,
-            int performedBy,
-            IEnumerable<(int ProductId, int BatchId, int Quantity)> allocations,
-            IEnumerable<(int ProductId, int ShelfId, int Quantity)>? locationAllocations = null,
-            string? note = null);
-        Task<List<OutboundRequest>> GetAllOutboundRequestsAsync(int companyId, int? warehouseId);
-        Task<List<OutboundRequest>> GetOutboundRequestsByWarehouseIdAsync(int warehouseId);
-        Task<OutboundRequest> GetOutboundRequestByIdAsync(int companyId, int id);
-        Task<List<OutboundOrder>> GetAllOutboundOrdersAsync(int companyId, int? warehouseId);
-        Task<List<OutboundOrder>> GetOutboundOrdersByWarehouseIdAsync(int warehouseId);
-        Task<OutboundOrder> GetOutboundOrderByIdAsync(int companyId, int id);
-        Task<List<OutboundOrder>> GetOutboundOrdersByStaffAsync(int companyId, int staffId);
-        Task<OutboundRequestExportDto?> GetOutboundRequestForExportAsync(int outboundRequestId);
-        Task<OutboundOrderExportDto?> GetOutboundOrderForExportAsync(int outboundOrderId);
+        Task<List<OutboundRequestDto>> GetAllOutboundRequestsAsync(int companyId, int? warehouseId);
+        Task<List<OutboundRequestDto>> GetOutboundRequestsByWarehouseIdAsync(int warehouseId);
+        Task<OutboundRequestDto> GetOutboundRequestByIdAsync(int companyId, int id);
+        Task<List<OutboundOrderDto>> GetAllOutboundOrdersAsync(int companyId, int? warehouseId);
+        Task<List<OutboundOrderDto>> GetOutboundOrdersByWarehouseIdAsync(int warehouseId);
+        Task<OutboundOrderDto> GetOutboundOrderByIdAsync(int companyId, int id);
+        Task<List<OutboundOrderDto>> GetOutboundOrdersByStaffAsync(int companyId, int staffId);
 
-        byte[] ExportOutboundRequestToCsv(OutboundRequestExportDto request);
-        byte[] ExportOutboundRequestToExcel(OutboundRequestExportDto request);
+        Task<IReadOnlyList<OutboundOrderItemAvailableLocationsDto>> GetOutboundOrderItemAvailableLocationsAsync(int outboundOrderId);
+        Task<IReadOnlyList<OutboundOrderItemSelectedLocationDto>> GetOutboundOrderItemSelectedLocationsAsync(int outboundOrderId);
 
-        byte[] ExportOutboundOrderToCsv(OutboundOrderExportDto order);
-        byte[] ExportOutboundOrderToExcel(OutboundOrderExportDto order);
+        Task<OutboundIssueDto> CreateOutboundIssueAsync(int outboundOrderId, CreateOutboundIssueRequest request);
+        Task<OutboundIssueDto> UpdateOutboundIssueAsync(int outboundOrderId, int issueId, UpdateOutboundIssueRequest request);
+        Task<List<OutboundIssueDto>> GetOutboundIssuesByTicketAsync(int outboundOrderId);
+
+        Task<OutboundPathOptimizationDto> SaveOutboundPathOptimizationAsync(int outboundOrderId, CreateOutboundPathOptimizationRequest request);
+        Task<OutboundPathOptimizationDto?> GetOutboundPathOptimizationByTicketAsync(int outboundOrderId);
     }
+
+    public sealed record CreateOutboundOrderItemRequest(int ProductId, int Quantity);
+
+    public sealed record CreateOutboundRequestRequest(
+        int? WarehouseId,
+        string? Destination,
+        int RequestedBy,
+        IEnumerable<CreateOutboundOrderItemRequest> Items,
+        string? Reason = null);
+
+    public sealed record UpdateOutboundRequestStatusRequest(int ApproverId, string Status);
+
+    public sealed record UpdateOutboundLocationAssignmentRequest(string BinId, int Quantity);
+
+    // Keep payload shape aligned with inbound edit-items:
+    // id, productId, expectedQuantity, receivedQuantity, locations[]
+    public sealed record UpdateOutboundOrderItemRequest(
+        int Id,
+        int ProductId,
+        int? ExpectedQuantity,
+        int? ReceivedQuantity,
+        IEnumerable<UpdateOutboundLocationAssignmentRequest>? Locations);
+
+    public sealed record CreateOutboundOrderFromRequestRequest(int CreatedBy, int? StaffId, string? Note, string? PricingMethod = "LastPurchasePrice");
+
+    public sealed record UpdateOutboundOrderStatusRequest(int PerformedBy, string Status);
+
+    public sealed record InventoryAvailabilityResponse(int ProductId, int AvailableQuantity);
+
+    public sealed record WarehouseLocationDto(
+        int? ZoneId,
+        string? ZoneCode,
+        int? ShelfId,
+        string? ShelfCode,
+        int? BinId,
+        string? BinCode,
+        string? BinIdCode,
+        int Quantity);
+
+    public sealed record WarehouseInventoryItemDto(
+        int InventoryId,
+        int WarehouseId,
+        int ProductId,
+        string? ProductName,
+        string? ProductSku,
+        string? ProductImage,
+        int Quantity,
+        int ReservedQuantity,
+        int AvailableQuantity,
+        DateTime? LastUpdated,
+        DateTime? LastCountedAt,
+        IReadOnlyList<WarehouseLocationDto> Locations);
+
+    public sealed record OutboundWarehouseDto(int Id, string? Name);
+
+    public sealed record OutboundUserDto(int Id, string? FullName, string? Email, string? Phone);
+
+    public sealed record OutboundOrderItemDto(
+        int Id,
+        int? ProductId,
+        string? ProductName,
+        string? ProductSku,
+        int? ExpectedQuantity,
+        int? ReceivedQuantity,
+        int? Quantity,
+        double? Price,
+        double? CostPrice,
+        string? PricingMethod,
+        double? DisplayPrice);
+
+    public sealed record OutboundAvailableShelfDto(
+        int ShelfId,
+        string? ShelfCode,
+        string? ShelfIdCode,
+        int? ZoneId,
+        int? WarehouseId,
+        int AvailableQuantity);
+
+    public sealed record OutboundAvailableBinDto(
+        int BinId,
+        string? BinCode,
+        string? BinIdCode,
+        int? LevelId,
+        int? ShelfId,
+        int? InventoryId,
+        int? Percentage,
+        double? Width,
+        double? Height,
+        double? Length);
+
+    public sealed record OutboundOrderItemAvailableLocationsDto(
+        int OutboundOrderItemId,
+        int ProductId,
+        string? ProductName,
+        int RequiredQuantity,
+        IReadOnlyList<OutboundAvailableShelfDto> AvailableShelves,
+        IReadOnlyList<OutboundAvailableBinDto> AvailableBins);
+
+    public sealed record OutboundOrderItemSelectedLocationDto(
+        int OutboundOrderItemId,
+        int ProductId,
+        string BinIdCode,
+        int Quantity,
+        DateTime? Timestamp);
+
+    public sealed record CreateOutboundIssueRequest(
+        int ReportedBy,
+        int OutboundOrderItemId,
+        int IssueQuantity,
+        string Reason,
+        string? Note,
+        string? ImageUrl);
+
+    public sealed record UpdateOutboundIssueRequest(
+        int UpdatedBy,
+        int? OutboundOrderItemId,
+        int? IssueQuantity,
+        string? Reason,
+        string? Note,
+        string? ImageUrl);
+
+    public sealed record OutboundIssueDto(
+        int IssueId,
+        int OutboundOrderId,
+        int OutboundOrderItemId,
+        int ProductId,
+        int IssueQuantity,
+        string Reason,
+        string? Note,
+        string? ImageUrl,
+        int ReportedBy,
+        DateTime? ReportedAt,
+        int? UpdatedBy,
+        DateTime? UpdatedAt);
+
+    public sealed record CreateOutboundPathOptimizationRequest(
+        int SavedBy,
+        JsonElement Payload);
+
+    public sealed record OutboundPathOptimizationDto(
+        int OutboundOrderId,
+        JsonElement Payload,
+        int SavedBy,
+        DateTime? SavedAt);
+
+    public sealed record OutboundRequestDto(
+        int Id,
+        int? WarehouseId,
+        int? RequestedBy,
+        int? ApprovedBy,
+        string? Destination,
+        string? Reason,
+        string? ReferenceCode,
+        string? Status,
+        double? TotalPrice,
+        DateTime? CreatedAt,
+        DateTime? ApprovedAt,
+        IEnumerable<OutboundOrderItemDto> Items,
+        OutboundWarehouseDto? Warehouse,
+        OutboundUserDto? RequestedByUser,
+        OutboundUserDto? ApprovedByUser);
+
+    public sealed record OutboundOrderDto(
+        int Id,
+        int? WarehouseId,
+        int? CreatedBy,
+        int? StaffId,
+        string? Destination,
+        string? Status,
+        string? Note,
+        DateTime? CreatedAt,
+        IEnumerable<OutboundOrderItemDto> Items,
+        OutboundWarehouseDto? Warehouse,
+        OutboundUserDto? CreatedByUser);
 }
