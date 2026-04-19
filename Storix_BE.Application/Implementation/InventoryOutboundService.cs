@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
+using static Storix_BE.Repository.Interfaces.IInventoryOutboundRepository;
 
 namespace Storix_BE.Service.Implementation
 {
@@ -72,6 +73,7 @@ namespace Storix_BE.Service.Implementation
                 x.ProductId,
                 x.ProductName,
                 x.ProductSku,
+                x.ProductImage,
                 x.Quantity,
                 x.ReservedQuantity,
                 x.Quantity - x.ReservedQuantity,

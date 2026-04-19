@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Storix_BE.Domain.Models;
 using Storix_BE.Service.Interfaces;
 using System;
@@ -10,7 +11,7 @@ namespace Storix_BE.API.Controllers
 {
     [ApiController]
     [Route("api/warehouse-transfers")]
-    [Authorize(Roles = "3,4")]
+    [Authorize(Roles = "2,3,4")]
     public class WarehouseTransfersController : ControllerBase
     {
         private readonly IWarehouseTransferService _service;
@@ -45,6 +46,10 @@ namespace Storix_BE.API.Controllers
             catch (InvalidOperationException ex)
             {
                 return BadRequest(new { message = ex.Message });
+            }
+            catch (DbUpdateException ex)
+            {
+                return BadRequest(new { message = ex.InnerException?.Message ?? ex.Message });
             }
             catch (Exception ex)
             {
@@ -223,14 +228,14 @@ namespace Storix_BE.API.Controllers
         }
 
         [HttpPost("{transferOrderId:int}/approve")]
-        [Authorize(Roles = "3")]
+        [Authorize(Roles = "2")]
         public async Task<IActionResult> Approve(int transferOrderId, [FromBody] ApproveTransferOrderRequest? request)
         {
             return await ExecuteManagerTransition(transferOrderId, (companyId, userId) => _service.ApproveAsync(companyId, userId, transferOrderId, request?.ReceiverStaffId)).ConfigureAwait(false);
         }
 
         [HttpPost("{transferOrderId:int}/reject")]
-        [Authorize(Roles = "3")]
+        [Authorize(Roles = "2")]
         public async Task<IActionResult> Reject(int transferOrderId, [FromBody] RejectTransferOrderRequest request)
         {
             if (request == null || string.IsNullOrWhiteSpace(request.Reason))
@@ -277,7 +282,7 @@ namespace Storix_BE.API.Controllers
         }
 
         [HttpPost("{transferOrderId:int}/cancel")]
-        [Authorize(Roles = "3")]
+        [Authorize(Roles = "2")]
         public async Task<IActionResult> Cancel(int transferOrderId, [FromBody] CancelTransferOrderRequest? request)
         {
             return await ExecuteManagerTransition(transferOrderId, (companyId, userId) => _service.CancelAsync(companyId, userId, transferOrderId, request?.Reason)).ConfigureAwait(false);

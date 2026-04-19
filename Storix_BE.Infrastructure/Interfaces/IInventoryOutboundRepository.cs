@@ -28,6 +28,7 @@ namespace Storix_BE.Repository.Interfaces
             int ProductId,
             string? ProductName,
             string? ProductSku,
+            string? ProductImage,
             int Quantity,
             int ReservedQuantity,
             DateTime? LastUpdated,
