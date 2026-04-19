@@ -254,12 +254,12 @@ namespace Storix_BE.Service.Implementation
             return items.Select(MapToDto).ToList();
         }
 
-        public async Task<StockCountTicketDto> GetStockCountTicketByIdAsync(int companyId, int id)
+        public async Task<InventoryCountsTicket> GetStockCountTicketByIdAsync(int companyId, int id)
         {
             if (companyId <= 0) throw new ArgumentException("Invalid company id.", nameof(companyId));
             if (id <= 0) throw new ArgumentException("Invalid ticket id.", nameof(id));
             var item = await _repo.GetStockCountTicketByIdAsync(companyId, id).ConfigureAwait(false);
-            return MapToDto(item);
+            return item;
         }
 
         public async Task<List<StockCountTicketDto>> GetStockCountTicketsByStaffAsync(int companyId, int staffId)

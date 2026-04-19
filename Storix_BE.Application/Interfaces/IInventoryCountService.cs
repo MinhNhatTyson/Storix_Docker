@@ -12,7 +12,7 @@ namespace Storix_BE.Service.Interfaces
         Task<InventoryCountsTicket> UpdateStockCountTicketStatusAsync(int ticketId, int approverId, string status);
         Task<InventoryCountsTicket> UpdateStockCountItemsAsync(int ticketId, UpdateStockCountItemsRequest request);
         Task<List<StockCountTicketDto>> GetStockCountTicketsByCompanyAsync(int companyId);
-        Task<StockCountTicketDto> GetStockCountTicketByIdAsync(int companyId, int id);
+        Task<InventoryCountsTicket> GetStockCountTicketByIdAsync(int companyId, int id);
         Task<List<StockCountTicketDto>> GetStockCountTicketsByStaffAsync(int companyId, int staffId);
         Task<List<StockCountTicketDto>> GetStockCountTicketsByWarehouseAsync(int companyId, int warehouseId);
     }
