@@ -43,6 +43,11 @@ builder.Services.AddControllers(options =>
 /*builder.Services.AddDatabaseConfiguration(config);*/
 builder.Services.AddServiceConfiguration(config);
 builder.Services.AddRepositoryConfiguration(config);
+
+
+builder.Services.AddScoped<Storix_BE.Repository.Interfaces.IWarehouseTransferRepository, Storix_BE.Repository.Implementation.WarehouseTransferRepository>();
+builder.Services.AddScoped<Storix_BE.Service.Interfaces.IWarehouseTransferService, Storix_BE.Service.Implementation.WarehouseTransferService>();
+
 builder.Services.AddJwtAuthenticationService(config);
 builder.Services.AddThirdPartyServices(config);
 builder.Services.AddSwaggerService();
