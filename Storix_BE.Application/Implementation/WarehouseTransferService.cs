@@ -1,4 +1,5 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Storix_BE.Domain.Models;
 using Storix_BE.Repository.Interfaces;
 using Storix_BE.Service.Interfaces;
@@ -8,17 +9,23 @@ namespace Storix_BE.Service.Implementation
     public class WarehouseTransferService : IWarehouseTransferService
     {
         private readonly IWarehouseTransferRepository _warehouseTransferRepository;
+        private readonly ILogger<WarehouseTransferService> _logger;
 
-        public WarehouseTransferService(IWarehouseTransferRepository warehouseTransferRepository)
+        public WarehouseTransferService(IWarehouseTransferRepository warehouseTransferRepository, ILogger<WarehouseTransferService> logger)
         {
             _warehouseTransferRepository = warehouseTransferRepository;
+            _logger = logger;
         }
 
         public async Task<TransferOrderDetailDto> CreateAsync(int companyId, int createdBy, CreateTransferOrderRequest request)
         {
+            _logger.LogInformation("CreateAsync started. companyId={CompanyId}, createdBy={CreatedBy}, sourceWarehouseId={SourceWarehouseId}, destinationWarehouseId={DestinationWarehouseId}, itemCount={ItemCount}",
+                companyId, createdBy, request.SourceWarehouseId, request.DestinationWarehouseId, request.Items?.Count() ?? 0);
+
             ValidateCompanyAndUser(companyId, createdBy);
             ValidateWarehouses(request.SourceWarehouseId, request.DestinationWarehouseId);
 
+            _logger.LogInformation("Validating manager and warehouses for transfer creation.");
             await EnsureManagerAsync(createdBy, companyId);
             await GetWarehouseInCompanyAsync(request.SourceWarehouseId, companyId);
             await GetWarehouseInCompanyAsync(request.DestinationWarehouseId, companyId);
@@ -29,6 +36,7 @@ namespace Storix_BE.Service.Implementation
 
             foreach (var line in items)
             {
+                _logger.LogInformation("Validating transfer item. productId={ProductId}, quantity={Quantity}", line.ProductId, line.Quantity);
                 ValidatePositive(line.ProductId, nameof(line.ProductId));
                 ValidatePositive(line.Quantity, nameof(line.Quantity));
                 await EnsureProductInCompanyAsync(line.ProductId, companyId);
@@ -45,10 +53,13 @@ namespace Storix_BE.Service.Implementation
 
             try
             {
+                _logger.LogInformation("Saving transfer order header.");
                 await _warehouseTransferRepository.CreateTransferOrderAsync(entity);
+                _logger.LogInformation("Transfer order header saved. transferOrderId={TransferOrderId}", entity.Id);
 
                 foreach (var line in items)
                 {
+                    _logger.LogInformation("Adding transfer item. transferOrderId={TransferOrderId}, productId={ProductId}, quantity={Quantity}", entity.Id, line.ProductId, line.Quantity);
                     _warehouseTransferRepository.AddTransferOrderItem(new TransferOrderItem
                     {
                         TransferOrderId = entity.Id,
@@ -57,12 +68,20 @@ namespace Storix_BE.Service.Implementation
                     });
                 }
 
+                _logger.LogInformation("Saving transfer items and activity log.");
                 await _warehouseTransferRepository.SaveChangesAsync();
                 await AddActivityAsync(createdBy, "TRANSFER_CREATED_AND_SUBMITTED", entity.Id);
+                _logger.LogInformation("Transfer created successfully. transferOrderId={TransferOrderId}", entity.Id);
             }
             catch (DbUpdateException ex)
             {
+                _logger.LogError(ex, "DbUpdateException while creating transfer. companyId={CompanyId}, createdBy={CreatedBy}", companyId, createdBy);
                 throw new InvalidOperationException(ex.InnerException?.Message ?? ex.Message, ex);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Unexpected error while creating transfer. companyId={CompanyId}, createdBy={CreatedBy}", companyId, createdBy);
+                throw new InvalidOperationException($"Unable to create transfer: {ex.Message}", ex);
             }
 
             return await GetByIdAsync(companyId, entity.Id);
@@ -147,7 +166,7 @@ namespace Storix_BE.Service.Implementation
         {
             var totalItems = t.TransferOrderItems?.Count ?? 0;
             var totalQuantity = t.TransferOrderItems?.Sum(x => x.Quantity ?? 0) ?? 0;
-            return new TransferOrderListDto(t.Id, t.SourceWarehouseId, t.SourceWarehouse?.Name, t.DestinationWarehouseId, t.DestinationWarehouse?.Name, t.CreatedBy, t.CreatedByNavigation?.FullName, t.Status, t.CreatedAt, totalItems, totalQuantity);
+            return new TransferOrderListDto(t.Id, t.SourceWarehouseId, t.SourceWarehouse?.Name, t.DestinationWarehouseId, t.DestinationWarehouse?.Name, t.CreatedBy, t.CreatedByNavigation?.FullName, t.Status, t.CreatedAt, t.OutboundTicketId, t.InboundTicketId, totalItems, totalQuantity);
         }
 
         private static TransferOrderDetailDto MapDetail(TransferOrder t, IEnumerable<TransferOrderTimelineDto> timeline)
@@ -156,7 +175,7 @@ namespace Storix_BE.Service.Implementation
                 .Select(i => new TransferOrderItemDto(i.Id, i.ProductId, i.Product?.Name, i.Quantity, i.OutboundOrderItemId, i.InboundOrderItemId))
                 .ToList();
 
-            return new TransferOrderDetailDto(t.Id, t.SourceWarehouseId, t.SourceWarehouse?.Name, t.DestinationWarehouseId, t.DestinationWarehouse?.Name, t.CreatedBy, t.CreatedByNavigation?.FullName, t.Status, t.CreatedAt, items, timeline);
+            return new TransferOrderDetailDto(t.Id, t.SourceWarehouseId, t.SourceWarehouse?.Name, t.DestinationWarehouseId, t.DestinationWarehouse?.Name, t.CreatedBy, t.CreatedByNavigation?.FullName, t.Status, t.CreatedAt, t.OutboundTicketId, t.InboundTicketId, items, timeline);
         }
 
         private async Task<TransferOrder> GetOrderInCompanyAsync(int companyId, int transferOrderId)

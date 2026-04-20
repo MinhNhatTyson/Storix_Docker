@@ -56,6 +56,8 @@ namespace Storix_BE.Service.Interfaces
         string? CreatedByName,
         string? Status,
         DateTime? CreatedAt,
+        int? OutboundTicketId,
+        int? InboundTicketId,
         int TotalItems,
         int TotalQuantity);
 
@@ -71,6 +73,8 @@ namespace Storix_BE.Service.Interfaces
         string? CreatedByName,
         string? Status,
         DateTime? CreatedAt,
+        int? OutboundTicketId,
+        int? InboundTicketId,
         IEnumerable<TransferOrderItemDto> Items,
         IEnumerable<TransferOrderTimelineDto> Timeline);
 
