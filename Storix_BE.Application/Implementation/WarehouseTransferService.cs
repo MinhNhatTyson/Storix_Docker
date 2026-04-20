@@ -130,6 +130,17 @@ namespace Storix_BE.Service.Implementation
             return data.Select(MapList).ToList();
         }
 
+        public async Task<List<TransferOrderListDto>> GetAllBySourceWarehouseAsync(int companyId, int warehouseId, string? status)
+        {
+            if (companyId <= 0) throw new ArgumentException("Invalid company id", nameof(companyId));
+            if (warehouseId <= 0) throw new ArgumentException("Invalid warehouseId", nameof(warehouseId));
+
+            await GetWarehouseInCompanyAsync(warehouseId, companyId);
+
+            var data = await _warehouseTransferRepository.GetTransferOrdersByCompanyAsync(companyId, warehouseId, null, status);
+            return data.Select(MapList).ToList();
+        }
+
         public async Task<TransferOrderDetailDto> GetByIdAsync(int companyId, int transferOrderId)
         {
             var order = await _warehouseTransferRepository.GetTransferOrderDetailAsync(transferOrderId);
@@ -172,7 +183,7 @@ namespace Storix_BE.Service.Implementation
         private static TransferOrderDetailDto MapDetail(TransferOrder t, IEnumerable<TransferOrderTimelineDto> timeline)
         {
             var items = (t.TransferOrderItems ?? new List<TransferOrderItem>())
-                .Select(i => new TransferOrderItemDto(i.Id, i.ProductId, i.Product?.Name, i.Quantity, i.OutboundOrderItemId, i.InboundOrderItemId))
+                .Select(i => new TransferOrderItemDto(i.Id, i.ProductId, i.Product?.Name, i.Product?.Image, i.Quantity, i.OutboundOrderItemId, i.InboundOrderItemId))
                 .ToList();
 
             return new TransferOrderDetailDto(t.Id, t.SourceWarehouseId, t.SourceWarehouse?.Name, t.DestinationWarehouseId, t.DestinationWarehouse?.Name, t.CreatedBy, t.CreatedByNavigation?.FullName, t.Status, t.CreatedAt, t.OutboundTicketId, t.InboundTicketId, items, timeline);

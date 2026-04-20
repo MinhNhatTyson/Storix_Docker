@@ -9,6 +9,7 @@ namespace Storix_BE.Service.Interfaces
         Task<TransferOrderDetailDto> CreateAsync(int companyId, int createdBy, CreateTransferOrderRequest request);
         Task<TransferOrderDetailDto> ApproveAsync(int companyId, int actorUserId, int transferOrderId, int? receiverStaffId = null);
         Task<List<TransferOrderListDto>> GetAllAsync(int companyId, int? sourceWarehouseId, int? destinationWarehouseId, string? status);
+        Task<List<TransferOrderListDto>> GetAllBySourceWarehouseAsync(int companyId, int warehouseId, string? status);
         Task<TransferOrderDetailDto> GetByIdAsync(int companyId, int transferOrderId);
         Task<List<TransferAvailabilityDto>> CheckAvailabilityAsync(int companyId, int transferOrderId);
     }
@@ -42,6 +43,7 @@ namespace Storix_BE.Service.Interfaces
         int Id,
         int? ProductId,
         string? ProductName,
+        string? ProductImage,
         int? Quantity,
         int? OutboundOrderItemId,
         int? InboundOrderItemId);

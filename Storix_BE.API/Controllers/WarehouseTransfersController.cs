@@ -118,6 +118,35 @@ namespace Storix_BE.API.Controllers
             }
         }
 
+        [HttpGet("warehouse/{warehouseId:int}")]
+        public async Task<IActionResult> GetBySourceWarehouseId(int warehouseId, [FromQuery] string? status)
+        {
+            if (warehouseId <= 0) return BadRequest(new { message = "Invalid warehouseId." });
+
+            var caller = await ResolveCallerAsync().ConfigureAwait(false);
+            if (caller == null) return Unauthorized(new { message = "Unauthorized. Invalid or missing token." });
+            if (!caller.CompanyId.HasValue || caller.CompanyId.Value <= 0)
+                return BadRequest(new { message = "User does not belong to any company. Access denied." });
+
+            try
+            {
+                var result = await _service.GetAllBySourceWarehouseAsync(caller.CompanyId.Value, warehouseId, status).ConfigureAwait(false);
+                return Ok(result);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = ex.Message });
+            }
+        }
+
         [HttpGet("{transferOrderId:int}")]
         public async Task<IActionResult> GetById(int transferOrderId)
         {
@@ -147,10 +176,10 @@ namespace Storix_BE.API.Controllers
             }
         }
 
-        [HttpGet("{transferOrderId:int}/availability")]
-        public async Task<IActionResult> CheckAvailability(int transferOrderId)
+        [HttpGet("warehouse/{warehouseId:int}/availability")]
+        public async Task<IActionResult> GetByWarehouseAvailability(int warehouseId)
         {
-            if (transferOrderId <= 0) return BadRequest(new { message = "Invalid transferOrderId." });
+            if (warehouseId <= 0) return BadRequest(new { message = "Invalid warehouseId." });
 
             var caller = await ResolveCallerAsync().ConfigureAwait(false);
             if (caller == null) return Unauthorized(new { message = "Unauthorized. Invalid or missing token." });
@@ -159,7 +188,7 @@ namespace Storix_BE.API.Controllers
 
             try
             {
-                var result = await _service.CheckAvailabilityAsync(caller.CompanyId.Value, transferOrderId).ConfigureAwait(false);
+                var result = await _service.CheckAvailabilityAsync(caller.CompanyId.Value, warehouseId).ConfigureAwait(false);
                 return Ok(result);
             }
             catch (ArgumentException ex)
