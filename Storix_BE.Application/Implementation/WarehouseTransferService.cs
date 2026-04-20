@@ -90,7 +90,7 @@ namespace Storix_BE.Service.Implementation
         public async Task<TransferOrderDetailDto> ApproveAsync(int companyId, int actorUserId, int transferOrderId, int? receiverStaffId = null)
         {
             var order = await GetOrderInCompanyAsync(companyId, transferOrderId);
-            await EnsureAdminAsync(actorUserId, companyId);
+            await EnsureManagerOrStaffAsync(actorUserId, companyId);
 
             if (!string.Equals(order.Status, TransferStatuses.PendingApproval, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidOperationException("Only PENDING_APPROVAL can be approved.");
@@ -210,12 +210,12 @@ namespace Storix_BE.Service.Implementation
             if ((user.RoleId ?? 0) != 3) throw new InvalidOperationException("Only Manager(roleId=3).");
         }
 
-        private async Task EnsureAdminAsync(int userId, int companyId)
+        private async Task EnsureManagerOrStaffAsync(int userId, int companyId)
         {
             var user = await _warehouseTransferRepository.GetUserByIdAsync(userId);
             if (user == null) throw new InvalidOperationException("User not found.");
             if ((user.CompanyId ?? 0) != companyId) throw new InvalidOperationException("User out of company scope.");
-            if ((user.RoleId ?? 0) != 2) throw new InvalidOperationException("Only Admin(roleId=2).");
+            if ((user.RoleId ?? 0) != 3 && (user.RoleId ?? 0) != 4) throw new InvalidOperationException("Only Manager(roleId=3) or Staff(roleId=4).");
         }
 
         private async Task<Warehouse> GetWarehouseInCompanyAsync(int warehouseId, int companyId)

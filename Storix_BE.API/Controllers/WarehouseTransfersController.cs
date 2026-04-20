@@ -58,7 +58,7 @@ namespace Storix_BE.API.Controllers
         }
 
         [HttpPost("{transferOrderId:int}/approve")]
-        [Authorize(Roles = "2")]
+        [Authorize(Roles = "2,3,4")]
         public async Task<IActionResult> ApproveTransfer(int transferOrderId, [FromBody] ApproveTransferOrderRequest? request)
         {
             if (transferOrderId <= 0) return BadRequest(new { message = "Invalid transferOrderId." });
