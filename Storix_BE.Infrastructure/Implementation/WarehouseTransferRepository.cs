@@ -164,8 +164,8 @@ namespace Storix_BE.Repository.Implementation
             IReadOnlyCollection<TransferOrderItem> items,
             IReadOnlyCollection<Inventory> sourceInventories,
             int actorUserId,
-            int? receiverStaffId,
-            int? carrierId)
+            int originWarehouseStaffId,
+            int? receiverStaffId)
         {
             var now = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
 
@@ -196,7 +196,7 @@ namespace Storix_BE.Repository.Implementation
                     WarehouseId = order.SourceWarehouseId,
                     Destination = order.DestinationWarehouse?.Name,
                     CreatedBy = actorUserId,
-                    StaffId = carrierId,
+                    StaffId = originWarehouseStaffId,
                     Status = "READY",
                     Note = $"AUTO_FROM_TRANSFER#{order.Id}",
                     CreatedAt = now
@@ -295,6 +295,53 @@ namespace Storix_BE.Repository.Implementation
                 await tx.RollbackAsync().ConfigureAwait(false);
                 throw;
             }
+        }
+
+
+        public async Task RejectTransferAsync(TransferOrder order, int actorUserId, string? reason)
+        {
+            var now = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
+            await using var tx = await _context.Database.BeginTransactionAsync().ConfigureAwait(false);
+            try
+            {
+                if (!string.Equals(order.Status, "PENDING_APPROVAL", StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException("Only PENDING_APPROVAL can be rejected.");
+
+                order.Status = "REJECTED";
+                _context.ActivityLogs.Add(new ActivityLog
+                {
+                    UserId = actorUserId,
+                    Action = string.IsNullOrWhiteSpace(reason) ? "TRANSFER_REJECTED" : $"TRANSFER_REJECTED:{reason}",
+                    Entity = "TransferOrder",
+                    EntityId = order.Id,
+                    Timestamp = now
+                });
+
+                await _context.SaveChangesAsync().ConfigureAwait(false);
+                await tx.CommitAsync().ConfigureAwait(false);
+            }
+            catch
+            {
+                await tx.RollbackAsync().ConfigureAwait(false);
+                throw;
+            }
+        }
+
+        public async Task ReplaceTransferItemsAsync(int transferOrderId, IReadOnlyCollection<TransferOrderItem> newItems)
+        {
+            var existing = await _context.TransferOrderItems.Where(x => x.TransferOrderId == transferOrderId).ToListAsync().ConfigureAwait(false);
+            _context.TransferOrderItems.RemoveRange(existing);
+            await _context.SaveChangesAsync().ConfigureAwait(false);
+            _context.TransferOrderItems.AddRange(newItems);
+            await _context.SaveChangesAsync().ConfigureAwait(false);
+        }
+
+        public async Task RemoveTransferOrderItemAsync(int transferOrderId, int itemId)
+        {
+            var item = await _context.TransferOrderItems.FirstOrDefaultAsync(x => x.TransferOrderId == transferOrderId && x.Id == itemId).ConfigureAwait(false);
+            if (item == null) throw new InvalidOperationException("Transfer item not found.");
+            _context.TransferOrderItems.Remove(item);
+            await _context.SaveChangesAsync().ConfigureAwait(false);
         }
 
         public async Task ShipTransferAsync(TransferOrder order)

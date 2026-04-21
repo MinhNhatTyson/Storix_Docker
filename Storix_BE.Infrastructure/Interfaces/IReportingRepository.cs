@@ -25,10 +25,10 @@ namespace Storix_BE.Repository.Interfaces
         Task<InventoryTrackingReportData> GetInventoryTrackingAsync(int companyId, int? warehouseId, DateTime from, DateTime to);
         Task<InboundKpiBasicReportData> GetInboundKpiBasicAsync(int companyId, int? warehouseId, DateTime from, DateTime to);
 
-        Task<InventorySnapshotReportData> GetInventorySnapshotAsync(int companyId, int? branchId, int? warehouseId, DateTime from, DateTime to);
-        Task<InventoryLedgerReportData> GetInventoryLedgerAsync(int companyId, int? branchId, int? warehouseId, int? productId, DateTime from, DateTime to);
-        Task<InventoryInOutBalanceReportData> GetInventoryInOutBalanceAsync(int companyId, int? branchId, int? warehouseId, DateTime from, DateTime to);
-        Task<StocktakeVarianceReportData> GetStocktakeVarianceAsync(int companyId, int? branchId, int? warehouseId, int? inventoryCountTicketId, DateTime from, DateTime to);
+        Task<InventorySnapshotReportData> GetInventorySnapshotAsync(int companyId, int? warehouseId, DateTime from, DateTime to);
+        Task<InventoryLedgerReportData> GetInventoryLedgerAsync(int companyId, int? warehouseId, int? productId, DateTime from, DateTime to);
+        Task<InventoryInOutBalanceReportData> GetInventoryInOutBalanceAsync(int companyId, int? warehouseId, DateTime from, DateTime to);
+        Task<StocktakeVarianceReportData> GetStocktakeVarianceAsync(int companyId, int? warehouseId, int? inventoryCountTicketId, DateTime from, DateTime to);
     }
 
     // ── OutboundKpiBasic ──────────────────────────────────────────────────────
@@ -89,7 +89,6 @@ namespace Storix_BE.Repository.Interfaces
     public sealed record InventorySnapshotReportData(
         DateTime TimeFrom,
         DateTime TimeTo,
-        int? BranchId,
         int? WarehouseId,
         int TotalSkus,
         int TotalQuantity,
@@ -109,7 +108,6 @@ namespace Storix_BE.Repository.Interfaces
     public sealed record InventoryLedgerReportData(
         DateTime TimeFrom,
         DateTime TimeTo,
-        int? BranchId,
         int? WarehouseId,
         int? ProductId,
         int OpeningQuantity,
@@ -132,7 +130,6 @@ namespace Storix_BE.Repository.Interfaces
     public sealed record InventoryInOutBalanceReportData(
         DateTime TimeFrom,
         DateTime TimeTo,
-        int? BranchId,
         int? WarehouseId,
         int TotalOpeningQty,
         int TotalInboundQty,
@@ -155,7 +152,6 @@ namespace Storix_BE.Repository.Interfaces
     public sealed record StocktakeVarianceReportData(
         DateTime TimeFrom,
         DateTime TimeTo,
-        int? BranchId,
         int? WarehouseId,
         int? InventoryCountTicketId,
         int TotalItems,

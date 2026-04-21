@@ -7,7 +7,9 @@ namespace Storix_BE.Service.Interfaces
     public interface IWarehouseTransferService
     {
         Task<TransferOrderDetailDto> CreateAsync(int companyId, int createdBy, CreateTransferOrderRequest request);
-        Task<TransferOrderDetailDto> ApproveAsync(int companyId, int actorUserId, int transferOrderId, int? receiverStaffId = null);
+        Task<TransferOrderDetailDto> DecideAsync(int companyId, int actorUserId, int transferOrderId, TransferDecisionRequest request);
+        Task<TransferOrderDetailDto> UpdateItemsAsync(int companyId, int actorUserId, int transferOrderId, UpdateTransferOrderItemsRequest request);
+        Task<TransferOrderDetailDto> RemoveItemAsync(int companyId, int actorUserId, int transferOrderId, int itemId);
         Task<List<TransferOrderListDto>> GetAllAsync(int companyId, int? sourceWarehouseId, int? destinationWarehouseId, string? status);
         Task<List<TransferOrderListDto>> GetAllBySourceWarehouseAsync(int companyId, int warehouseId, string? status);
         Task<TransferOrderDetailDto> GetByIdAsync(int companyId, int transferOrderId);
@@ -35,9 +37,11 @@ namespace Storix_BE.Service.Interfaces
     public sealed record CreateTransferOrderRequest(
         int SourceWarehouseId,
         int DestinationWarehouseId,
+        int OriginWarehouseStaffId,
         IEnumerable<CreateTransferOrderItemRequest> Items,
         bool SubmitAfterCreate = true);
-    public sealed record ApproveTransferOrderRequest(int? ReceiverStaffId);
+    public sealed record UpdateTransferOrderItemsRequest(IEnumerable<CreateTransferOrderItemRequest> Items);
+    public sealed record TransferDecisionRequest(bool IsApprove, string? Reason = null);
 
     public sealed record TransferOrderItemDto(
         int Id,

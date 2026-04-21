@@ -19,16 +19,17 @@ namespace Storix_BE.Service.Implementation
 
         public async Task<TransferOrderDetailDto> CreateAsync(int companyId, int createdBy, CreateTransferOrderRequest request)
         {
-            _logger.LogInformation("CreateAsync started. companyId={CompanyId}, createdBy={CreatedBy}, sourceWarehouseId={SourceWarehouseId}, destinationWarehouseId={DestinationWarehouseId}, itemCount={ItemCount}",
-                companyId, createdBy, request.SourceWarehouseId, request.DestinationWarehouseId, request.Items?.Count() ?? 0);
+            _logger.LogInformation("CreateAsync started. companyId={CompanyId}, createdBy={CreatedBy}, sourceWarehouseId={SourceWarehouseId}, destinationWarehouseId={DestinationWarehouseId}, originWarehouseStaffId={OriginWarehouseStaffId}, itemCount={ItemCount}",
+                companyId, createdBy, request.SourceWarehouseId, request.DestinationWarehouseId, request.OriginWarehouseStaffId, request.Items?.Count() ?? 0);
 
             ValidateCompanyAndUser(companyId, createdBy);
             ValidateWarehouses(request.SourceWarehouseId, request.DestinationWarehouseId);
 
-            _logger.LogInformation("Validating manager and warehouses for transfer creation.");
+            _logger.LogInformation("Validating manager, origin staff, and warehouses for transfer creation.");
             await EnsureManagerAsync(createdBy, companyId);
             await GetWarehouseInCompanyAsync(request.SourceWarehouseId, companyId);
             await GetWarehouseInCompanyAsync(request.DestinationWarehouseId, companyId);
+            await EnsureOriginWarehouseStaffAsync(request.OriginWarehouseStaffId, request.SourceWarehouseId, companyId);
 
             var items = request.Items?.ToList() ?? new List<CreateTransferOrderItemRequest>();
             if (!items.Any())
@@ -70,6 +71,7 @@ namespace Storix_BE.Service.Implementation
 
                 _logger.LogInformation("Saving transfer items and activity log.");
                 await _warehouseTransferRepository.SaveChangesAsync();
+                await AddActivityAsync(createdBy, $"ORIGIN_STAFF:{request.OriginWarehouseStaffId}", entity.Id);
                 await AddActivityAsync(createdBy, "TRANSFER_CREATED_AND_SUBMITTED", entity.Id);
                 _logger.LogInformation("Transfer created successfully. transferOrderId={TransferOrderId}", entity.Id);
             }
@@ -87,41 +89,60 @@ namespace Storix_BE.Service.Implementation
             return await GetByIdAsync(companyId, entity.Id);
         }
 
-        public async Task<TransferOrderDetailDto> ApproveAsync(int companyId, int actorUserId, int transferOrderId, int? receiverStaffId = null)
+        public async Task<TransferOrderDetailDto> DecideAsync(int companyId, int actorUserId, int transferOrderId, TransferDecisionRequest request)
         {
             var order = await GetOrderInCompanyAsync(companyId, transferOrderId);
-            await EnsureManagerOrStaffAsync(actorUserId, companyId);
+            await EnsureAdminAsync(actorUserId, companyId);
 
-            if (!string.Equals(order.Status, TransferStatuses.PendingApproval, StringComparison.OrdinalIgnoreCase))
-                throw new InvalidOperationException("Only PENDING_APPROVAL can be approved.");
-
-            var items = await _warehouseTransferRepository.GetTransferItemsByOrderIdAsync(order.Id);
-            if (!items.Any())
-                throw new InvalidOperationException("Transfer must contain at least one item.");
-
-            var productIds = items.Where(i => i.ProductId.HasValue).Select(i => i.ProductId!.Value).Distinct().ToList();
-            var inventories = await _warehouseTransferRepository.GetInventoriesByWarehouseAndProductsAsync(order.SourceWarehouseId, productIds);
-
-            foreach (var line in items)
+            if (request.IsApprove)
             {
-                var inv = inventories.FirstOrDefault(i => i.ProductId == line.ProductId);
-                var qty = line.Quantity ?? 0;
-                var available = (inv?.Quantity ?? 0) - (inv?.ReservedQuantity ?? 0);
-                if (qty <= 0 || inv == null || available < qty)
-                    throw new InvalidOperationException($"OUT_OF_STOCK ProductId={line.ProductId}, available={available}, required={qty}");
+                if (!string.Equals(order.Status, TransferStatuses.PendingApproval, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException("Only PENDING_APPROVAL can be approved.");
+
+                var items = await _warehouseTransferRepository.GetTransferItemsByOrderIdAsync(order.Id);
+                if (!items.Any())
+                    throw new InvalidOperationException("Transfer must contain at least one item.");
+
+                var productIds = items.Where(i => i.ProductId.HasValue).Select(i => i.ProductId!.Value).Distinct().ToList();
+                var inventories = await _warehouseTransferRepository.GetInventoriesByWarehouseAndProductsAsync(order.SourceWarehouseId, productIds);
+
+                foreach (var line in items)
+                {
+                    var inv = inventories.FirstOrDefault(i => i.ProductId == line.ProductId);
+                    var qty = line.Quantity ?? 0;
+                    var available = (inv?.Quantity ?? 0) - (inv?.ReservedQuantity ?? 0);
+                    if (qty <= 0 || inv == null || available < qty)
+                        throw new InvalidOperationException($"OUT_OF_STOCK ProductId={line.ProductId}, available={available}, required={qty}");
+                }
+
+                var originStaffId = await ResolveOriginStaffIdAsync(order.Id);
+                if (!originStaffId.HasValue)
+                    throw new InvalidOperationException("Origin staff not found for this transfer.");
+
+                await _warehouseTransferRepository.ApproveTransferAsync(
+                    order,
+                    items,
+                    inventories,
+                    actorUserId,
+                    originStaffId.Value,
+                    null);
+
+                await EnsureTicketAndItemLinksAsync(order);
+                return await GetByIdAsync(companyId, order.Id);
             }
 
-
-            await _warehouseTransferRepository.ApproveTransferAsync(
-                order,
-                items,
-                inventories,
-                actorUserId,
-                receiverStaffId,
-                null);
-
-            await EnsureTicketAndItemLinksAsync(order);
+            await _warehouseTransferRepository.RejectTransferAsync(order, actorUserId, request.Reason);
             return await GetByIdAsync(companyId, order.Id);
+        }
+
+        public async Task<TransferOrderDetailDto> ApproveAsync(int companyId, int actorUserId, int transferOrderId, int? receiverStaffId = null)
+        {
+            return await DecideAsync(companyId, actorUserId, transferOrderId, new TransferDecisionRequest(true));
+        }
+
+        public async Task<TransferOrderDetailDto> RejectAsync(int companyId, int actorUserId, int transferOrderId, string? reason = null)
+        {
+            return await DecideAsync(companyId, actorUserId, transferOrderId, new TransferDecisionRequest(false, reason));
         }
 
         public async Task<List<TransferOrderListDto>> GetAllAsync(int companyId, int? sourceWarehouseId, int? destinationWarehouseId, string? status)
@@ -154,6 +175,55 @@ namespace Storix_BE.Service.Implementation
                 .ToList();
 
             return MapDetail(order, timeline);
+        }
+
+        public async Task<TransferOrderDetailDto> UpdateItemsAsync(int companyId, int actorUserId, int transferOrderId, UpdateTransferOrderItemsRequest request)
+        {
+            var order = await GetOrderInCompanyAsync(companyId, transferOrderId);
+            await EnsureManagerAsync(actorUserId, companyId);
+
+            if (!string.Equals(order.Status, TransferStatuses.PendingApproval, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("Only PENDING_APPROVAL can be edited.");
+
+            var items = request.Items?.ToList() ?? new List<CreateTransferOrderItemRequest>();
+            if (!items.Any()) throw new ArgumentException("Items are required.", nameof(request.Items));
+
+            foreach (var line in items)
+            {
+                ValidatePositive(line.ProductId, nameof(line.ProductId));
+                ValidatePositive(line.Quantity, nameof(line.Quantity));
+                await EnsureProductInCompanyAsync(line.ProductId, companyId);
+            }
+
+            var existing = await _warehouseTransferRepository.GetTransferItemsByOrderIdAsync(order.Id);
+            foreach (var e in existing) _warehouseTransferRepository.RemoveTransferOrderItem(e);
+            await _warehouseTransferRepository.SaveChangesAsync();
+
+            foreach (var line in items)
+            {
+                _warehouseTransferRepository.AddTransferOrderItem(new TransferOrderItem
+                {
+                    TransferOrderId = order.Id,
+                    ProductId = line.ProductId,
+                    Quantity = line.Quantity
+                });
+            }
+            await _warehouseTransferRepository.SaveChangesAsync();
+            await AddActivityAsync(actorUserId, "TRANSFER_ITEMS_UPDATED", order.Id);
+            return await GetByIdAsync(companyId, order.Id);
+        }
+
+        public async Task<TransferOrderDetailDto> RemoveItemAsync(int companyId, int actorUserId, int transferOrderId, int itemId)
+        {
+            var order = await GetOrderInCompanyAsync(companyId, transferOrderId);
+            await EnsureManagerAsync(actorUserId, companyId);
+
+            if (!string.Equals(order.Status, TransferStatuses.PendingApproval, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("Only PENDING_APPROVAL can be edited.");
+
+            await _warehouseTransferRepository.RemoveTransferOrderItemAsync(order.Id, itemId);
+            await AddActivityAsync(actorUserId, $"TRANSFER_ITEM_REMOVED:{itemId}", order.Id);
+            return await GetByIdAsync(companyId, order.Id);
         }
 
         public async Task<List<TransferAvailabilityDto>> CheckAvailabilityAsync(int companyId, int transferOrderId)
@@ -210,12 +280,23 @@ namespace Storix_BE.Service.Implementation
             if ((user.RoleId ?? 0) != 3) throw new InvalidOperationException("Only Manager(roleId=3).");
         }
 
-        private async Task EnsureManagerOrStaffAsync(int userId, int companyId)
+        private async Task EnsureAdminAsync(int userId, int companyId)
         {
             var user = await _warehouseTransferRepository.GetUserByIdAsync(userId);
             if (user == null) throw new InvalidOperationException("User not found.");
             if ((user.CompanyId ?? 0) != companyId) throw new InvalidOperationException("User out of company scope.");
-            if ((user.RoleId ?? 0) != 3 && (user.RoleId ?? 0) != 4) throw new InvalidOperationException("Only Manager(roleId=3) or Staff(roleId=4).");
+            if ((user.RoleId ?? 0) != 2) throw new InvalidOperationException("Only Admin(roleId=2).");
+        }
+
+        private async Task EnsureOriginWarehouseStaffAsync(int userId, int warehouseId, int companyId)
+        {
+            var user = await _warehouseTransferRepository.GetUserByIdAsync(userId);
+            if (user == null) throw new InvalidOperationException("User not found.");
+            if ((user.CompanyId ?? 0) != companyId) throw new InvalidOperationException("User out of company scope.");
+            if ((user.RoleId ?? 0) != 4) throw new InvalidOperationException("Only Staff(roleId=4).");
+
+            var assigned = await _warehouseTransferRepository.IsStaffAssignedToWarehouseAsync(userId, warehouseId);
+            if (!assigned) throw new InvalidOperationException("Origin warehouse staff is not assigned to source warehouse.");
         }
 
         private async Task<Warehouse> GetWarehouseInCompanyAsync(int warehouseId, int companyId)
@@ -274,6 +355,15 @@ namespace Storix_BE.Service.Implementation
         private async Task<int?> ResolveLinkedTicketIdFromActivityAsync(int transferOrderId, string prefix)
         {
             var action = await _warehouseTransferRepository.GetLatestActivityActionAsync(transferOrderId, prefix);
+            if (string.IsNullOrWhiteSpace(action)) return null;
+            var parts = action.Split(':');
+            if (parts.Length != 2) return null;
+            return int.TryParse(parts[1], out var id) ? id : null;
+        }
+
+        private async Task<int?> ResolveOriginStaffIdAsync(int transferOrderId)
+        {
+            var action = await _warehouseTransferRepository.GetLatestActivityActionAsync(transferOrderId, "ORIGIN_STAFF:");
             if (string.IsNullOrWhiteSpace(action)) return null;
             var parts = action.Split(':');
             if (parts.Length != 2) return null;

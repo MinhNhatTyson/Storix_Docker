@@ -43,8 +43,11 @@ namespace Storix_BE.Repository.Interfaces
             IReadOnlyCollection<TransferOrderItem> items,
             IReadOnlyCollection<Inventory> sourceInventories,
             int actorUserId,
-            int? receiverStaffId,
-            int? carrierId);
+            int originWarehouseStaffId,
+            int? receiverStaffId);
+
+        Task RejectTransferAsync(TransferOrder order, int actorUserId, string? reason);
+        Task ReplaceTransferItemsAsync(int transferOrderId, IReadOnlyCollection<TransferOrderItem> newItems);
 
         Task ShipTransferAsync(TransferOrder order);
 
@@ -54,5 +57,6 @@ namespace Storix_BE.Repository.Interfaces
             IReadOnlyDictionary<int, int> requiredByProduct);
 
         Task<int> BackfillTransferItemLinksAsync(int transferOrderId, int? outboundTicketId, int? inboundTicketId);
+        Task RemoveTransferOrderItemAsync(int transferOrderId, int itemId);
     }
 }
