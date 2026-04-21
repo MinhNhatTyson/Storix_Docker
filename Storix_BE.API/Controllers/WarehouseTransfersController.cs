@@ -57,11 +57,12 @@ namespace Storix_BE.API.Controllers
             }
         }
 
-        [HttpPost("{transferOrderId:int}/approve")]
-        [Authorize(Roles = "2,3,4")]
-        public async Task<IActionResult> ApproveTransfer(int transferOrderId, [FromBody] ApproveTransferOrderRequest? request)
+        [HttpPost("{transferOrderId:int}/decide")]
+        [Authorize(Roles = "2")]
+        public async Task<IActionResult> DecideTransfer(int transferOrderId, [FromBody] TransferDecisionRequest request)
         {
             if (transferOrderId <= 0) return BadRequest(new { message = "Invalid transferOrderId." });
+            if (request == null) return BadRequest(new { message = "Request body is required." });
 
             var caller = await ResolveCallerAsync().ConfigureAwait(false);
             if (caller == null) return Unauthorized(new { message = "Unauthorized. Invalid or missing token." });
@@ -70,7 +71,77 @@ namespace Storix_BE.API.Controllers
 
             try
             {
-                var result = await _service.ApproveAsync(caller.CompanyId.Value, caller.Id, transferOrderId, request?.ReceiverStaffId).ConfigureAwait(false);
+                var result = await _service.DecideAsync(caller.CompanyId.Value, caller.Id, transferOrderId, request).ConfigureAwait(false);
+                return Ok(result);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (DbUpdateException ex)
+            {
+                return BadRequest(new { message = ex.InnerException?.Message ?? ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = ex.Message });
+            }
+        }
+
+        [HttpPut("{transferOrderId:int}/items")]
+        [Authorize(Roles = "3")]
+        public async Task<IActionResult> UpdateTransferItems(int transferOrderId, [FromBody] UpdateTransferOrderItemsRequest request)
+        {
+            if (transferOrderId <= 0) return BadRequest(new { message = "Invalid transferOrderId." });
+            if (request == null) return BadRequest(new { message = "Request body is required." });
+
+            var caller = await ResolveCallerAsync().ConfigureAwait(false);
+            if (caller == null) return Unauthorized(new { message = "Unauthorized. Invalid or missing token." });
+            if (!caller.CompanyId.HasValue || caller.CompanyId.Value <= 0)
+                return BadRequest(new { message = "User does not belong to any company. Access denied." });
+
+            try
+            {
+                var result = await _service.UpdateItemsAsync(caller.CompanyId.Value, caller.Id, transferOrderId, request).ConfigureAwait(false);
+                return Ok(result);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (DbUpdateException ex)
+            {
+                return BadRequest(new { message = ex.InnerException?.Message ?? ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = ex.Message });
+            }
+        }
+
+        [HttpDelete("{transferOrderId:int}/items/{itemId:int}")]
+        [Authorize(Roles = "3")]
+        public async Task<IActionResult> RemoveTransferItem(int transferOrderId, int itemId)
+        {
+            if (transferOrderId <= 0) return BadRequest(new { message = "Invalid transferOrderId." });
+            if (itemId <= 0) return BadRequest(new { message = "Invalid itemId." });
+
+            var caller = await ResolveCallerAsync().ConfigureAwait(false);
+            if (caller == null) return Unauthorized(new { message = "Unauthorized. Invalid or missing token." });
+            if (!caller.CompanyId.HasValue || caller.CompanyId.Value <= 0)
+                return BadRequest(new { message = "User does not belong to any company. Access denied." });
+
+            try
+            {
+                var result = await _service.RemoveItemAsync(caller.CompanyId.Value, caller.Id, transferOrderId, itemId).ConfigureAwait(false);
                 return Ok(result);
             }
             catch (ArgumentException ex)

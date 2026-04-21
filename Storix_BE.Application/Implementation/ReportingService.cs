@@ -112,7 +112,7 @@ namespace Storix_BE.Service.Implementation
                 }
                 else if (string.Equals(payload.ReportType, ReportTypes.InventorySnapshot, StringComparison.Ordinal))
                 {
-                    var snapshot = await _repo.GetInventorySnapshotAsync(companyId, null, payload.WarehouseId, payload.TimeFrom, payload.TimeTo)
+                    var snapshot = await _repo.GetInventorySnapshotAsync(companyId, payload.WarehouseId, payload.TimeFrom, payload.TimeTo)
                         .ConfigureAwait(false);
 
                     report.SummaryJson = JsonSerializer.Serialize(new
@@ -126,7 +126,7 @@ namespace Storix_BE.Service.Implementation
                 }
                 else if (string.Equals(payload.ReportType, ReportTypes.InventoryLedger, StringComparison.Ordinal))
                 {
-                    var ledger = await _repo.GetInventoryLedgerAsync(companyId, null, payload.WarehouseId, payload.ProductId, payload.TimeFrom, payload.TimeTo)
+                    var ledger = await _repo.GetInventoryLedgerAsync(companyId, payload.WarehouseId, payload.ProductId, payload.TimeFrom, payload.TimeTo)
                         .ConfigureAwait(false);
 
                     report.SummaryJson = JsonSerializer.Serialize(new
@@ -140,7 +140,7 @@ namespace Storix_BE.Service.Implementation
                 }
                 else if (string.Equals(payload.ReportType, ReportTypes.InventoryInOutBalance, StringComparison.Ordinal))
                 {
-                    var inOut = await _repo.GetInventoryInOutBalanceAsync(companyId, null, payload.WarehouseId, payload.TimeFrom, payload.TimeTo)
+                    var inOut = await _repo.GetInventoryInOutBalanceAsync(companyId, payload.WarehouseId, payload.TimeFrom, payload.TimeTo)
                         .ConfigureAwait(false);
 
                     report.SummaryJson = JsonSerializer.Serialize(new
@@ -156,7 +156,7 @@ namespace Storix_BE.Service.Implementation
                 }
                 else if (string.Equals(payload.ReportType, ReportTypes.StocktakeVariance, StringComparison.Ordinal))
                 {
-                    var stocktake = await _repo.GetStocktakeVarianceAsync(companyId, null, payload.WarehouseId, payload.InventoryCountTicketId, payload.TimeFrom, payload.TimeTo)
+                    var stocktake = await _repo.GetStocktakeVarianceAsync(companyId, payload.WarehouseId, payload.InventoryCountTicketId, payload.TimeFrom, payload.TimeTo)
                         .ConfigureAwait(false);
 
                     report.SummaryJson = JsonSerializer.Serialize(new

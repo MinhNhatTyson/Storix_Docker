@@ -346,7 +346,7 @@ namespace Storix_BE.Repository.Implementation
                 byDay, bySupplier);
         }
 
-        public async Task<InventorySnapshotReportData> GetInventorySnapshotAsync(int companyId, int? branchId, int? warehouseId, DateTime from, DateTime to)
+        public async Task<InventorySnapshotReportData> GetInventorySnapshotAsync(int companyId, int? warehouseId, DateTime from, DateTime to)
         {
             var invQuery = _context.Inventories.AsNoTracking().Where(i => i.Warehouse != null && i.Warehouse.CompanyId == companyId);
             if (warehouseId.HasValue && warehouseId.Value > 0) invQuery = invQuery.Where(i => i.WarehouseId == warehouseId.Value);
@@ -360,7 +360,7 @@ namespace Storix_BE.Repository.Implementation
             }).Where(x => x.ProductId > 0).ToListAsync().ConfigureAwait(false);
 
             var productIds = rows.Select(x => x.ProductId).Distinct().ToList();
-            var fifoPrices = await ResolveFifoUnitCostByProductAsync(companyId, null, warehouseId, productIds, to).ConfigureAwait(false);
+            var fifoPrices = await ResolveFifoUnitCostByProductAsync(companyId, warehouseId, productIds, to).ConfigureAwait(false);
 
             var items = rows.GroupBy(r => new { r.ProductId, r.ProductName, r.Sku })
                 .Select(g =>
@@ -372,10 +372,10 @@ namespace Storix_BE.Repository.Implementation
                 .OrderByDescending(x => x.InventoryValue)
                 .ToList();
 
-            return new InventorySnapshotReportData(from, to, null, warehouseId, items.Count, items.Sum(x => x.Quantity), items.Sum(x => x.InventoryValue), items);
+            return new InventorySnapshotReportData(from, to, warehouseId, items.Count, items.Sum(x => x.Quantity), items.Sum(x => x.InventoryValue), items);
         }
 
-        public async Task<InventoryLedgerReportData> GetInventoryLedgerAsync(int companyId, int? branchId, int? warehouseId, int? productId, DateTime from, DateTime to)
+        public async Task<InventoryLedgerReportData> GetInventoryLedgerAsync(int companyId, int? warehouseId, int? productId, DateTime from, DateTime to)
         {
             var txQuery = _context.InventoryTransactions.AsNoTracking().Where(t => t.Warehouse != null && t.Warehouse.CompanyId == companyId && t.CreatedAt.HasValue);
             if (warehouseId.HasValue && warehouseId.Value > 0) txQuery = txQuery.Where(t => t.WarehouseId == warehouseId.Value);
@@ -403,10 +403,10 @@ namespace Storix_BE.Repository.Implementation
                 ledger.Add(new InventoryLedgerRow(r.Day, r.ProductId, r.ProductName, r.Sku, r.TransactionType, r.Qty > 0 ? r.Qty : 0, r.Qty < 0 ? Math.Abs(r.Qty) : 0, running));
             }
 
-            return new InventoryLedgerReportData(from, to, null, warehouseId, productId, opening, running, ledger);
+            return new InventoryLedgerReportData(from, to, warehouseId, productId, opening, running, ledger);
         }
 
-        public async Task<InventoryInOutBalanceReportData> GetInventoryInOutBalanceAsync(int companyId, int? branchId, int? warehouseId, DateTime from, DateTime to)
+        public async Task<InventoryInOutBalanceReportData> GetInventoryInOutBalanceAsync(int companyId, int? warehouseId, DateTime from, DateTime to)
         {
             // Opening/closing base from inventory transactions (createdAt), movement in range by completedAt.
             var txQuery = _context.InventoryTransactions.AsNoTracking().Where(t => t.Warehouse != null && t.Warehouse.CompanyId == companyId && t.CreatedAt.HasValue);
@@ -520,7 +520,7 @@ namespace Storix_BE.Repository.Implementation
                 .Distinct()
                 .ToList();
 
-            var fifoUnitCostByProduct = await ResolveFifoUnitCostByProductAsync(companyId, null, warehouseId, productIds, to)
+            var fifoUnitCostByProduct = await ResolveFifoUnitCostByProductAsync(companyId, warehouseId, productIds, to)
                 .ConfigureAwait(false);
 
             var byProduct = allProducts.Select(p =>
@@ -539,7 +539,6 @@ namespace Storix_BE.Repository.Implementation
             return new InventoryInOutBalanceReportData(
                 from,
                 to,
-                branchId,
                 warehouseId,
                 byProduct.Sum(x => x.OpeningQty),
                 byProduct.Sum(x => x.InboundQty),
@@ -550,7 +549,7 @@ namespace Storix_BE.Repository.Implementation
                 byProduct);
         }
 
-        public async Task<StocktakeVarianceReportData> GetStocktakeVarianceAsync(int companyId, int? branchId, int? warehouseId, int? inventoryCountTicketId, DateTime from, DateTime to)
+        public async Task<StocktakeVarianceReportData> GetStocktakeVarianceAsync(int companyId, int? warehouseId, int? inventoryCountTicketId, DateTime from, DateTime to)
         {
             var ticketQuery = _context.InventoryCountsTickets.AsNoTracking().Where(t => t.Warehouse != null && t.Warehouse.CompanyId == companyId);
             if (warehouseId.HasValue && warehouseId.Value > 0) ticketQuery = ticketQuery.Where(t => t.WarehouseId == warehouseId.Value);
@@ -571,7 +570,6 @@ namespace Storix_BE.Repository.Implementation
 
             var fifoPrices = await ResolveFifoUnitCostByProductAsync(
                 companyId,
-                branchId,
                 warehouseId,
                 itemRows.Select(x => x.ProductId).Distinct().ToList(),
                 to).ConfigureAwait(false);
@@ -582,7 +580,7 @@ namespace Storix_BE.Repository.Implementation
                 return new StocktakeVarianceRow(x.ProductId, x.ProductName, x.Sku, x.SystemQty, x.CountedQty, x.Variance, cost, cost * x.Variance);
             }).ToList();
 
-            return new StocktakeVarianceReportData(from, to, branchId, warehouseId, inventoryCountTicketId, items.Count, items.Sum(x => x.VarianceQty), items.Sum(x => x.VarianceValue), items);
+            return new StocktakeVarianceReportData(from, to, warehouseId, inventoryCountTicketId, items.Count, items.Sum(x => x.VarianceQty), items.Sum(x => x.VarianceValue), items);
         }
 
 
@@ -610,7 +608,6 @@ namespace Storix_BE.Repository.Implementation
 
         private async Task<Dictionary<int, decimal>> ResolveFifoUnitCostByProductAsync(
             int companyId,
-            int? branchId,
             int? warehouseId,
             List<int> productIds,
             DateTime upTo)

@@ -14,6 +14,10 @@ public partial class Report
 
     public int? WarehouseId { get; set; }
 
+    public int? ProductId { get; set; }
+
+    public int? InventoryCountTicketId { get; set; }
+
     public DateTime? TimeFrom { get; set; }
 
     public DateTime? TimeTo { get; set; }

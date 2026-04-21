@@ -156,7 +156,6 @@ namespace Storix_BE.API.Controllers
 
     public sealed record CreateReportApiRequest(
         string ReportType,
-        int? BranchId,
         int? WarehouseId,
         int? ProductId,
         DateTime TimeFrom,
