@@ -179,14 +179,19 @@ namespace Storix_BE.Repository.Implementation
             }
 
             var batchByProduct = new Dictionary<int, InventoryBatch>();
+            // Create skeleton InventoryBatch per product, linked to its InboundOrderItem
             foreach (var reqItem in inboundRequest.InboundOrderItems)
             {
                 if (!reqItem.ProductId.HasValue) continue;
-                if (batchByProduct.ContainsKey(reqItem.ProductId.Value)) continue;
 
+                // One batch per InboundOrderItem (not per product) since each item
+                // gets its own FK reference - deduplication happens at the product
+                // level during FIFO queries via InboundDate ordering
                 var batch = new InventoryBatch
                 {
-                    InboundOrderId = 0,
+                    // Link via navigation so EF resolves the FK after SaveChanges
+                    InboundOrderItem = reqItem,
+                    InboundOrder = inboundOrder,
                     ProductId = reqItem.ProductId.Value,
                     WarehouseId = inboundRequest.WarehouseId!.Value,
                     ReceivedQuantity = 0,
@@ -199,7 +204,6 @@ namespace Storix_BE.Repository.Implementation
                 };
 
                 inboundOrder.InventoryBatches.Add(batch);
-                batchByProduct[reqItem.ProductId.Value] = batch;
             }
 
             await using var tx = await _context.Database.BeginTransactionAsync().ConfigureAwait(false);
