@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
+using static Storix_BE.Service.Interfaces.IInventoryOutboundService;
 
 namespace Storix_BE.Service.Implementation
 {
@@ -21,7 +22,68 @@ namespace Storix_BE.Service.Implementation
             _notificationService = notificationService;
             _userRepo = userRepo;
         }
+        public async Task<List<FifoPickingSuggestionDto>> GetFifoPickingSuggestionsAsync(
+    int outboundOrderId)
+        {
+            if (outboundOrderId <= 0)
+                throw new ArgumentException("Invalid outboundOrderId.", nameof(outboundOrderId));
 
+            // Reuse existing method to load ticket with items
+            var order = await _repo.GetOutboundOrderByIdAsync(0, outboundOrderId)
+                .ConfigureAwait(false);
+
+            if (!order.WarehouseId.HasValue)
+                throw new InvalidOperationException(
+                    "OutboundOrder must have a valid WarehouseId.");
+
+            var results = new List<FifoPickingSuggestionDto>();
+
+            var itemGroups = order.OutboundOrderItems
+                .Where(i => i.ProductId.HasValue && (i.Quantity ?? 0) > 0)
+                .GroupBy(i => new { i.ProductId, i.Id })
+                .Select(g => new
+                {
+                    OutboundOrderItemId = g.Key.Id,
+                    ProductId = g.Key.ProductId!.Value,
+                    ProductName = g.First().Product?.Name,
+                    RequiredQuantity = g.Sum(x => x.Quantity ?? 0)
+                })
+                .ToList();
+
+            foreach (var item in itemGroups)
+            {
+                var rawSuggestions = await _repo.GetFifoSuggestedLocationsAsync(
+                    order.WarehouseId.Value,
+                    item.ProductId,
+                    item.RequiredQuantity).ConfigureAwait(false);
+
+                var totalSuggested = rawSuggestions.Sum(s => s.SuggestedPickQty);
+                var isFullyCoverable = totalSuggested >= item.RequiredQuantity;
+
+                results.Add(new FifoPickingSuggestionDto(
+                    OutboundOrderItemId: item.OutboundOrderItemId,
+                    ProductId: item.ProductId,
+                    ProductName: item.ProductName,
+                    RequiredQuantity: item.RequiredQuantity,
+                    IsFullyCoverable: isFullyCoverable,
+                    Suggestions: rawSuggestions.Select(s => new FifoBinSuggestionItemDto(
+                        BatchId: s.BatchId,
+                        InboundDate: s.InboundDate,
+                        EffectiveUnitCost: s.EffectiveUnitCost,
+                        BinId: s.BinId,
+                        BinIdCode: s.BinIdCode,
+                        BinCode: s.BinCode,
+                        ShelfId: s.ShelfId,
+                        ShelfCode: s.ShelfCode,
+                        ZoneId: s.ZoneId,
+                        AvailableInBin: s.AvailableInBin,
+                        SuggestedPickQty: s.SuggestedPickQty
+                    )).ToList()
+                ));
+            }
+
+            return results;
+        }
         public async Task<OutboundRequest> CreateOutboundRequestAsync(CreateOutboundRequestRequest request)
         {
             if (request == null) throw new ArgumentNullException(nameof(request));

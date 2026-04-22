@@ -178,6 +178,30 @@ namespace Storix_BE.Repository.Implementation
                 inboundOrder.InboundOrderItems.Add(orderItem);
             }
 
+            var batchByProduct = new Dictionary<int, InventoryBatch>();
+            foreach (var reqItem in inboundRequest.InboundOrderItems)
+            {
+                if (!reqItem.ProductId.HasValue) continue;
+                if (batchByProduct.ContainsKey(reqItem.ProductId.Value)) continue;
+
+                var batch = new InventoryBatch
+                {
+                    InboundOrderId = 0,
+                    ProductId = reqItem.ProductId.Value,
+                    WarehouseId = inboundRequest.WarehouseId!.Value,
+                    ReceivedQuantity = 0,
+                    RemainingQuantity = 0,
+                    UnitCost = (decimal)(reqItem.Price ?? 0),
+                    LineDiscount = (decimal)(reqItem.Discount ?? 0),
+                    InboundDate = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified),
+                    IsExhausted = false,
+                    CreatedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified)
+                };
+
+                inboundOrder.InventoryBatches.Add(batch);
+                batchByProduct[reqItem.ProductId.Value] = batch;
+            }
+
             await using var tx = await _context.Database.BeginTransactionAsync().ConfigureAwait(false);
             try
             {
@@ -341,7 +365,6 @@ namespace Storix_BE.Repository.Implementation
                             LastUpdated = now
                         };
                         _context.Inventories.Add(inventory);
-                        await _context.SaveChangesAsync().ConfigureAwait(false);
                         inventories.Add(inventory);
                     }
                     else
@@ -484,6 +507,82 @@ namespace Storix_BE.Repository.Implementation
                         order.Status = "Completed";
                     else if (anyReceived)
                         order.Status = "Partially Completed";
+
+                    // ── FIFO Batch update ────────────────────────────────────────────────────
+                    // Load existing batches for this inbound order
+                    var existingBatches = await _context.InventoryBatches
+                        .Include(b => b.BatchLocations)
+                        .Where(b => b.InboundOrderId == inboundOrderId)
+                        .ToListAsync()
+                        .ConfigureAwait(false);
+
+                    foreach (var (inboundItemId, productId, delta) in deltas)
+                    {
+                        if (delta <= 0) continue; // only process positive received quantities
+
+                        var batch = existingBatches.FirstOrDefault(b => b.ProductId == productId);
+                        if (batch == null)
+                        {
+                            // Fallback: create batch if skeleton was not created at order creation
+                            var incomingItem = incomingList.First(i => i.ProductId == productId);
+                            batch = new InventoryBatch
+                            {
+                                InboundOrderId = inboundOrderId,
+                                ProductId = productId,
+                                WarehouseId = order.WarehouseId!.Value,
+                                ReceivedQuantity = 0,
+                                RemainingQuantity = 0,
+                                UnitCost = (decimal)(order.InboundOrderItems
+                                    .FirstOrDefault(i => i.ProductId == productId)?.Price ?? 0),
+                                LineDiscount = (decimal)(order.InboundOrderItems
+                                    .FirstOrDefault(i => i.ProductId == productId)?.Discount ?? 0),
+                                InboundDate = order.CreatedAt ??
+                                    DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified),
+                                IsExhausted = false,
+                                CreatedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified)
+                            };
+                            _context.InventoryBatches.Add(batch);
+                            existingBatches.Add(batch);
+                        }
+
+                        // Update received/remaining quantities
+                        batch.ReceivedQuantity += delta;
+                        batch.RemainingQuantity += delta;
+                        batch.UpdatedAt = now;
+
+                        // Update BatchLocations from placements
+                        if (placementList.Any())
+                        {
+                            var itemPlacements = placementList
+                                .Where(p => p.ProductId == productId && p.InboundOrderItemId == inboundItemId)
+                                .ToList();
+
+                            foreach (var placement in itemPlacements)
+                            {
+                                var bin = bins.FirstOrDefault(b => b.IdCode == placement.BinIdCode);
+                                if (bin == null) continue;
+
+                                var existingLocation = batch.BatchLocations
+                                    .FirstOrDefault(bl => bl.BinId == bin.Id);
+
+                                if (existingLocation == null)
+                                {
+                                    batch.BatchLocations.Add(new InventoryBatchLocation
+                                    {
+                                        BinId = bin.Id,
+                                        Quantity = placement.Quantity,
+                                        UpdatedAt = now
+                                    });
+                                }
+                                else
+                                {
+                                    existingLocation.Quantity += placement.Quantity;
+                                    existingLocation.UpdatedAt = now;
+                                }
+                            }
+                        }
+                    }
+                    // ── End FIFO Batch update ─────────────────────────────────────────────────
 
                     await _context.SaveChangesAsync().ConfigureAwait(false);
                     await tx.CommitAsync().ConfigureAwait(false);

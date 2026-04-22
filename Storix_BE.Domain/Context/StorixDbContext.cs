@@ -96,10 +96,131 @@ public partial class StorixDbContext : DbContext
 
     public virtual DbSet<Subscription> Subscriptions { get; set; }
     public virtual DbSet<Recommendation> Recommendations { get; set; }
-
+    public virtual DbSet<InventoryBatch> InventoryBatches { get; set; }
+    public virtual DbSet<InventoryBatchLocation> InventoryBatchLocations { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<InventoryBatchLocation>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("inventory_batch_locations_pkey");
+
+            entity.ToTable("inventory_batch_locations");
+
+            entity.Property(e => e.Id).HasColumnName("id");
+            entity.Property(e => e.BatchId).HasColumnName("batch_id");
+            entity.Property(e => e.BinId).HasColumnName("bin_id");
+            entity.Property(e => e.Quantity).HasColumnName("quantity");
+            entity.Property(e => e.UpdatedAt)
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("updated_at");
+
+            entity.HasIndex(e => new { e.BatchId, e.BinId })
+                .IsUnique()
+                .HasDatabaseName("uq_batch_location");
+
+            entity.HasIndex(e => e.BatchId)
+                .HasDatabaseName("idx_batch_locations_batch_id");
+
+            entity.HasIndex(e => e.BinId)
+                .HasDatabaseName("idx_batch_locations_bin_id");
+
+            entity.HasOne(d => d.Batch)
+                .WithMany(p => p.BatchLocations)
+                .HasForeignKey(d => d.BatchId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("fk_inventory_batch_locations_batch_id");
+
+            entity.HasOne(d => d.Bin)
+                .WithMany(p => p.BatchLocations)
+                .HasForeignKey(d => d.BinId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("fk_inventory_batch_locations_bin_id");
+        });
+        modelBuilder.Entity<InventoryBatch>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("inventory_batches_pkey");
+
+            entity.ToTable("inventory_batches");
+
+            entity.Property(e => e.Id).HasColumnName("id");
+
+            entity.Property(e => e.InboundOrderItemId).HasColumnName("inbound_order_item_id");
+            entity.Property(e => e.InboundOrderId).HasColumnName("inbound_order_id");
+            entity.Property(e => e.ProductId).HasColumnName("product_id");
+            entity.Property(e => e.WarehouseId).HasColumnName("warehouse_id");
+
+            entity.Property(e => e.ReceivedQuantity).HasColumnName("received_quantity");
+            entity.Property(e => e.RemainingQuantity).HasColumnName("remaining_quantity");
+
+            entity.Property(e => e.UnitCost)
+                .HasColumnType("numeric(18,4)")
+                .HasColumnName("unit_cost");
+
+            entity.Property(e => e.LineDiscount)
+                .HasColumnType("numeric(5,2)")
+                .HasColumnName("line_discount");
+
+            // Generated/computed column — read-only from EF's perspective
+            entity.Property(e => e.EffectiveUnitCost)
+                .HasColumnType("numeric(18,4)")
+                .HasColumnName("effective_unit_cost")
+                .ValueGeneratedOnAddOrUpdate();
+
+            entity.Property(e => e.InboundDate)
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("inbound_date");
+
+            entity.Property(e => e.IsExhausted)
+                .HasDefaultValue(false)
+                .HasColumnName("is_exhausted");
+
+            entity.Property(e => e.CreatedAt)
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("created_at");
+
+            entity.Property(e => e.UpdatedAt)
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("updated_at");
+
+            // Unique constraint: one batch row per InboundOrderItem
+            entity.HasIndex(e => e.InboundOrderItemId)
+                .IsUnique()
+                .HasDatabaseName("uq_batch_inbound_order_item");
+
+            // Partial FIFO index — mirrors the WHERE clause in the SQL script.
+            // EF Core supports this via HasFilter.
+            entity.HasIndex(e => new { e.WarehouseId, e.ProductId, e.InboundDate })
+                .HasFilter("is_exhausted = FALSE")
+                .HasDatabaseName("idx_batches_fifo");
+
+            entity.HasIndex(e => e.InboundOrderId)
+                .HasDatabaseName("idx_batches_inbound_order");
+
+            entity.HasOne(d => d.InboundOrderItem)
+                .WithOne(p => p.InventoryBatch)
+                .HasForeignKey<InventoryBatch>(d => d.InboundOrderItemId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("fk_inventory_batches_inbound_order_item_id");
+
+            entity.HasOne(d => d.InboundOrder)
+                .WithMany(p => p.InventoryBatches)
+                .HasForeignKey(d => d.InboundOrderId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("fk_inventory_batches_inbound_order_id");
+
+            entity.HasOne(d => d.Product)
+                .WithMany(p => p.InventoryBatches)
+                .HasForeignKey(d => d.ProductId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("fk_inventory_batches_product_id");
+
+            entity.HasOne(d => d.Warehouse)
+                .WithMany(p => p.InventoryBatches)
+                .HasForeignKey(d => d.WarehouseId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("fk_inventory_batches_warehouse_id");
+        });
         modelBuilder.Entity<Notification>(entity =>
         {
             entity.HasKey(e => e.Id).HasName("notifications_pkey");

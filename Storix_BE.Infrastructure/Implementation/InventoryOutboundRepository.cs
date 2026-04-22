@@ -13,6 +13,7 @@ using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
+using static Storix_BE.Repository.Interfaces.IInventoryOutboundRepository;
 
 namespace Storix_BE.Repository.Implementation
 {
@@ -48,6 +49,74 @@ namespace Storix_BE.Repository.Implementation
                     ) AS sub
                     WHERE products.id = sub.id;";
             await _context.Database.ExecuteSqlRawAsync(sql);
+        }
+        //Code này của Minh Nhật tự ý thêm để gen AI Path optimization cho việc lấy suggested location theo FIFO, không liên quan đến bất kỳ task nào trong ticket, có thể refactor hoặc remove nếu thấy không cần thiết
+        public async Task<List<FifoBinSuggestionDto>> GetFifoSuggestedLocationsAsync(
+    int warehouseId,
+    int productId,
+    int requiredQuantity)
+        {
+            if (warehouseId <= 0) throw new ArgumentException("Invalid warehouseId.");
+            if (productId <= 0) throw new ArgumentException("Invalid productId.");
+            if (requiredQuantity <= 0) throw new ArgumentException("RequiredQuantity must be > 0.");
+
+            // Load non-exhausted batches ordered oldest first (FIFO)
+            var batches = await _context.InventoryBatches
+                .Include(b => b.BatchLocations)
+                    .ThenInclude(bl => bl.Bin)
+                        .ThenInclude(b => b.Level)
+                            .ThenInclude(l => l.Shelf)
+                                .ThenInclude(s => s.Zone)
+                .Where(b =>
+                    b.WarehouseId == warehouseId &&
+                    b.ProductId == productId &&
+                    !b.IsExhausted &&
+                    b.RemainingQuantity > 0)
+                .OrderBy(b => b.InboundDate)
+                .ThenBy(b => b.Id)
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            var suggestions = new List<FifoBinSuggestionDto>();
+            var remainingNeeded = requiredQuantity;
+
+            foreach (var batch in batches)
+            {
+                if (remainingNeeded <= 0) break;
+
+                // Within each batch, pick from bins ordered by quantity descending
+                // so we empty bins before touching partially-filled ones
+                var locations = batch.BatchLocations
+                    .Where(bl => bl.Quantity > 0 &&
+                                 bl.Bin?.Level?.Shelf?.Zone?.WarehouseId == warehouseId)
+                    .OrderByDescending(bl => bl.Quantity)
+                    .ToList();
+
+                foreach (var location in locations)
+                {
+                    if (remainingNeeded <= 0) break;
+
+                    var pickQuantity = Math.Min(location.Quantity, remainingNeeded);
+
+                    suggestions.Add(new FifoBinSuggestionDto(
+                        BatchId: batch.Id,
+                        InboundDate: batch.InboundDate,
+                        EffectiveUnitCost: batch.EffectiveUnitCost,
+                        BinId: location.BinId,
+                        BinIdCode: location.Bin?.IdCode,
+                        BinCode: location.Bin?.Code,
+                        ShelfId: location.Bin?.Level?.ShelfId,
+                        ShelfCode: location.Bin?.Level?.Shelf?.Code,
+                        ZoneId: location.Bin?.Level?.Shelf?.ZoneId,
+                        AvailableInBin: location.Quantity,
+                        SuggestedPickQty: pickQuantity
+                    ));
+
+                    remainingNeeded -= pickQuantity;
+                }
+            }
+
+            return suggestions;
         }
         public async Task<OutboundRequest> CreateOutboundRequestAsync(OutboundRequest request)
         {
@@ -790,6 +859,70 @@ namespace Storix_BE.Repository.Implementation
                                 Timestamp = now
                             });
                         }
+                        // ── FIFO Batch deduction on outbound completion ───────────────────────────
+                        foreach (var item in itemGroups)
+                        {
+                            var remainingToDeduct = item.Quantity;
+
+                            // Load oldest non-exhausted batches for this product/warehouse
+                            var batchesToDeduct = await _context.InventoryBatches
+                                .Include(b => b.BatchLocations)
+                                .Where(b =>
+                                    b.WarehouseId == order.WarehouseId &&
+                                    b.ProductId == item.ProductId &&
+                                    !b.IsExhausted &&
+                                    b.RemainingQuantity > 0)
+                                .OrderBy(b => b.InboundDate)
+                                .ThenBy(b => b.Id)
+                                .ToListAsync()
+                                .ConfigureAwait(false);
+
+                            foreach (var batch in batchesToDeduct)
+                            {
+                                if (remainingToDeduct <= 0) break;
+
+                                // Resolve which bins to deduct from using selected bin assignments
+                                var assignedBinCodes = selectedBins
+                                    .Where(x => x.ProductId == item.ProductId)
+                                    .Select(x => x.BinIdCode)
+                                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+                                // Prefer deducting from bins the staff actually picked from
+                                var locationsToDeduct = batch.BatchLocations
+                                    .Where(bl => bl.Quantity > 0)
+                                    .OrderByDescending(bl =>
+                                        assignedBinCodes.Contains(bl.Bin?.IdCode ?? string.Empty) ? 1 : 0)
+                                    .ThenByDescending(bl => bl.Quantity)
+                                    .ToList();
+
+                                foreach (var location in locationsToDeduct)
+                                {
+                                    if (remainingToDeduct <= 0) break;
+
+                                    var deductFromLocation = Math.Min(location.Quantity, remainingToDeduct);
+                                    location.Quantity -= deductFromLocation;
+                                    location.UpdatedAt = now;
+                                    remainingToDeduct -= deductFromLocation;
+                                    batch.RemainingQuantity -= deductFromLocation;
+                                }
+
+                                // Mark batch exhausted if fully consumed
+                                if (batch.RemainingQuantity <= 0)
+                                {
+                                    batch.RemainingQuantity = 0;
+                                    batch.IsExhausted = true;
+                                }
+
+                                batch.UpdatedAt = now;
+                            }
+
+                            if (remainingToDeduct > 0)
+                                _logger.LogWarning(
+                                    "FIFO deduction shortfall for ProductId={ProductId}, " +
+                                    "OutboundOrderId={OrderId}. Unresolved qty={Remaining}",
+                                    item.ProductId, order.Id, remainingToDeduct);
+                        }
+                        // ── End FIFO Batch deduction ──────────────────────────────────────────────
                     }
                 }
 

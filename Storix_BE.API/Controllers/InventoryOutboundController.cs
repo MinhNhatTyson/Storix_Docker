@@ -18,7 +18,39 @@ namespace Storix_BE.API.Controllers
         {
             _service = service;
         }
+        /// <summary>
+        /// Returns FIFO-ordered bin picking suggestions for all items in an outbound ticket.
+        /// The system resolves the oldest batch first and cascades across bins and batches
+        /// until the required quantity is covered.
+        /// </summary>
+        [HttpGet("tickets/{ticketId:int}/fifo-suggestions")]
+        [Authorize(Roles = "2,3,4")]
+        public async Task<IActionResult> GetFifoPickingSuggestions(int ticketId)
+        {
+            if (ticketId <= 0)
+                return BadRequest(new { message = "Invalid ticket id." });
 
+            try
+            {
+                var suggestions = await _service
+                    .GetFifoPickingSuggestionsAsync(ticketId)
+                    .ConfigureAwait(false);
+
+                return Ok(suggestions);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = ex.Message });
+            }
+        }
         [HttpPost("create-outbound-request")]
         public async Task<IActionResult> CreateRequest([FromBody] CreateOutboundRequestRequest request)
         {

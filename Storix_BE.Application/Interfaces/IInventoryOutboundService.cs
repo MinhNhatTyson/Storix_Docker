@@ -39,8 +39,33 @@ namespace Storix_BE.Service.Interfaces
 
         Task<OutboundPathOptimizationDto> SaveOutboundPathOptimizationAsync(int outboundOrderId, CreateOutboundPathOptimizationRequest request);
         Task<OutboundPathOptimizationDto?> GetOutboundPathOptimizationByTicketAsync(int outboundOrderId);
-    }
+        Task<List<FifoPickingSuggestionDto>> GetFifoPickingSuggestionsAsync(
+    int outboundOrderId);
 
+        public record FifoPickingSuggestionDto(
+            int OutboundOrderItemId,
+            int ProductId,
+            string? ProductName,
+            int RequiredQuantity,
+            bool IsFullyCoverable,
+            List<FifoBinSuggestionItemDto> Suggestions
+        );
+
+
+    }
+    public sealed record FifoBinSuggestionItemDto(
+            int BatchId,
+            DateTime InboundDate,
+            decimal EffectiveUnitCost,
+            int BinId,
+            string? BinIdCode,
+            string? BinCode,
+            int? ShelfId,
+            string? ShelfCode,
+            int? ZoneId,
+            int AvailableInBin,
+            int SuggestedPickQty
+        );
     public sealed record CreateOutboundOrderItemRequest(int ProductId, int Quantity);
 
     public sealed record CreateOutboundRequestRequest(

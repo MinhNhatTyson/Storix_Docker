@@ -35,4 +35,5 @@ public partial class InboundOrder
     public virtual Supplier? Supplier { get; set; }
 
     public virtual Warehouse? Warehouse { get; set; }
+    public virtual ICollection<InventoryBatch> InventoryBatches { get; set; } = new List<InventoryBatch>();
 }

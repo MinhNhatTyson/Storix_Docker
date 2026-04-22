@@ -63,4 +63,5 @@ public partial class Product
     public virtual ICollection<StorageForecast> StorageForecasts { get; set; } = new List<StorageForecast>();
 
     public virtual ICollection<TransferOrderItem> TransferOrderItems { get; set; } = new List<TransferOrderItem>();
+    public virtual ICollection<InventoryBatch> InventoryBatches { get; set; } = new List<InventoryBatch>();
 }

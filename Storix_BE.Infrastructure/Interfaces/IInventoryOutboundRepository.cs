@@ -134,5 +134,23 @@ namespace Storix_BE.Repository.Interfaces
 
         byte[] ExportOutboundOrderToCsv(OutboundOrderExportDto order);
         byte[] ExportOutboundOrderToExcel(OutboundOrderExportDto order);
+        Task<List<FifoBinSuggestionDto>> GetFifoSuggestedLocationsAsync(
+    int warehouseId,
+    int productId,
+    int requiredQuantity);
+
+        public record FifoBinSuggestionDto(
+            int BatchId,
+            DateTime InboundDate,
+            decimal EffectiveUnitCost,
+            int BinId,
+            string? BinIdCode,
+            string? BinCode,
+            int? ShelfId,
+            string? ShelfCode,
+            int? ZoneId,
+            int AvailableInBin,
+            int SuggestedPickQty
+        );
     }
 }

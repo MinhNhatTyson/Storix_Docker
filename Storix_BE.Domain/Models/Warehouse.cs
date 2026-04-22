@@ -60,4 +60,5 @@ public partial class Warehouse
     public virtual ICollection<TransferOrder> TransferOrderSourceWarehouses { get; set; } = new List<TransferOrder>();
 
     public virtual ICollection<WarehouseAssignment> WarehouseAssignments { get; set; } = new List<WarehouseAssignment>();
+    public virtual ICollection<InventoryBatch> InventoryBatches { get; set; } = new List<InventoryBatch>();
 }
