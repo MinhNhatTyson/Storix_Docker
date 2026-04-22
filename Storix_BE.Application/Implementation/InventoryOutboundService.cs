@@ -29,7 +29,7 @@ namespace Storix_BE.Service.Implementation
                 throw new ArgumentException("Invalid outboundOrderId.", nameof(outboundOrderId));
 
             // Reuse existing method to load ticket with items
-            var order = await _repo.GetOutboundOrderByIdAsync(0, outboundOrderId)
+            var order = await _repo.GetOutboundOrderByIdAsync(1, outboundOrderId)
                 .ConfigureAwait(false);
 
             if (!order.WarehouseId.HasValue)
