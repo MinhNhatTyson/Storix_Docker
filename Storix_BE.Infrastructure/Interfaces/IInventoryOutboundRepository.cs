@@ -12,15 +12,19 @@ namespace Storix_BE.Repository.Interfaces
 
         Task<IReadOnlyList<(int ProductId, int AvailableQuantity)>> GetInventoryAvailabilityAsync(int warehouseId, IEnumerable<int> productIds);
 
+        public sealed record WarehouseInventoryBinDto(
+            int? BinId,
+            string? BinCode,
+            string? BinIdCode,
+            int? OccupancyPercentage);
+
         public sealed record WarehouseInventoryLocationDto(
             int? ZoneId,
             string? ZoneCode,
             int? ShelfId,
             string? ShelfCode,
-            int? BinId,
-            string? BinCode,
-            string? BinIdCode,
-            int Quantity);
+            int Quantity,
+            IReadOnlyList<WarehouseInventoryBinDto> Bins);
 
         public sealed record WarehouseInventoryItemDto(
             int InventoryId,
@@ -60,7 +64,7 @@ namespace Storix_BE.Repository.Interfaces
             int? LevelId,
             int? ShelfId,
             int? InventoryId,
-            int? Percentage,
+            int? OccupancyPercentage,
             double? Width,
             double? Height,
             double? Length);
