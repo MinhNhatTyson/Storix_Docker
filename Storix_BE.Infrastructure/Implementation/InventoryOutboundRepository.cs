@@ -260,7 +260,25 @@ namespace Storix_BE.Repository.Implementation
 
             var inventoryIds = rawItems.Select(i => i.InventoryId).ToList();
 
-            var locationRows = await _context.ShelfLevelBins
+            var shelfStocks = await _context.InventoryLocations
+                .AsNoTracking()
+                .Where(il => il.InventoryId.HasValue && inventoryIds.Contains(il.InventoryId.Value))
+                .Include(il => il.Shelf)
+                    .ThenInclude(s => s!.Zone)
+                .Select(il => new
+                {
+                    InventoryLocationId = il.Id,
+                    InventoryId = il.InventoryId!.Value,
+                    ZoneId = il.Shelf != null ? il.Shelf.ZoneId : null,
+                    ZoneCode = il.Shelf != null && il.Shelf.Zone != null ? il.Shelf.Zone.Code : null,
+                    ShelfId = il.ShelfId,
+                    ShelfCode = il.Shelf != null ? il.Shelf.Code : null,
+                    Quantity = il.Quantity ?? 0
+                })
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            var bins = await _context.ShelfLevelBins
                 .AsNoTracking()
                 .Where(b => b.InventoryId.HasValue && inventoryIds.Contains(b.InventoryId.Value))
                 .Include(b => b.Level)
@@ -269,32 +287,44 @@ namespace Storix_BE.Repository.Implementation
                 .Select(b => new
                 {
                     InventoryId = b.InventoryId!.Value,
-                    ZoneId = b.Level != null && b.Level.Shelf != null ? b.Level.Shelf.ZoneId : null,
-                    ZoneCode = b.Level != null && b.Level.Shelf != null && b.Level.Shelf.Zone != null ? b.Level.Shelf.Zone.Code : null,
                     ShelfId = b.Level != null ? b.Level.ShelfId : null,
-                    ShelfCode = b.Level != null && b.Level.Shelf != null ? b.Level.Shelf.Code : null,
                     BinId = (int?)b.Id,
                     BinCode = b.Code,
                     BinIdCode = b.IdCode,
-                    Quantity = (int?)b.Percentage
+                    BinOccupancyPercentage = b.Percentage
                 })
                 .ToListAsync()
                 .ConfigureAwait(false);
 
-            var locationsByInventory = locationRows
+            var binsByInventoryAndShelf = bins
+                .Where(b => b.ShelfId.HasValue)
+                .GroupBy(b => new { b.InventoryId, ShelfId = b.ShelfId!.Value })
+                .ToDictionary(g => (g.Key.InventoryId, g.Key.ShelfId), g => g.ToList());
+
+            var locationsByInventory = shelfStocks
                 .GroupBy(x => x.InventoryId)
                 .ToDictionary(
                     g => g.Key,
                     g => (IReadOnlyList<IInventoryOutboundRepository.WarehouseInventoryLocationDto>)g
-                        .Select(x => new IInventoryOutboundRepository.WarehouseInventoryLocationDto(
-                            x.ZoneId,
-                            x.ZoneCode,
-                            x.ShelfId,
-                            x.ShelfCode,
-                            x.BinId,
-                            x.BinCode,
-                            x.BinIdCode,
-                            x.Quantity ?? 0))
+                        .Select(x =>
+                        {
+                            var nestedBins = x.ShelfId.HasValue &&
+                                binsByInventoryAndShelf.TryGetValue((x.InventoryId, x.ShelfId.Value), out var binsForShelf)
+                                ? binsForShelf.Select(b => new IInventoryOutboundRepository.WarehouseInventoryBinDto(
+                                    b.BinId,
+                                    b.BinCode,
+                                    b.BinIdCode,
+                                    b.BinOccupancyPercentage)).ToList()
+                                : new List<IInventoryOutboundRepository.WarehouseInventoryBinDto>();
+
+                            return new IInventoryOutboundRepository.WarehouseInventoryLocationDto(
+                                x.ZoneId,
+                                x.ZoneCode,
+                                x.ShelfId,
+                                x.ShelfCode,
+                                x.Quantity,
+                                nestedBins);
+                        })
                         .ToList());
 
             var items = rawItems

@@ -145,10 +145,12 @@ namespace Storix_BE.Service.Implementation
                     l.ZoneCode,
                     l.ShelfId,
                     l.ShelfCode,
-                    l.BinId,
-                    l.BinCode,
-                    l.BinIdCode,
-                    l.Quantity)).ToList())).ToList();
+                    l.Quantity,
+                    l.Bins.Select(b => new WarehouseBinDto(
+                        b.BinId,
+                        b.BinCode,
+                        b.BinIdCode,
+                        b.OccupancyPercentage)).ToList())).ToList())).ToList();
         }
 
         public async Task<OutboundRequest> UpdateOutboundRequestStatusAsync(int requestId, int approverId, string status)
@@ -430,7 +432,7 @@ namespace Storix_BE.Service.Implementation
                     b.LevelId,
                     b.ShelfId,
                     b.InventoryId,
-                    b.Percentage,
+                    b.OccupancyPercentage,
                     b.Width,
                     b.Height,
                     b.Length)).ToList()

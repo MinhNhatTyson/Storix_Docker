@@ -471,6 +471,34 @@ namespace Storix_BE.API.Controllers
             }
         }
 
+        [HttpGet("manager/tickets/{companyId:int}/{id:int}")]
+        public async Task<IActionResult> GetManagerOutboundSlip(int companyId, int id)
+        {
+            var authError = EnsureRole(3, "Only Manager (roleId=3) can view outbound slips.");
+            if (authError != null) return authError;
+
+            if (companyId <= 0) return BadRequest(new { message = "Invalid company id." });
+            if (id <= 0) return BadRequest(new { message = "Invalid ticket id." });
+
+            try
+            {
+                var item = await _service.GetOutboundOrderByIdAsync(companyId, id);
+                return Ok(item);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = ex.Message });
+            }
+        }
+
         [HttpGet("tickets/by-warehouse/{warehouseId:int}")]
         public async Task<IActionResult> GetTicketsByWarehouse(int warehouseId)
         {

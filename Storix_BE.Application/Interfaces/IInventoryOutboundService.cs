@@ -94,15 +94,21 @@ namespace Storix_BE.Service.Interfaces
 
     public sealed record InventoryAvailabilityResponse(int ProductId, int AvailableQuantity);
 
+    public sealed record WarehouseBinDto(
+        int? BinId,
+        string? BinCode,
+        string? BinIdCode,
+        int? OccupancyPercentage);
+
+    // Quantity is tracked at the shelf/location level via inventory_locations.
+    // Bins are nested metadata/occupancy only and do not represent quantity-on-hand.
     public sealed record WarehouseLocationDto(
         int? ZoneId,
         string? ZoneCode,
         int? ShelfId,
         string? ShelfCode,
-        int? BinId,
-        string? BinCode,
-        string? BinIdCode,
-        int Quantity);
+        int Quantity,
+        IReadOnlyList<WarehouseBinDto> Bins);
 
     public sealed record WarehouseInventoryItemDto(
         int InventoryId,
@@ -143,6 +149,7 @@ namespace Storix_BE.Service.Interfaces
         int? WarehouseId,
         int AvailableQuantity);
 
+    // Bin payload is metadata + occupancy only. It does not represent quantity-on-hand.
     public sealed record OutboundAvailableBinDto(
         int BinId,
         string? BinCode,
@@ -150,7 +157,7 @@ namespace Storix_BE.Service.Interfaces
         int? LevelId,
         int? ShelfId,
         int? InventoryId,
-        int? Percentage,
+        int? OccupancyPercentage,
         double? Width,
         double? Height,
         double? Length);
