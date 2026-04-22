@@ -539,6 +539,126 @@ namespace Storix_BE.API.Controllers
             }
 
         }
+        [HttpGet("~/api/get-simple-structure/{companyId:int}/{warehouseId:int}")]
+        [Authorize(Roles = "2,3,4")]
+        public async Task<IActionResult> GetSimpleWarehouseStructure(int companyId, int warehouseId)
+        {
+            if (companyId <= 0) return BadRequest(new { message = "CompanyId is required." });
+            if (warehouseId <= 0) return BadRequest(new { message = "WarehouseId is required." });
+
+            try
+            {
+                var warehouse = await _assignmentService.GetWarehouseStructureAsync(companyId, warehouseId);
+
+                // Find the start node (type == "start")
+                var startNode = warehouse.NavNodes?.FirstOrDefault(n => n.Type == "start");
+                double? startX = startNode?.XCoordinate;
+                double? startY = startNode?.YCoordinate;
+                var endNode = warehouse.NavNodes?.FirstOrDefault(n => n.Type == "end");
+
+                var zones = warehouse.StorageZones?
+                    .Select(z => (object)new
+                    {
+                        id = z.IdCode,
+                        code = z.Code,
+                        x = z.XCoordinate,
+                        y = z.YCoordinate,
+                        width = z.Width,
+                        height = z.Height,
+                        length = z.Length,
+                        IsEsd = z.IsEsd,
+                        IsMsd = z.IsMsd,
+                        IsCold = z.IsCold,
+                        IsVulnerable = z.IsVulnerable,
+                        IsHighValue = z.IsHighValue,
+                        shelves = z.Shelves?.Select(s =>
+                        {
+                            // compute actual shelf coordinate = shelf coordinate + zone coordinate
+                            var actualX = z.XCoordinate + s.XCoordinate;
+                            var actualY = z.YCoordinate + s.YCoordinate;
+
+                            // compute distance from start node if start exists
+                            double? distanceFromStart = null;
+                            if (startX.HasValue && startY.HasValue)
+                            {
+                                var dx = actualX - startX.Value;
+                                var dy = actualY - startY.Value;
+                                distanceFromStart = Math.Sqrt((double)(dx * dx + dy * dy));
+                            }
+
+                            return (object)new
+                            {
+                                id = s.IdCode,
+                                code = s.Code,
+                                x = s.XCoordinate,
+                                y = s.YCoordinate,
+                                width = s.Width,
+                                height = s.Height,
+                                length = s.Length,
+                                distanceFromStart = distanceFromStart,
+                                accessNodes = (s.ShelfNodes != null
+                                ? s.ShelfNodes.Select(sn => (object)new
+                                {
+                                    id = sn.IdCode ?? sn.Node?.IdCode,
+                                    side = sn.Node?.Side,
+                                    x = sn.Node?.XCoordinate,
+                                    y = sn.Node?.YCoordinate
+                                }).ToList()
+                                : new List<object>()),
+
+                                levels = s.ShelfLevels != null
+                                ? s.ShelfLevels.Select(l => (object)new
+                                {
+                                    id = l.IdCode,
+                                    code = l.Code,
+                                    bins = l.ShelfLevelBins != null
+                                        ? l.ShelfLevelBins.Select(b => (object)new
+                                        {
+                                            id = b.IdCode,
+                                            code = b.Code,
+                                            status = b.Status,
+                                            percentage = b.Percentage,
+                                            width = b.Width,
+                                            height = b.Height,
+                                            length = b.Length,
+                                            productId = b.Inventory?.ProductId
+                                        }).ToList()
+                                        : new List<object>()
+                                }).ToList()
+                                : new List<object>()
+                            };
+                        }).ToList() ?? new List<object>()
+                    }).ToList() ?? new List<object>();
+
+                var response = new
+                {
+                    width = warehouse.Width,
+                    height = warehouse.Height,
+                    zones = zones,
+                    startNode = startNode,
+                    endNode = endNode
+                };
+
+                return Ok(response);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Forbid();
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (BusinessRuleException ex)
+            {
+                return BadRequest(new { code = ex.Code, message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+
+        }
         /// <summary>
         /// Delete a warehouse and all related structure (Company Administrator only).
         /// Route: DELETE /api/company-warehouses/{companyId}/warehouse/{warehouseId}
