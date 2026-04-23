@@ -101,7 +101,14 @@ namespace Storix_BE.Service.Implementation
             if (companyId <= 0) throw new InvalidOperationException("Invalid company id.");
             return await _repo.GetProductsByCompanyIdAsync(companyId);
         }
+        public async Task<List<Product>> GetAllProductWithZoneAsync(IEnumerable<int> zoneIds)
+        {
+            if (zoneIds == null) throw new InvalidOperationException("Zone ids are required.");
+            var ids = zoneIds.Where(z => z > 0).Distinct().ToList();
+            if (!ids.Any()) return new List<Product>();
 
+            return await _repo.GetProductsByZoneIdsAsync(ids);
+        }
         public async Task<Product> CreateAsync(CreateProductRequest request)
         {
             if (request == null) throw new InvalidOperationException("Request cannot be null.");

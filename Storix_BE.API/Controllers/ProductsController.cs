@@ -419,5 +419,28 @@ namespace Storix_BE.API.Controllers
                 return StatusCode(500, new { message = ex.Message });
             }
         }
+        [HttpPost("get-by-zones/{userId:int}")]
+        [Authorize(Roles = "2,3")]
+        public async Task<IActionResult> GetAllProductWithZone([FromBody] IEnumerable<int> zoneIds)
+        {
+            if (zoneIds == null || !zoneIds.Any()) return BadRequest(new { message = "Zone ids are required." });
+
+            // fetch products associated with provided zones
+            var products = await _service.GetAllProductWithZoneAsync(zoneIds);
+
+            var result = products.Select(p => new
+            {
+                id = p.Id,
+                name = p.Name,
+                category = p.Category is null ? null : new { id = p.Category.Id, name = p.Category.Name, code = p.Category.CategoryCode },
+                unit = p.Unit,
+                width = p.Width,
+                height = p.Height,
+                length = p.Length,
+                image = p.Image
+            });
+
+            return Ok(result);
+        }
     }
 }

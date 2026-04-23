@@ -640,5 +640,33 @@ namespace Storix_BE.Repository.Implementation
                     WHERE products.id = sub.id;";
             await _context.Database.ExecuteSqlRawAsync(sql);
         }
+        public async Task<List<Product>> GetProductsByZoneIdsAsync(IEnumerable<int> zoneIds)
+        {
+            if (zoneIds == null) throw new ArgumentNullException(nameof(zoneIds));
+
+            var ids = zoneIds.Where(z => z > 0).Distinct().ToList();
+            if (!ids.Any()) return new List<Product>();
+
+            // First collect product ids that have inventory locations on shelves in the specified zones
+            var productIds = await (from p in _context.Products
+                                    join inv in _context.Inventories on p.Id equals inv.ProductId
+                                    join il in _context.InventoryLocations on inv.Id equals il.InventoryId
+                                    join s in _context.Shelves on il.ShelfId equals s.Id
+                                    where s.ZoneId.HasValue && ids.Contains(s.ZoneId.Value)
+                                    select p.Id)
+                                    .Distinct()
+                                    .ToListAsync();
+
+            if (!productIds.Any()) return new List<Product>();
+
+            // Load products with Category navigation
+            var products = await _context.Products
+                .AsNoTracking()
+                .Include(p => p.Category)
+                .Where(p => productIds.Contains(p.Id))
+                .ToListAsync();
+
+            return products;
+        }
     }
 }

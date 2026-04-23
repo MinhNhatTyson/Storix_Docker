@@ -39,5 +39,6 @@ namespace Storix_BE.Repository.Interfaces
         Task<IReadOnlyList<InventoryLocation>> GetProductInventoryLocationsAsync(int warehouseId, int productId);
         Task<int> ClaimNextSkuSequenceAsync(int companyId);
         Task<Supplier?> GetSupplierByIdAsync(int supplierId, int companyId);
+        Task<List<Product>> GetProductsByZoneIdsAsync(IEnumerable<int> zoneIds);
     }
 }
