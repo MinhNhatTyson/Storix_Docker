@@ -51,22 +51,27 @@ namespace Storix_BE.Service.Interfaces
     public sealed record CreateProductTypeRequest(int CompanyId, string Name);
     public sealed record UpdateProductTypeRequest(string Name);
     public sealed record CreateProductRequest(
-        int CompanyId,
-        string? Sku,
-        string? Name,
-        int? CategoryId,
-        string? Unit,
-        double? Weight,
-        double? Width,
-        double? Length,
-        double? Height,
-        bool? IsEsd,
-        bool? IsMsd,
-        bool? IsCold,
-        bool? IsVulnerable,
-        bool? IsHighValue,
-        string? Description,
-        IFormFile? Image);
+    int CompanyId,
+    string? Sku,           // kept for manual override; null = auto-generate
+    string? Name,
+    int? CategoryId,
+    string? Unit,
+    double? Weight,
+    double? Width,
+    double? Length,
+    double? Height,
+    bool? IsEsd,
+    bool? IsMsd,
+    bool? IsCold,
+    bool? IsVulnerable,
+    bool? IsHighValue,
+    string? Description,
+    IFormFile? Image,
+    // ── SKU-related additions ──────────────────────────────────────────────
+    int? DefaultSupplierId,
+    string? Material,
+    string? PackageType,
+    string? SizeStandard);
 
     public sealed record UpdateProductRequest(
         int CompanyId,
@@ -87,7 +92,6 @@ namespace Storix_BE.Service.Interfaces
         IFormFile? Image);
     public sealed record ProductResponseDTO(
         int ProductId,
-        string? Sku,
         string? Name,
         int? CategoryId,
         string? Unit,
@@ -99,6 +103,17 @@ namespace Storix_BE.Service.Interfaces
         bool? IsHighValue,
         string? Description,
         double? LatestPrice,
-        IFormFile? Image);
-    public sealed record CreateProductCategoryRequest(int CompanyId, string Name, int? ParentCategoryId);
+        string? Sku,
+        string? Material,
+        string? PackageType,
+        string? SizeStandard,
+        int? DefaultSupplierId,
+        string? DefaultSupplierName,
+    IFormFile? Image);
+    public sealed record CreateProductCategoryRequest(
+    int CompanyId,
+    string Name,
+    /// <summary>Uppercase SKU code, max 10 chars. E.g. "CAP", "RES", "IC".</summary>
+    string CategoryCode,
+    int? ParentCategoryId);
 }
