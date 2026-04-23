@@ -39,8 +39,8 @@ namespace Storix_BE.Service.Interfaces
 
         Task<OutboundPathOptimizationDto> SaveOutboundPathOptimizationAsync(int outboundOrderId, CreateOutboundPathOptimizationRequest request);
         Task<OutboundPathOptimizationDto?> GetOutboundPathOptimizationByTicketAsync(int outboundOrderId);
-        Task<List<FifoPickingSuggestionDto>> GetFifoPickingSuggestionsAsync(
-    int outboundOrderId);
+        Task<List<FifoPickingSuggestionDto>> GetFifoPickingSuggestionsAsync(int companyId, int outboundOrderId);
+        Task<List<FifoBatchAllocationDto>> GetFifoBatchAllocationsByItemAsync(int companyId, int outboundOrderId, int outboundOrderItemId);
 
         public record FifoPickingSuggestionDto(
             int OutboundOrderItemId,
@@ -48,9 +48,28 @@ namespace Storix_BE.Service.Interfaces
             string? ProductName,
             int RequiredQuantity,
             bool IsFullyCoverable,
+            int TotalAvailableQuantity,
+            int RemainingQuantity,
             List<FifoBinSuggestionItemDto> Suggestions
         );
 
+        public record FifoBatchAllocationDto(
+            int OutboundOrderItemId,
+            int ProductId,
+            int BatchId,
+            DateTime InboundDate,
+            int RemainingQuantity,
+            int BatchRemainingAfterPick,
+            decimal EffectiveUnitCost,
+            int BinId,
+            string? BinIdCode,
+            string? BinCode,
+            int? ShelfId,
+            string? ShelfCode,
+            int? ZoneId,
+            int AvailableInBin,
+            int SuggestedPickQty
+        );
 
     }
     public sealed record FifoBinSuggestionItemDto(
@@ -173,7 +192,21 @@ namespace Storix_BE.Service.Interfaces
     public sealed record OutboundOrderItemSelectedLocationDto(
         int OutboundOrderItemId,
         int ProductId,
+        string? ProductName,
+        string? ProductSku,
+        int? ZoneId,
+        string? ZoneCode,
+        int? ShelfId,
+        string? ShelfCode,
+        int? BinId,
+        string? BinCode,
         string BinIdCode,
+        int? BatchId,
+        DateTime? InboundDate,
+        decimal? BatchUnitCost,
+        double? OutboundItemPrice,
+        double? OutboundItemCostPrice,
+        string? PricingMethod,
         int Quantity,
         DateTime? Timestamp);
 

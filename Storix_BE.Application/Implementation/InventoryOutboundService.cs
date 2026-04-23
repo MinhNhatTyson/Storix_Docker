@@ -22,14 +22,13 @@ namespace Storix_BE.Service.Implementation
             _notificationService = notificationService;
             _userRepo = userRepo;
         }
-        public async Task<List<FifoPickingSuggestionDto>> GetFifoPickingSuggestionsAsync(
-    int outboundOrderId)
+        public async Task<List<FifoPickingSuggestionDto>> GetFifoPickingSuggestionsAsync(int companyId, int outboundOrderId)
         {
+            if (companyId <= 0) throw new ArgumentException("Invalid company id.", nameof(companyId));
             if (outboundOrderId <= 0)
                 throw new ArgumentException("Invalid outboundOrderId.", nameof(outboundOrderId));
 
-            // Reuse existing method to load ticket with items
-            var order = await _repo.GetOutboundOrderByIdAsync(1, outboundOrderId)
+            var order = await _repo.GetOutboundOrderByIdAsync(companyId, outboundOrderId)
                 .ConfigureAwait(false);
 
             if (!order.WarehouseId.HasValue)
@@ -59,6 +58,7 @@ namespace Storix_BE.Service.Implementation
 
                 var totalSuggested = rawSuggestions.Sum(s => s.SuggestedPickQty);
                 var isFullyCoverable = totalSuggested >= item.RequiredQuantity;
+                var remainingQuantity = Math.Max(0, item.RequiredQuantity - totalSuggested);
 
                 results.Add(new FifoPickingSuggestionDto(
                     OutboundOrderItemId: item.OutboundOrderItemId,
@@ -66,6 +66,8 @@ namespace Storix_BE.Service.Implementation
                     ProductName: item.ProductName,
                     RequiredQuantity: item.RequiredQuantity,
                     IsFullyCoverable: isFullyCoverable,
+                    TotalAvailableQuantity: totalSuggested,
+                    RemainingQuantity: remainingQuantity,
                     Suggestions: rawSuggestions.Select(s => new FifoBinSuggestionItemDto(
                         BatchId: s.BatchId,
                         InboundDate: s.InboundDate,
@@ -286,6 +288,55 @@ namespace Storix_BE.Service.Implementation
             return await _repo.UpdateOutboundOrderStatusAsync(outboundOrderId, performedBy, status);
         }
 
+        public async Task<List<FifoBatchAllocationDto>> GetFifoBatchAllocationsByItemAsync(int companyId, int outboundOrderId, int outboundOrderItemId)
+        {
+            if (companyId <= 0) throw new ArgumentException("Invalid company id.", nameof(companyId));
+            if (outboundOrderId <= 0) throw new ArgumentException("Invalid outboundOrderId.", nameof(outboundOrderId));
+            if (outboundOrderItemId <= 0) throw new ArgumentException("Invalid outboundOrderItemId.", nameof(outboundOrderItemId));
+
+            var order = await _repo.GetOutboundOrderByIdAsync(companyId, outboundOrderId).ConfigureAwait(false);
+            var item = order.OutboundOrderItems.FirstOrDefault(x => x.Id == outboundOrderItemId)
+                ?? throw new InvalidOperationException($"OutboundOrderItem with id {outboundOrderItemId} not found.");
+
+            if (!item.ProductId.HasValue)
+                return new List<FifoBatchAllocationDto>();
+
+            var suggestions = await _repo.GetFifoSuggestedLocationsAsync(
+                order.WarehouseId!.Value,
+                item.ProductId.Value,
+                item.Quantity ?? item.ReceivedQuantity ?? item.ExpectedQuantity ?? 0).ConfigureAwait(false);
+
+            var remaining = item.Quantity ?? item.ReceivedQuantity ?? item.ExpectedQuantity ?? 0;
+            var result = new List<FifoBatchAllocationDto>();
+
+            foreach (var s in suggestions)
+            {
+                if (remaining <= 0) break;
+                var pickQty = Math.Min(remaining, s.SuggestedPickQty);
+                remaining -= pickQty;
+
+                result.Add(new FifoBatchAllocationDto(
+                    OutboundOrderItemId: item.Id,
+                    ProductId: item.ProductId.Value,
+                    BatchId: s.BatchId,
+                    InboundDate: s.InboundDate,
+                    RemainingQuantity: s.AvailableInBin,
+                    BatchRemainingAfterPick: Math.Max(0, s.AvailableInBin - pickQty),
+                    EffectiveUnitCost: s.EffectiveUnitCost,
+                    BinId: s.BinId,
+                    BinIdCode: s.BinIdCode,
+                    BinCode: s.BinCode,
+                    ShelfId: s.ShelfId,
+                    ShelfCode: s.ShelfCode,
+                    ZoneId: s.ZoneId,
+                    AvailableInBin: s.AvailableInBin,
+                    SuggestedPickQty: pickQty));
+            }
+
+            return result;
+        }
+
+
         private static OutboundWarehouseDto? MapWarehouse(Warehouse? w)
         {
             if (w == null) return null;
@@ -447,7 +498,21 @@ namespace Storix_BE.Service.Implementation
             return data.Select(x => new OutboundOrderItemSelectedLocationDto(
                 x.OutboundOrderItemId,
                 x.ProductId,
+                x.ProductName,
+                x.ProductSku,
+                x.ZoneId,
+                x.ZoneCode,
+                x.ShelfId,
+                x.ShelfCode,
+                x.BinId,
+                x.BinCode,
                 x.BinIdCode,
+                x.BatchId,
+                x.InboundDate,
+                x.BatchUnitCost,
+                x.OutboundItemPrice,
+                x.OutboundItemCostPrice,
+                x.PricingMethod,
                 x.Quantity,
                 x.Timestamp)).ToList();
         }

@@ -82,7 +82,21 @@ namespace Storix_BE.Repository.Interfaces
         public sealed record OutboundOrderItemSelectedLocationDto(
             int OutboundOrderItemId,
             int ProductId,
+            string? ProductName,
+            string? ProductSku,
+            int? ZoneId,
+            string? ZoneCode,
+            int? ShelfId,
+            string? ShelfCode,
+            int? BinId,
+            string? BinCode,
             string BinIdCode,
+            int? BatchId,
+            DateTime? InboundDate,
+            decimal? BatchUnitCost,
+            double? OutboundItemPrice,
+            double? OutboundItemCostPrice,
+            string? PricingMethod,
             int Quantity,
             DateTime? Timestamp);
 

@@ -46,6 +46,8 @@ namespace Storix_BE.Service.Implementation
                 CreatedByUserId = createdByUserId,
                 ReportType = payload.ReportType,
                 WarehouseId = payload.WarehouseId,
+                ProductId = payload.ProductId,
+                InventoryCountTicketId = payload.InventoryCountTicketId,
                 TimeFrom = payload.TimeFrom,
                 TimeTo = payload.TimeTo,
                 Status = ReportStatus.Running,
@@ -54,6 +56,8 @@ namespace Storix_BE.Service.Implementation
                 {
                     reportType = payload.ReportType,
                     warehouseId = payload.WarehouseId,
+                    productId = payload.ProductId,
+                    inventoryCountTicketId = payload.InventoryCountTicketId,
                     timeFrom = payload.TimeFrom,
                     timeTo = payload.TimeTo
                 }, paramsOptions)
@@ -245,6 +249,9 @@ namespace Storix_BE.Service.Implementation
             if (!string.Equals(report.Status, ReportStatus.Succeeded, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidOperationException($"Report is not ready for export. Current status: '{report.Status}'.");
 
+            if (string.IsNullOrWhiteSpace(report.ReportType))
+                throw new InvalidOperationException("Report type is missing.");
+
             if (string.IsNullOrWhiteSpace(report.DataJson))
                 throw new InvalidOperationException("Report result data is missing.");
 
@@ -315,13 +322,17 @@ namespace Storix_BE.Service.Implementation
                 throw new InvalidOperationException(uploadResult.Error.Message);
 
             var now = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
-            report.PdfUrl = uploadResult.SecureUrl?.ToString();
+            var pdfUrl = uploadResult.SecureUrl?.ToString();
+            if (string.IsNullOrWhiteSpace(pdfUrl))
+                throw new InvalidOperationException("Cloudinary did not return a PDF URL.");
+
+            report.PdfUrl = pdfUrl;
             report.PdfFileName = fileName;
             report.PdfContentHash = contentHash;
             report.PdfGeneratedAt = now;
             await _repo.UpdateReportAsync(report).ConfigureAwait(false);
 
-            return new ReportPdfArtifactDto(report.PdfUrl, report.PdfFileName, report.PdfContentHash, report.PdfGeneratedAt);
+            return new ReportPdfArtifactDto(pdfUrl, fileName, contentHash, now);
         }
 
         private static string ComputeSha256Hex(byte[] bytes)

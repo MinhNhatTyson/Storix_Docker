@@ -30,10 +30,14 @@ namespace Storix_BE.API.Controllers
             if (ticketId <= 0)
                 return BadRequest(new { message = "Invalid ticket id." });
 
+            var companyId = GetCompanyIdFromClaims();
+            if (!companyId.HasValue)
+                return StatusCode(403, new { message = "CompanyId claim is missing." });
+
             try
             {
                 var suggestions = await _service
-                    .GetFifoPickingSuggestionsAsync(ticketId)
+                    .GetFifoPickingSuggestionsAsync(companyId.Value, ticketId)
                     .ConfigureAwait(false);
 
                 return Ok(suggestions);
@@ -601,6 +605,36 @@ namespace Storix_BE.API.Controllers
             }
         }
 
+        [HttpGet("tickets/{ticketId:int}/items/{itemId:int}/fifo-batch-allocations")]
+        [Authorize(Roles = "2,3,4")]
+        public async Task<IActionResult> GetTicketItemFifoBatchAllocations(int ticketId, int itemId)
+        {
+            if (ticketId <= 0) return BadRequest(new { message = "Invalid ticket id." });
+            if (itemId <= 0) return BadRequest(new { message = "Invalid item id." });
+
+            var companyId = GetCompanyIdFromClaims();
+            if (!companyId.HasValue)
+                return StatusCode(403, new { message = "CompanyId claim is missing." });
+
+            try
+            {
+                var result = await _service.GetFifoBatchAllocationsByItemAsync(companyId.Value, ticketId, itemId).ConfigureAwait(false);
+                return Ok(result);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = ex.Message });
+            }
+        }
+
         private IActionResult? EnsureRole(int requiredRole, string forbiddenMessage, string? superAdminMessage = null)
         {
             if (User?.Identity?.IsAuthenticated != true)
@@ -620,6 +654,22 @@ namespace Storix_BE.API.Controllers
                 return StatusCode(403, new { message = forbiddenMessage });
 
             return null;
+        }
+
+        private int? GetCompanyIdFromClaims()
+        {
+            if (User?.Identity?.IsAuthenticated != true)
+                return null;
+
+            var companyClaim = User.Claims.FirstOrDefault(c =>
+                c.Type.Equals("companyId", StringComparison.OrdinalIgnoreCase) ||
+                c.Type.Equals("CompanyId", StringComparison.OrdinalIgnoreCase) ||
+                c.Type.Equals("company_id", StringComparison.OrdinalIgnoreCase));
+
+            if (companyClaim == null)
+                return null;
+
+            return int.TryParse(companyClaim.Value, out var companyId) && companyId > 0 ? companyId : null;
         }
 
         private IActionResult? EnsureRoleIn(IEnumerable<int> allowedRoles, string forbiddenMessage)
