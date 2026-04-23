@@ -19,8 +19,47 @@ namespace Storix_BE.API.Controllers
         {
             _service = service;
         }
+        /// <summary>
+        /// GET /api/products/{id}/sku-detail
+        /// Returns the decomposed SKU segments for a product.
+        /// </summary>
+        [HttpGet("{productId:int}/sku-detail")]
+        [Authorize(Roles = "2,3")]
+        public async Task<IActionResult> GetSkuDetail(int productId, [FromQuery] int userId)
+        {
+            if (productId <= 0) return BadRequest(new { message = "Invalid product id." });
+            if (userId <= 0) return BadRequest(new { message = "Invalid user id." });
+
+            int companyId;
+            try { companyId = await _service.GetCompanyIdByUserIdAsync(userId); }
+            catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+
+            var product = await _service.GetByIdAsync(productId, companyId);
+            if (product is null) return NotFound();
+
+            // Decompose the SKU string back into its labelled segments for the UI
+            var flagList = new List<string>();
+            if (product.IsEsd == true) flagList.Add("ESD");
+            if (product.IsMsd == true) flagList.Add("MSD");
+            if (product.IsCold == true) flagList.Add("CLD");
+            if (product.IsVulnerable == true) flagList.Add("VUL");
+            if (product.IsHighValue == true) flagList.Add("HV");
+
+            return Ok(new
+            {
+                productId = product.Id,
+                sku = product.Sku,
+                defaultSupplierId = product.DefaultSupplierId,
+                defaultSupplierName = product.DefaultSupplier?.Name,
+                categoryCode = product.Category?.CategoryCode,
+                packageType = product.PackageType,
+                sizeStandard = product.SizeStandard,
+                material = product.Material,
+                storageFlags = flagList
+            });
+        }
         [HttpGet("get-all/{userId:int}")]
-        [Authorize(Roles = "2,3,4")]
+        [Authorize(Roles = "2,3")]
         public async Task<IActionResult> GetAllProductsFromACompany(int userId)
         {
             if (userId <= 0) return BadRequest(new { message = "Invalid user id." });
@@ -40,7 +79,7 @@ namespace Storix_BE.API.Controllers
             return Ok(items);
         }
         [HttpGet("get-by-id/{userId:int}/{id:int}")]
-        [Authorize(Roles = "2,3,4")]
+        [Authorize(Roles = "2,3")]
         public async Task<IActionResult> GetById(int userId, int id)
         {
             if (userId <= 0) return BadRequest(new { message = "Invalid user id." });
@@ -314,7 +353,10 @@ namespace Storix_BE.API.Controllers
             try
             {
                 var created = await _service.CreateProductCategoryAsync(request);
-                return CreatedAtAction(nameof(GetAllCategoriesForCompany), new { userId = request.CompanyId }, created);
+                return CreatedAtAction(
+                    nameof(GetAllCategoriesForCompany),
+                    new { userId = request.CompanyId },
+                    created);
             }
             catch (InvalidOperationException ex)
             {
@@ -340,7 +382,7 @@ namespace Storix_BE.API.Controllers
             }
         }
         [HttpGet("inventory-locations/{userId:int}/{productId:int}/warehouse/{warehouseId:int}")]
-        [Authorize(Roles = "2,3,4")]
+        [Authorize(Roles = "2,3")]
         public async Task<IActionResult> GetProductInventoryLocations(int userId, int productId, int warehouseId)
         {
             if (userId <= 0) return BadRequest(new { message = "Invalid user id." });

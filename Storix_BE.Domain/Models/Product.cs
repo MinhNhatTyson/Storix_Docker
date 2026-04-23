@@ -38,16 +38,19 @@ public partial class Product
     public bool? IsMsd { get; set; }
 
     public double? PopularityScore { get; set; }
-
-    public virtual ProductCategory? Category { get; set; }
-
-    public virtual Company? Company { get; set; }
-
     public bool? IsCold { get; set; }
 
     public bool? IsVulnerable { get; set; }
 
     public bool? IsHighValue { get; set; }
+    public int? DefaultSupplierId { get; set; }
+    public string? Material { get; set; }
+    public string? PackageType { get; set; }
+    public string? SizeStandard { get; set; }
+    public virtual ProductCategory? Category { get; set; }
+
+    public virtual Company? Company { get; set; }
+    public virtual Supplier? DefaultSupplier { get; set; }
     public virtual ICollection<InboundOrderItem> InboundOrderItems { get; set; } = new List<InboundOrderItem>();
 
     public virtual ICollection<Inventory> Inventories { get; set; } = new List<Inventory>();

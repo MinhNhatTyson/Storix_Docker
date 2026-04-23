@@ -27,7 +27,64 @@ namespace Storix_BE.Service.Implementation
             _repo = repo;
             _imageService = imageService;
         }
+        private async Task<string> GenerateSkuAsync(
+    int companyId,
+    string? supplierName,
+    string categoryCode,
+    string? packageType,
+    string? sizeStandard,
+    bool isEsd,
+    bool isMsd,
+    bool isCold,
+    bool isVulnerable,
+    bool isHighValue)
+        {
+            // 1. Supplier initials
+            var supplierCode = BuildSupplierInitials(supplierName);
 
+            // 2. Category code (already validated upstream)
+            var catCode = string.IsNullOrWhiteSpace(categoryCode)
+                ? "GEN"
+                : categoryCode.Trim().ToUpperInvariant();
+
+            // 3. Package type
+            var pkgCode = string.IsNullOrWhiteSpace(packageType)
+                ? "GEN"
+                : packageType.Trim().ToUpperInvariant().Replace(" ", "");
+
+            // 4. Size standard
+            var sizeCode = string.IsNullOrWhiteSpace(sizeStandard)
+                ? "STD"
+                : sizeStandard.Trim().ToUpperInvariant().Replace(" ", "");
+
+            // 5. Storage flags
+            var flagParts = new List<string>();
+            if (isEsd) flagParts.Add("ESD");
+            if (isMsd) flagParts.Add("MSD");
+            if (isCold) flagParts.Add("CLD");
+            if (isVulnerable) flagParts.Add("VUL");
+            if (isHighValue) flagParts.Add("HV");
+            string? flags = flagParts.Count > 0 ? string.Concat(flagParts) : null;
+
+            // 6. Sequence — Repository owns the DB call
+            var seq = await _repo.ClaimNextSkuSequenceAsync(companyId);
+
+            // 7. Assemble — CONCAT_WS equivalent: skip null segments
+            var segments = new List<string> { supplierCode, catCode, pkgCode, sizeCode };
+            if (flags is not null) segments.Add(flags);
+            segments.Add(seq.ToString("D5"));
+
+            return string.Join("-", segments);
+        }
+
+        private static string BuildSupplierInitials(string? supplierName)
+        {
+            if (string.IsNullOrWhiteSpace(supplierName)) return "UNK";
+            return string.Concat(
+                supplierName
+                    .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                    .Select(w => char.ToUpperInvariant(w[0])));
+        }
         public async Task<List<Product>> GetAllAsync()
         {
             return await _repo.GetAllProductsAsync();
@@ -52,48 +109,72 @@ namespace Storix_BE.Service.Implementation
             if (string.IsNullOrWhiteSpace(request.Name)) throw new InvalidOperationException("Product name is required.");
             if (request.Weight.HasValue && request.Weight.Value < 0) throw new InvalidOperationException("Weight cannot be negative.");
 
+            // ── Validate manual SKU if provided ───────────────────────────────────
+            string? resolvedSku = null;
             if (!string.IsNullOrWhiteSpace(request.Sku))
             {
                 if (request.Sku.Length > 100)
                     throw new InvalidOperationException("SKU is too long (max 100 chars).");
-
                 foreach (char c in request.Sku)
-                {
                     if (!(char.IsLetterOrDigit(c) || c == '-' || c == '_'))
                         throw new InvalidOperationException("SKU contains invalid characters.");
-                }
 
                 var exists = await _repo.GetBySkuAsync(request.Sku, request.CompanyId);
-                if (exists != null)
-                    throw new InvalidOperationException("SKU already exists.");
+                if (exists != null) throw new InvalidOperationException("SKU already exists.");
+                resolvedSku = request.Sku;
             }
 
-            string? imageUrl = null;
-
-            if (request.Image != null)
-            {
-                imageUrl = await _imageService.UploadProductImageAsync(request.Image);
-            }
+            // ── Category validation ────────────────────────────────────────────────
+            string categoryCode = "GEN";
             if (request.CategoryId.HasValue)
             {
                 var category = await _repo.GetCategoryByIdAsync(request.CategoryId.Value);
-
                 if (category == null)
                     throw new InvalidOperationException("Product category not found.");
-
                 if (category.CompanyId.HasValue && category.CompanyId != request.CompanyId)
                     throw new InvalidOperationException("Category does not belong to this company.");
-
                 var hasChildren = await _repo.CategoryHasChildrenAsync(category.Id);
-
                 if (hasChildren)
-                    throw new InvalidOperationException(
-                        "Product must be assigned to the lowest level category.");
+                    throw new InvalidOperationException("Product must be assigned to the lowest level category.");
+
+                categoryCode = category.CategoryCode;
             }
+
+            // ── Supplier name for SKU ──────────────────────────────────────────────
+            string? supplierName = null;
+            if (request.DefaultSupplierId.HasValue)
+            {
+                var supplier = await _repo.GetSupplierByIdAsync(request.DefaultSupplierId.Value, request.CompanyId);
+                if (supplier == null)
+                    throw new InvalidOperationException($"Supplier with id {request.DefaultSupplierId.Value} not found.");
+                supplierName = supplier.Name;
+            }
+
+            // ── Auto-generate SKU if not manually provided ─────────────────────────
+            if (resolvedSku is null)
+            {
+                resolvedSku = await GenerateSkuAsync(
+                    request.CompanyId,
+                    supplierName,
+                    categoryCode,
+                    request.PackageType,
+                    request.SizeStandard,
+                    request.IsEsd ?? false,
+                    request.IsMsd ?? false,
+                    request.IsCold ?? false,
+                    request.IsVulnerable ?? false,
+                    request.IsHighValue ?? false);
+            }
+
+            // ── Image upload ───────────────────────────────────────────────────────
+            string? imageUrl = null;
+            if (request.Image != null)
+                imageUrl = await _imageService.UploadProductImageAsync(request.Image);
+
             var product = new Product
             {
                 CompanyId = request.CompanyId,
-                Sku = request.Sku,
+                Sku = resolvedSku,
                 Name = request.Name,
                 CategoryId = request.CategoryId,
                 Unit = request.Unit,
@@ -107,7 +188,11 @@ namespace Storix_BE.Service.Implementation
                 IsVulnerable = request.IsVulnerable,
                 IsHighValue = request.IsHighValue,
                 Description = request.Description,
-                Image = imageUrl
+                Image = imageUrl,
+                DefaultSupplierId = request.DefaultSupplierId,
+                Material = request.Material,
+                PackageType = request.PackageType,
+                SizeStandard = request.SizeStandard,
             };
 
             return await _repo.CreateAsync(product);
@@ -299,27 +384,19 @@ namespace Storix_BE.Service.Implementation
             if (request.CompanyId <= 0) throw new InvalidOperationException("CompanyId must be a positive integer.");
             var name = request.Name?.Trim();
             if (string.IsNullOrWhiteSpace(name)) throw new InvalidOperationException("Product category name is required.");
+            if (string.IsNullOrWhiteSpace(request.CategoryCode))
+                throw new InvalidOperationException("Category code is required.");
 
-            var toCreate = new ProductCategory();
-            if (request.ParentCategoryId.HasValue && request.ParentCategoryId.Value == 0)
+            var toCreate = new ProductCategory
             {
-                toCreate = new ProductCategory
-                {
-                    CompanyId = request.CompanyId,
-                    Name = name,
-                };
-            }
-            else
-            {
-                toCreate = new ProductCategory
-                {
-                    CompanyId = request.CompanyId,
-                    Name = name,
-                    ParentCategoryId = request.ParentCategoryId
-                };
-            }
+                CompanyId = request.CompanyId,
+                Name = name,
+                CategoryCode = request.CategoryCode.Trim().ToUpperInvariant(),
+                ParentCategoryId = (request.ParentCategoryId.HasValue && request.ParentCategoryId.Value == 0)
+                                       ? null
+                                       : request.ParentCategoryId
+            };
 
-            // repository will validate parent, uniqueness and compute level
             return await _repo.CreateCategoryAsync(toCreate);
         }
 

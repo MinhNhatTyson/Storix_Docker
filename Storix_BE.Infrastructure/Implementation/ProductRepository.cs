@@ -5,6 +5,7 @@ using DocumentFormat.OpenXml.InkML;
 using DocumentFormat.OpenXml.Wordprocessing;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Storix_BE.Domain.Context;
 using Storix_BE.Domain.Models;
 using Storix_BE.Repository.DTO;
@@ -27,7 +28,47 @@ namespace Storix_BE.Repository.Implementation
         {
             _context = context;
         }
+        public async Task<Supplier?> GetSupplierByIdAsync(int supplierId, int companyId)
+        {
+            return await _context.Suppliers
+                .AsNoTracking()
+                .FirstOrDefaultAsync(s => s.Id == supplierId && s.CompanyId == companyId);
+        }
+        public async Task<int> ClaimNextSkuSequenceAsync(int companyId)
+        {
+            // Atomic upsert: insert with next_val=1 if not exists,
+            // otherwise increment and return the OLD value (our claimed sequence).
+            // We use raw SQL for true atomicity without a separate read trip.
+            var sql = $"""
+        INSERT INTO company_sku_sequences (company_id, next_val)
+        VALUES ({companyId}, 2)
+        ON CONFLICT (company_id) DO UPDATE
+            SET next_val = company_sku_sequences.next_val + 1
+        RETURNING next_val - 1
+        """;
 
+            var connection = _context.Database.GetDbConnection();
+            var wasOpen = connection.State == System.Data.ConnectionState.Open;
+
+            if (!wasOpen) await connection.OpenAsync();
+            try
+            {
+                await using var cmd = connection.CreateCommand();
+                cmd.CommandText = sql;
+
+                // Pass current EF transaction if one is active
+                var currentTx = _context.Database.CurrentTransaction;
+                if (currentTx != null)
+                    cmd.Transaction = currentTx.GetDbTransaction();
+
+                var result = await cmd.ExecuteScalarAsync();
+                return Convert.ToInt32(result);
+            }
+            finally
+            {
+                if (!wasOpen) await connection.CloseAsync();
+            }
+        }
         public async Task<List<Product>> GetAllProductsAsync()
         {
             return await _context.Products
@@ -97,6 +138,7 @@ namespace Storix_BE.Repository.Implementation
             return await _context.Products
                 .AsNoTracking()
                 .Include(p => p.Category)
+                .Include(p => p.DefaultSupplier)
                 .FirstOrDefaultAsync(p => p.Id == product.Id) ?? product;
         }
 
@@ -476,9 +518,16 @@ namespace Storix_BE.Repository.Implementation
             var name = category.Name?.Trim();
             if (string.IsNullOrWhiteSpace(name)) throw new InvalidOperationException("Product category name is required.");
 
-            // ensure unique name within same company and parent scope
+            // ── NEW: validate CategoryCode ─────────────────────────────────────────
+            var code = category.CategoryCode?.Trim().ToUpperInvariant();
+            if (string.IsNullOrWhiteSpace(code))
+                throw new InvalidOperationException("Category code is required (e.g. CAP, RES, IC).");
+            if (code.Length > 10)
+                throw new InvalidOperationException("Category code must be 10 characters or fewer.");
+
             var nameLower = name.ToLowerInvariant();
             var parentId = category.ParentCategoryId;
+
             var exists = await _context.ProductCategories
                 .AsNoTracking()
                 .FirstOrDefaultAsync(c =>
@@ -489,14 +538,20 @@ namespace Storix_BE.Repository.Implementation
             if (exists != null)
                 throw new InvalidOperationException($"Product category with name '{name}' already exists in the same scope.");
 
-            // resolve parent (if any) and compute level
+            // check CategoryCode uniqueness within the company ──────────────
+            var codeExists = await _context.ProductCategories
+                .AsNoTracking()
+                .AnyAsync(c => c.CompanyId == category.CompanyId &&
+                               c.CategoryCode.ToUpper() == code);
+            if (codeExists)
+                throw new InvalidOperationException($"Category code '{code}' is already used by another category in this company.");
+
             int level = 0;
             if (parentId.HasValue)
             {
                 var parent = await _context.ProductCategories.FindAsync(parentId.Value);
                 if (parent == null)
                     throw new InvalidOperationException($"Parent product category with id {parentId.Value} not found.");
-                // ensure same company when specified
                 if (parent.CompanyId.HasValue && category.CompanyId.HasValue && parent.CompanyId != category.CompanyId)
                     throw new InvalidOperationException("Parent category does not belong to the same company as the new category.");
                 level = parent.Level + 1;
@@ -505,6 +560,7 @@ namespace Storix_BE.Repository.Implementation
             var newCategory = new ProductCategory
             {
                 Name = name,
+                CategoryCode = code,
                 CompanyId = category.CompanyId,
                 ParentCategoryId = parentId,
                 Level = level,
@@ -515,8 +571,8 @@ namespace Storix_BE.Repository.Implementation
             await _context.SaveChangesAsync();
 
             return await _context.ProductCategories
-            .AsNoTracking()
-            .FirstOrDefaultAsync(c => c.Id == newCategory.Id) ?? newCategory;
+                .AsNoTracking()
+                .FirstOrDefaultAsync(c => c.Id == newCategory.Id) ?? newCategory;
         }
 
         public async Task<bool> RemoveCategoryAsync(ProductCategory category)

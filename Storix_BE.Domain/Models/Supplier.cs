@@ -28,4 +28,5 @@ public partial class Supplier
     public virtual ICollection<InboundOrder> InboundOrders { get; set; } = new List<InboundOrder>();
 
     public virtual ICollection<InboundRequest> InboundRequests { get; set; } = new List<InboundRequest>();
+    public virtual ICollection<Product> DefaultSupplierProducts { get; set; } = new List<Product>();
 }

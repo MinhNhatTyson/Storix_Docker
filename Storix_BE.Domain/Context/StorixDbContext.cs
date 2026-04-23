@@ -98,9 +98,22 @@ public partial class StorixDbContext : DbContext
     public virtual DbSet<Recommendation> Recommendations { get; set; }
     public virtual DbSet<InventoryBatch> InventoryBatches { get; set; }
     public virtual DbSet<InventoryBatchLocation> InventoryBatchLocations { get; set; }
+    public virtual DbSet<CompanySkuSequence> CompanySkuSequences { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<CompanySkuSequence>(entity =>
+        {
+            entity.ToTable("company_sku_sequences");
+            entity.HasKey(e => e.CompanyId);
+
+            entity.Property(e => e.CompanyId).HasColumnName("company_id");
+            entity.Property(e => e.NextVal).HasColumnName("next_val");
+
+            entity.HasOne(e => e.Company)
+                  .WithOne()
+                  .HasForeignKey<CompanySkuSequence>(e => e.CompanyId);
+        });
         modelBuilder.Entity<InventoryBatchLocation>(entity =>
         {
             entity.HasKey(e => e.Id).HasName("inventory_batch_locations_pkey");
@@ -875,6 +888,15 @@ public partial class StorixDbContext : DbContext
                 .HasColumnName("updated_at");
             entity.Property(e => e.Weight).HasColumnName("weight");
             entity.Property(e => e.Width).HasColumnName("width");
+            entity.Property(e => e.DefaultSupplierId).HasColumnName("default_supplier_id");
+            entity.Property(e => e.Material).HasColumnName("material").HasMaxLength(50);
+            entity.Property(e => e.PackageType).HasColumnName("package_type").HasMaxLength(50);
+            entity.Property(e => e.SizeStandard).HasColumnName("size_standard").HasMaxLength(20);
+
+            entity.HasOne(e => e.DefaultSupplier)
+                  .WithMany(s => s.DefaultSupplierProducts)
+                  .HasForeignKey(e => e.DefaultSupplierId)
+                  .OnDelete(DeleteBehavior.SetNull);
 
             entity.HasOne(d => d.Category).WithMany(p => p.Products)
                 .HasForeignKey(d => d.CategoryId)
@@ -905,6 +927,10 @@ public partial class StorixDbContext : DbContext
                 .HasMaxLength(255)
                 .HasColumnName("name");
             entity.Property(e => e.ParentCategoryId).HasColumnName("parent_category_id");
+            entity.Property(e => e.CategoryCode)
+          .HasColumnName("category_code")
+          .HasMaxLength(10)
+          .IsRequired();
 
             entity.HasOne(d => d.Company).WithMany(p => p.ProductCategories)
                 .HasForeignKey(d => d.CompanyId)

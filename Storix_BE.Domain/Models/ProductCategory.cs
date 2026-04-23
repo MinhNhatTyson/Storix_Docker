@@ -10,7 +10,7 @@ public partial class ProductCategory
     public int? CompanyId { get; set; }
 
     public string Name { get; set; } = null!;
-
+    public string CategoryCode { get; set; } = null!;  // e.g. "CAP", "RES", "IC"
     public int? ParentCategoryId { get; set; }
 
     public int Level { get; set; }
