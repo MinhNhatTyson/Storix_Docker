@@ -6,6 +6,7 @@ using Microsoft.Extensions.Configuration;
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using Storix_BE.Repository.DTO;
 
 namespace Storix_BE.Service.Implementation
 {
@@ -33,7 +34,7 @@ namespace Storix_BE.Service.Implementation
             if (callerRoleId != 2)
                 throw new UnauthorizedAccessException("Only Company Administrator can assign warehouses.");
         }
-        public async Task<List<int>> GetZoneIdsByWarehouseAsync(int companyId, int warehouseId)
+        public async Task<List<ZoneResponse>> GetZoneIdsByWarehouseAsync(int companyId, int warehouseId)
         {
             if (companyId <= 0) throw new InvalidOperationException("Invalid company id.");
             if (warehouseId <= 0) throw new InvalidOperationException("Invalid warehouse id.");
@@ -47,7 +48,7 @@ namespace Storix_BE.Service.Implementation
             return await _assignment_repository_GetZoneIds(warehouseId);
 
             // Local helper to call repository (keeps callsite readable and testable)
-            async Task<List<int>> _assignment_repository_GetZoneIds(int id)
+            async Task<List<ZoneResponse>> _assignment_repository_GetZoneIds(int id)
             {
                 return await _assignmentRepository.GetZoneIdsByWarehouseIdAsync(id);
             }

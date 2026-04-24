@@ -1,6 +1,7 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Storix_BE.Domain.Context;
 using Storix_BE.Domain.Models;
+using Storix_BE.Repository.DTO;
 using Storix_BE.Repository.Interfaces;
 using System;
 using System.Collections.Generic;
@@ -19,14 +20,27 @@ namespace Storix_BE.Repository.Implementation
         {
             _context = context;
         }
-        public async Task<List<int>> GetZoneIdsByWarehouseIdAsync(int warehouseId)
+        public async Task<List<ZoneResponse>> GetZoneIdsByWarehouseIdAsync(int warehouseId)
         {
-            if (warehouseId <= 0) return new List<int>();
-            return await _context.StorageZones
+            if (warehouseId <= 0) return new List<ZoneResponse>();
+            var list = await _context.StorageZones
                 .AsNoTracking()
                 .Where(z => z.WarehouseId == warehouseId)
-                .Select(z => z.Id)
+                .Select(z => new ZoneResponse
+                {
+                    Id = z.Id,
+                    Code = z.Code ?? "",
+                    IsEsd = z.IsEsd,
+                    IsMsd = z.IsMsd,
+                    IsCold = z.IsCold,
+                    IsVulnerable = z.IsVulnerable,
+                    IsHighValue = z.IsHighValue,
+                    Width = z.Width,
+                    Height = z.Height,
+                    Length = z.Length
+                })
                 .ToListAsync();
+            return list;
         }
         public async Task<Warehouse?> GetWarehouseByIdAsync(int warehouseId)
         {

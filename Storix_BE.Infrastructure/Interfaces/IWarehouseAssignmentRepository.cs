@@ -1,4 +1,5 @@
 ﻿using Storix_BE.Domain.Models;
+using Storix_BE.Repository.DTO;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -24,6 +25,6 @@ namespace Storix_BE.Repository.Interfaces
         Task<bool> UpdateWarehouseStructureAsync(int warehouseId, Warehouse warehouseStructure);
         Task<Warehouse?> GetWarehouseWithStructureAsync(int warehouseId);
         Task<bool> DeleteWarehouseAsync(int warehouseId);
-        Task<List<int>> GetZoneIdsByWarehouseIdAsync(int warehouseId);
+        Task<List<ZoneResponse>> GetZoneIdsByWarehouseIdAsync(int warehouseId);
     }
 }
