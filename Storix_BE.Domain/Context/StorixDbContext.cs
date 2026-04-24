@@ -1539,6 +1539,8 @@ public partial class StorixDbContext : DbContext
                 .HasColumnType("character varying")
                 .HasColumnName("report_type");
             entity.Property(e => e.WarehouseId).HasColumnName("warehouse_id");
+            entity.Property(e => e.ProductId).HasColumnName("product_id");
+            entity.Property(e => e.InventoryCountTicketId).HasColumnName("inventory_count_ticket_id");
             entity.Property(e => e.TimeFrom)
                 .HasColumnType("timestamp without time zone")
                 .HasColumnName("time_from");
