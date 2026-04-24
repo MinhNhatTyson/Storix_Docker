@@ -59,7 +59,7 @@ namespace Storix_BE.API.Controllers
             });
         }
         [HttpGet("get-all/{userId:int}")]
-        [Authorize(Roles = "2,3")]
+        [Authorize(Roles = "2,3,4")]
         public async Task<IActionResult> GetAllProductsFromACompany(int userId)
         {
             if (userId <= 0) return BadRequest(new { message = "Invalid user id." });
@@ -79,7 +79,7 @@ namespace Storix_BE.API.Controllers
             return Ok(items);
         }
         [HttpGet("get-by-id/{userId:int}/{id:int}")]
-        [Authorize(Roles = "2,3")]
+        [Authorize(Roles = "2,3,4")]
         public async Task<IActionResult> GetById(int userId, int id)
         {
             if (userId <= 0) return BadRequest(new { message = "Invalid user id." });
@@ -103,7 +103,7 @@ namespace Storix_BE.API.Controllers
         }
 
         [HttpGet("get-by-sku/{userId:int}/sku/{sku}")]
-        [Authorize(Roles = "2,3")]
+        [Authorize(Roles = "2,3,4")]
         public async Task<IActionResult> GetBySku(int userId, string sku)
         {
             if (userId <= 0) return BadRequest(new { message = "Invalid user id." });
