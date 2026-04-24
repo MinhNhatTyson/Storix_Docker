@@ -382,7 +382,7 @@ namespace Storix_BE.API.Controllers
             }
         }
         [HttpGet("inventory-locations/{userId:int}/{productId:int}/warehouse/{warehouseId:int}")]
-        [Authorize(Roles = "2,3")]
+        [Authorize(Roles = "2,3,4")]
         public async Task<IActionResult> GetProductInventoryLocations(int userId, int productId, int warehouseId)
         {
             if (userId <= 0) return BadRequest(new { message = "Invalid user id." });

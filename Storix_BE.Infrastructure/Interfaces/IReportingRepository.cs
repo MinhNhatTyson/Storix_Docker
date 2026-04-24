@@ -9,6 +9,10 @@ namespace Storix_BE.Repository.Interfaces
     {
         Task<Report> CreateReportAsync(Report report);
         Task UpdateReportAsync(Report report);
+        Task<bool> WarehouseBelongsToCompanyAsync(int companyId, int warehouseId);
+        Task<bool> ProductBelongsToCompanyAsync(int companyId, int productId);
+        Task<bool> InventoryCountTicketBelongsToCompanyAsync(int companyId, int inventoryCountTicketId);
+        Task<bool> InventoryCountTicketBelongsToWarehouseAsync(int inventoryCountTicketId, int warehouseId);
 
         Task<Report?> GetReportByIdAsync(int companyId, int reportId);
 
@@ -86,6 +90,27 @@ namespace Storix_BE.Repository.Interfaces
         decimal UnitCost,
         decimal InventoryValue);
 
+    public sealed record InventoryBatchBreakdownRow(
+        int BatchId,
+        int ProductId,
+        string? ProductName,
+        string? Sku,
+        int RemainingQuantity,
+        decimal EffectiveUnitCost,
+        decimal InventoryValue,
+        DateTime InboundDate,
+        IReadOnlyList<InventoryBatchLocationBreakdownRow> Locations);
+
+    public sealed record InventoryBatchLocationBreakdownRow(
+        int BinId,
+        string? BinCode,
+        string? BinIdCode,
+        int? ShelfId,
+        string? ShelfCode,
+        int? ZoneId,
+        string? ZoneCode,
+        int Quantity);
+
     public sealed record InventorySnapshotReportData(
         DateTime TimeFrom,
         DateTime TimeTo,
@@ -93,7 +118,8 @@ namespace Storix_BE.Repository.Interfaces
         int TotalSkus,
         int TotalQuantity,
         decimal TotalValue,
-        IReadOnlyList<InventorySnapshotRow> Items);
+        IReadOnlyList<InventorySnapshotRow> Items,
+        IReadOnlyList<InventoryBatchBreakdownRow>? BatchBreakdown = null);
 
     public sealed record InventoryLedgerRow(
         DateTime Day,
@@ -103,7 +129,10 @@ namespace Storix_BE.Repository.Interfaces
         string? TransactionType,
         int QuantityIn,
         int QuantityOut,
-        int RunningQuantity);
+        int RunningQuantity,
+        int? BatchId = null,
+        DateTime? BatchInboundDate = null,
+        decimal? BatchUnitCost = null);
 
     public sealed record InventoryLedgerReportData(
         DateTime TimeFrom,
@@ -137,7 +166,21 @@ namespace Storix_BE.Repository.Interfaces
         int TotalClosingQty,
         decimal TotalClosingValue,
         IReadOnlyList<InventoryInOutBalanceDayPoint> ByDay,
-        IReadOnlyList<InventoryInOutBalanceProductRow> ByProduct);
+        IReadOnlyList<InventoryInOutBalanceProductRow> ByProduct,
+        IReadOnlyList<InventoryBatchBreakdownRow>? BatchBreakdown = null);
+
+    public sealed record StocktakeBatchBreakdownRow(
+        int ProductId,
+        int? LocationId,
+        int? BatchId,
+        DateTime? InboundDate,
+        decimal EffectiveUnitCost,
+        int RemainingQuantity,
+        int VarianceQty,
+        decimal VarianceValue,
+        string? BinCode,
+        string? ShelfCode,
+        string? ZoneCode);
 
     public sealed record StocktakeVarianceRow(
         int ProductId,
@@ -157,6 +200,7 @@ namespace Storix_BE.Repository.Interfaces
         int TotalItems,
         int TotalVarianceQty,
         decimal TotalVarianceValue,
-        IReadOnlyList<StocktakeVarianceRow> Items);
+        IReadOnlyList<StocktakeVarianceRow> Items,
+        IReadOnlyList<StocktakeBatchBreakdownRow>? BatchBreakdown = null);
 }
 

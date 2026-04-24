@@ -1,7 +1,9 @@
 ﻿using System;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Storix_BE.Domain.Models;
 
+[Table("reports")]
 public partial class Report
 {
     public int Id { get; set; }
@@ -14,8 +16,10 @@ public partial class Report
 
     public int? WarehouseId { get; set; }
 
+    [Column("product_id")]
     public int? ProductId { get; set; }
 
+    [Column("inventory_count_ticket_id")]
     public int? InventoryCountTicketId { get; set; }
 
     public DateTime? TimeFrom { get; set; }

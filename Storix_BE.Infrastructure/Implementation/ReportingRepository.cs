@@ -35,6 +35,37 @@ namespace Storix_BE.Repository.Implementation
             await _context.SaveChangesAsync().ConfigureAwait(false);
         }
 
+        public Task<bool> WarehouseBelongsToCompanyAsync(int companyId, int warehouseId)
+        {
+            return _context.Warehouses
+                .AsNoTracking()
+                .AnyAsync(w => w.Id == warehouseId && w.CompanyId == companyId);
+        }
+
+        public Task<bool> ProductBelongsToCompanyAsync(int companyId, int productId)
+        {
+            return _context.Products
+                .AsNoTracking()
+                .AnyAsync(p => p.Id == productId && p.CompanyId == companyId);
+        }
+
+        public Task<bool> InventoryCountTicketBelongsToCompanyAsync(int companyId, int inventoryCountTicketId)
+        {
+            return _context.InventoryCountsTickets
+                .AsNoTracking()
+                .AnyAsync(t =>
+                    t.Id == inventoryCountTicketId &&
+                    t.Warehouse != null &&
+                    t.Warehouse.CompanyId == companyId);
+        }
+
+        public Task<bool> InventoryCountTicketBelongsToWarehouseAsync(int inventoryCountTicketId, int warehouseId)
+        {
+            return _context.InventoryCountsTickets
+                .AsNoTracking()
+                .AnyAsync(t => t.Id == inventoryCountTicketId && t.WarehouseId == warehouseId);
+        }
+
         public async Task<Report?> GetReportByIdAsync(int companyId, int reportId)
         {
             return await _context.Reports
@@ -110,32 +141,52 @@ namespace Storix_BE.Repository.Implementation
                 .GroupBy(t => t.ReferenceId)
                 .Select(g => new { ReferenceId = g.Key, CompletedAt = g.Max(t => (DateTime?)t.CreatedAt) });
 
-            var withCompletedAt = baseQuery
-                .GroupJoin(statusCompletedAt,
-                    o => o.Id,
-                    s => s.OutboundOrderId,
-                    (o, statuses) => new { Order = o, StatusCompleted = statuses.FirstOrDefault() })
-                .GroupJoin(txCompletedAt,
-                    x => x.Order.Id,
-                    t => t.ReferenceId,
-                    (x, txs) => new { x.Order, x.StatusCompleted, TxCompleted = txs.FirstOrDefault() })
-                .Select(x => new
+            var orders = await baseQuery
+                .Select(o => new
                 {
-                    x.Order.Id,
-                    x.Order.WarehouseId,
-                    x.Order.StaffId,
-                    StaffName = x.Order.Staff != null ? x.Order.Staff.FullName : null,
-                    x.Order.CreatedAt,
-                    CompletedAt = x.StatusCompleted != null
-                        ? x.StatusCompleted.CompletedAt
-                        : (x.TxCompleted != null ? x.TxCompleted.CompletedAt : (DateTime?)null)
+                    o.Id,
+                    o.WarehouseId,
+                    o.StaffId,
+                    StaffName = o.Staff != null ? o.Staff.FullName : null,
+                    o.CreatedAt
+                })
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            var orderIds = orders.Select(o => o.Id).ToList();
+
+            var statusMap = await statusCompletedAt
+                .Where(x => orderIds.Contains(x.OutboundOrderId))
+                .ToDictionaryAsync(x => x.OutboundOrderId, x => x.CompletedAt)
+                .ConfigureAwait(false);
+
+            var txMap = await txCompletedAt
+                .Where(x => x.ReferenceId.HasValue && orderIds.Contains(x.ReferenceId.Value))
+                .ToDictionaryAsync(x => x.ReferenceId!.Value, x => x.CompletedAt)
+                .ConfigureAwait(false);
+
+            var rows = orders
+                .Select(o =>
+                {
+                    statusMap.TryGetValue(o.Id, out var statusCompleted);
+                    txMap.TryGetValue(o.Id, out var txCompleted);
+                    var completedAt = statusCompleted ?? txCompleted;
+
+                    return new
+                    {
+                        o.Id,
+                        o.WarehouseId,
+                        o.StaffId,
+                        o.StaffName,
+                        o.CreatedAt,
+                        CompletedAt = completedAt
+                    };
                 })
                 .Where(x =>
                     x.CompletedAt.HasValue &&
                     x.CompletedAt.Value >= from &&
-                    x.CompletedAt.Value <= to);
-
-            var rows = await withCompletedAt.ToListAsync().ConfigureAwait(false);
+                    x.CompletedAt.Value <= to)
+                .ToList();
 
             static double? AvgHours(IEnumerable<(DateTime CreatedAt, DateTime CompletedAt)> items)
             {
@@ -247,22 +298,12 @@ namespace Storix_BE.Repository.Implementation
             // Current stock snapshot for products that appeared in transactions
             var productIds = txRows.Where(t => t.ProductId.HasValue).Select(t => t.ProductId!.Value).Distinct().ToList();
 
-            var stockQuery = _context.Inventories
-                .AsNoTracking()
-                .Where(i => i.ProductId.HasValue && productIds.Contains(i.ProductId.Value));
-
-            if (warehouseId.HasValue && warehouseId.Value > 0)
-                stockQuery = stockQuery.Where(i => i.WarehouseId == warehouseId.Value);
-            else
-                stockQuery = stockQuery.Where(i => i.Warehouse != null && i.Warehouse.CompanyId == companyId);
-
-            var stockByProduct = await stockQuery
-                .GroupBy(i => i.ProductId!.Value)
-                .Select(g => new { ProductId = g.Key, CurrentStock = g.Sum(i => i.Quantity ?? 0) })
-                .ToListAsync()
+            var batchSnapshot = await GetRemainingBatchSnapshotAsync(companyId, warehouseId, to, productIds)
                 .ConfigureAwait(false);
 
-            var stockLookup = stockByProduct.ToDictionary(s => s.ProductId, s => s.CurrentStock);
+            var stockLookup = DistinctBatchEntries(batchSnapshot)
+                .GroupBy(b => b.ProductId)
+                .ToDictionary(g => g.Key, g => g.Sum(x => x.RemainingQuantity));
 
             var topProducts = txRows
                 .Where(t => t.ProductId.HasValue)
@@ -310,29 +351,61 @@ namespace Storix_BE.Repository.Implementation
             if (warehouseId.HasValue && warehouseId.Value > 0)
                 baseQuery = baseQuery.Where(o => o.WarehouseId == warehouseId.Value);
 
+            var batchRows = await _context.InventoryBatches
+                .AsNoTracking()
+                .Where(b =>
+                    b.InboundOrder.Warehouse != null &&
+                    b.InboundOrder.Warehouse.CompanyId == companyId &&
+                    b.InboundOrder.Status == "Completed" &&
+                    b.InboundOrder.CreatedAt.HasValue &&
+                    b.InboundOrder.CreatedAt.Value >= from &&
+                    b.InboundOrder.CreatedAt.Value <= to)
+                .Where(b => !warehouseId.HasValue || warehouseId.Value <= 0 || b.WarehouseId == warehouseId.Value)
+                .Select(b => new
+                {
+                    b.InboundOrderId,
+                    b.ProductId,
+                    b.ReceivedQuantity
+                })
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            var receivedByOrderId = batchRows
+                .GroupBy(x => x.InboundOrderId)
+                .ToDictionary(g => g.Key, g => g.Sum(x => x.ReceivedQuantity));
+
             var rows = await baseQuery
                 .Select(o => new
                 {
                     o.Id,
                     o.SupplierId,
                     SupplierName = o.Supplier != null ? o.Supplier.Name : null,
-                    CompletedAt = o.CreatedAt!.Value,
-                    ReceivedQty = o.InboundOrderItems
-                        .Sum(i => i.ReceivedQuantity ?? 0)
+                    CompletedAt = o.CreatedAt!.Value
                 })
                 .ToListAsync()
                 .ConfigureAwait(false);
 
-            var totalCompleted = rows.Count;
-            var totalReceivedQty = rows.Sum(r => r.ReceivedQty);
+            var materializedRows = rows
+                .Select(o => new
+                {
+                    o.Id,
+                    o.SupplierId,
+                    o.SupplierName,
+                    o.CompletedAt,
+                    ReceivedQty = receivedByOrderId.TryGetValue(o.Id, out var qty) ? qty : 0
+                })
+                .ToList();
 
-            var byDay = rows
+            var totalCompleted = materializedRows.Count;
+            var totalReceivedQty = materializedRows.Sum(r => r.ReceivedQty);
+
+            var byDay = materializedRows
                 .GroupBy(r => r.CompletedAt.Date)
                 .OrderBy(g => g.Key)
                 .Select(g => new InboundKpiBasicDayPoint(g.Key, g.Count(), g.Sum(r => r.ReceivedQty)))
                 .ToList();
 
-            var bySupplier = rows
+            var bySupplier = materializedRows
                 .Where(r => r.SupplierId.HasValue)
                 .GroupBy(r => new { SupplierId = r.SupplierId!.Value, r.SupplierName })
                 .Select(g => new InboundKpiBasicSupplierRow(g.Key.SupplierId, g.Key.SupplierName, g.Count(), g.Sum(r => r.ReceivedQty)))
@@ -348,31 +421,31 @@ namespace Storix_BE.Repository.Implementation
 
         public async Task<InventorySnapshotReportData> GetInventorySnapshotAsync(int companyId, int? warehouseId, DateTime from, DateTime to)
         {
-            var invQuery = _context.Inventories.AsNoTracking().Where(i => i.Warehouse != null && i.Warehouse.CompanyId == companyId);
-            if (warehouseId.HasValue && warehouseId.Value > 0) invQuery = invQuery.Where(i => i.WarehouseId == warehouseId.Value);
+            var batchSnapshot = await GetRemainingBatchSnapshotAsync(companyId, warehouseId, to)
+                .ConfigureAwait(false);
 
-            var rows = await invQuery.Select(i => new
-            {
-                ProductId = i.ProductId ?? 0,
-                ProductName = i.Product != null ? i.Product.Name : null,
-                Sku = i.Product != null ? i.Product.Sku : null,
-                Qty = i.Quantity ?? 0,
-            }).Where(x => x.ProductId > 0).ToListAsync().ConfigureAwait(false);
+            var unitCostByProduct = BuildWeightedUnitCostLookup(batchSnapshot);
 
-            var productIds = rows.Select(x => x.ProductId).Distinct().ToList();
-            var fifoPrices = await ResolveFifoUnitCostByProductAsync(companyId, warehouseId, productIds, to).ConfigureAwait(false);
-
-            var items = rows.GroupBy(r => new { r.ProductId, r.ProductName, r.Sku })
+            var items = DistinctBatchEntries(batchSnapshot)
+                .GroupBy(r => new { r.ProductId, r.ProductName, r.Sku })
                 .Select(g =>
                 {
-                    var qty = g.Sum(x => x.Qty);
-                    fifoPrices.TryGetValue(g.Key.ProductId, out var unitCost);
+                    var qty = g.Sum(x => x.RemainingQuantity);
+                    unitCostByProduct.TryGetValue(g.Key.ProductId, out var unitCost);
                     return new InventorySnapshotRow(g.Key.ProductId, g.Key.ProductName, g.Key.Sku, qty, unitCost, unitCost * qty);
                 })
                 .OrderByDescending(x => x.InventoryValue)
                 .ToList();
 
-            return new InventorySnapshotReportData(from, to, warehouseId, items.Count, items.Sum(x => x.Quantity), items.Sum(x => x.InventoryValue), items);
+            return new InventorySnapshotReportData(
+                from,
+                to,
+                warehouseId,
+                items.Count,
+                items.Sum(x => x.Quantity),
+                items.Sum(x => x.InventoryValue),
+                items,
+                BuildBatchBreakdown(batchSnapshot));
         }
 
         public async Task<InventoryLedgerReportData> GetInventoryLedgerAsync(int companyId, int? warehouseId, int? productId, DateTime from, DateTime to)
@@ -387,6 +460,7 @@ namespace Storix_BE.Repository.Implementation
                 .OrderBy(t => t.CreatedAt)
                 .Select(t => new
                 {
+                    t.ReferenceId,
                     Day = t.CreatedAt!.Value,
                     ProductId = t.ProductId ?? 0,
                     ProductName = t.Product != null ? t.Product.Name : null,
@@ -395,12 +469,47 @@ namespace Storix_BE.Repository.Implementation
                     Qty = t.QuantityChange ?? 0
                 }).ToListAsync().ConfigureAwait(false);
 
+            var inboundReferenceIds = rows
+                .Where(r => r.TransactionType == "Inbound" && r.ReferenceId.HasValue)
+                .Select(r => r.ReferenceId!.Value)
+                .Distinct()
+                .ToList();
+
+            var inboundBatchLookup = await _context.InventoryBatches
+                .AsNoTracking()
+                .Where(b => inboundReferenceIds.Contains(b.InboundOrderId))
+                .GroupBy(b => new { b.InboundOrderId, b.ProductId })
+                .Select(g => g.OrderBy(x => x.InboundDate).ThenBy(x => x.Id).First())
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            var batchByInboundOrderAndProduct = inboundBatchLookup.ToDictionary(
+                x => (x.InboundOrderId, x.ProductId),
+                x => x);
+
             var running = opening;
             var ledger = new List<InventoryLedgerRow>();
             foreach (var r in rows)
             {
                 running += r.Qty;
-                ledger.Add(new InventoryLedgerRow(r.Day, r.ProductId, r.ProductName, r.Sku, r.TransactionType, r.Qty > 0 ? r.Qty : 0, r.Qty < 0 ? Math.Abs(r.Qty) : 0, running));
+                InventoryBatch? batch = null;
+                if (r.TransactionType == "Inbound" && r.ReferenceId.HasValue && r.ProductId > 0)
+                {
+                    batchByInboundOrderAndProduct.TryGetValue((r.ReferenceId.Value, r.ProductId), out batch);
+                }
+
+                ledger.Add(new InventoryLedgerRow(
+                    r.Day,
+                    r.ProductId,
+                    r.ProductName,
+                    r.Sku,
+                    r.TransactionType,
+                    r.Qty > 0 ? r.Qty : 0,
+                    r.Qty < 0 ? Math.Abs(r.Qty) : 0,
+                    running,
+                    batch?.Id,
+                    batch?.InboundDate,
+                    batch?.EffectiveUnitCost));
             }
 
             return new InventoryLedgerReportData(from, to, warehouseId, productId, opening, running, ledger);
@@ -408,36 +517,32 @@ namespace Storix_BE.Repository.Implementation
 
         public async Task<InventoryInOutBalanceReportData> GetInventoryInOutBalanceAsync(int companyId, int? warehouseId, DateTime from, DateTime to)
         {
-            // Opening/closing base from inventory transactions (createdAt), movement in range by completedAt.
-            var txQuery = _context.InventoryTransactions.AsNoTracking().Where(t => t.Warehouse != null && t.Warehouse.CompanyId == companyId && t.CreatedAt.HasValue);
-            if (warehouseId.HasValue && warehouseId.Value > 0) txQuery = txQuery.Where(t => t.WarehouseId == warehouseId.Value);
-
-            var openingRows = await txQuery
-                .Where(t => t.CreatedAt!.Value < from)
-                .Select(t => new { ProductId = t.ProductId ?? 0, Qty = t.QuantityChange ?? 0 })
-                .ToListAsync()
+            var closingSnapshot = await GetRemainingBatchSnapshotAsync(companyId, warehouseId, to)
                 .ConfigureAwait(false);
 
-            var openingByProduct = openingRows
-                .Where(x => x.ProductId > 0)
+            var closingByProduct = DistinctBatchEntries(closingSnapshot)
                 .GroupBy(x => x.ProductId)
-                .ToDictionary(g => g.Key, g => g.Sum(x => x.Qty));
+                .ToDictionary(g => g.Key, g => g.Sum(x => x.RemainingQuantity));
 
-            // Inbound: completed inbound orders in range (fallback createdAt due current schema).
-            var inboundOrders = _context.InboundOrders.AsNoTracking()
-                .Where(o => o.Warehouse != null && o.Warehouse.CompanyId == companyId && o.Status == "Completed" && o.CreatedAt.HasValue);
-            if (warehouseId.HasValue && warehouseId.Value > 0) inboundOrders = inboundOrders.Where(o => o.WarehouseId == warehouseId.Value);
+            var unitCostByProduct = BuildWeightedUnitCostLookup(closingSnapshot);
 
-            var inboundRows = await inboundOrders
-                .Where(o => o.CreatedAt!.Value >= from && o.CreatedAt!.Value <= to)
-                .SelectMany(o => o.InboundOrderItems.Select(i => new
+            var inboundRows = await _context.InventoryBatches
+                .AsNoTracking()
+                .Where(b =>
+                    b.InboundOrder.Warehouse != null &&
+                    b.InboundOrder.Warehouse.CompanyId == companyId &&
+                    b.InboundOrder.Status == "Completed" &&
+                    b.InboundDate >= from &&
+                    b.InboundDate <= to)
+                .Where(b => !warehouseId.HasValue || warehouseId.Value <= 0 || b.WarehouseId == warehouseId.Value)
+                .Select(b => new
                 {
-                    ProductId = i.ProductId ?? 0,
-                    ProductName = i.Product != null ? i.Product.Name : null,
-                    Sku = i.Product != null ? i.Product.Sku : null,
-                    Qty = i.ReceivedQuantity ?? 0,
-                    Day = o.CreatedAt!.Value.Date
-                }))
+                    b.ProductId,
+                    ProductName = b.Product != null ? b.Product.Name : null,
+                    Sku = b.Product != null ? b.Product.Sku : null,
+                    Qty = b.ReceivedQuantity,
+                    Day = b.InboundDate.Date
+                })
                 .Where(x => x.ProductId > 0 && x.Qty > 0)
                 .ToListAsync()
                 .ConfigureAwait(false);
@@ -452,26 +557,54 @@ namespace Storix_BE.Repository.Implementation
                 .GroupBy(h => h.OutboundOrderId)
                 .Select(g => new { OutboundOrderId = g.Key, CompletedAt = g.Max(h => (DateTime?)h.ChangedAt) });
 
-            var txCompletedAt = txQuery
+            var outboundTxQuery = _context.InventoryTransactions
+                .AsNoTracking()
+                .Where(t => t.Warehouse != null && t.Warehouse.CompanyId == companyId && t.CreatedAt.HasValue);
+            if (warehouseId.HasValue && warehouseId.Value > 0)
+                outboundTxQuery = outboundTxQuery.Where(t => t.WarehouseId == warehouseId.Value);
+
+            var txCompletedAt = outboundTxQuery
                 .Where(t => t.TransactionType == "Outbound")
                 .GroupBy(t => t.ReferenceId)
                 .Select(g => new { ReferenceId = g.Key, CompletedAt = g.Max(t => (DateTime?)t.CreatedAt) });
 
-            var outboundCompletedInRange = await outboundBase
-                .GroupJoin(statusCompletedAt, o => o.Id, s => s.OutboundOrderId, (o, statuses) => new { Order = o, StatusCompleted = statuses.FirstOrDefault() })
-                .GroupJoin(txCompletedAt, x => x.Order.Id, t => t.ReferenceId, (x, txs) => new
+            var outboundOrders = await outboundBase
+                .Select(o => new { o.Id })
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            var outboundOrderIdsForScope = outboundOrders.Select(x => x.Id).ToList();
+
+            var statusCompletedMap = await statusCompletedAt
+                .Where(x => outboundOrderIdsForScope.Contains(x.OutboundOrderId))
+                .ToDictionaryAsync(x => x.OutboundOrderId, x => x.CompletedAt)
+                .ConfigureAwait(false);
+
+            var txCompletedMap = await txCompletedAt
+                .Where(x => x.ReferenceId.HasValue && outboundOrderIdsForScope.Contains(x.ReferenceId.Value))
+                .ToDictionaryAsync(x => x.ReferenceId!.Value, x => x.CompletedAt)
+                .ConfigureAwait(false);
+
+            var outboundCompletedInRange = outboundOrders
+                .Select(o =>
                 {
-                    x.Order,
-                    CompletedAt = x.StatusCompleted != null ? x.StatusCompleted.CompletedAt : txs.Select(z => z.CompletedAt).FirstOrDefault()
+                    statusCompletedMap.TryGetValue(o.Id, out var statusCompleted);
+                    txCompletedMap.TryGetValue(o.Id, out var txCompleted);
+                    var completedAt = statusCompleted ?? txCompleted;
+
+                    return new
+                    {
+                        o.Id,
+                        CompletedAt = completedAt
+                    };
                 })
                 .Where(x => x.CompletedAt.HasValue && x.CompletedAt.Value >= from && x.CompletedAt.Value <= to)
                 .Select(x => new
                 {
-                    x.Order.Id,
+                    x.Id,
                     Day = x.CompletedAt!.Value.Date
                 })
-                .ToListAsync()
-                .ConfigureAwait(false);
+                .ToList();
 
             var outboundOrderIds = outboundCompletedInRange.Select(x => x.Id).Distinct().ToList();
             var outboundDayByOrder = outboundCompletedInRange.ToDictionary(x => x.Id, x => x.Day);
@@ -515,21 +648,18 @@ namespace Storix_BE.Repository.Implementation
                 .ToList();
 
             var productIds = allProducts.Select(p => p.ProductId)
-                .Concat(openingByProduct.Keys)
+                .Concat(closingByProduct.Keys)
                 .Where(id => id > 0)
                 .Distinct()
                 .ToList();
 
-            var fifoUnitCostByProduct = await ResolveFifoUnitCostByProductAsync(companyId, warehouseId, productIds, to)
-                .ConfigureAwait(false);
-
             var byProduct = allProducts.Select(p =>
             {
-                openingByProduct.TryGetValue(p.ProductId, out var opening);
+                closingByProduct.TryGetValue(p.ProductId, out var closing);
                 var inQty = inboundRows.Where(x => x.ProductId == p.ProductId).Sum(x => x.Qty);
                 var outQty = outboundMaterialized.Where(x => x.ProductId == p.ProductId).Sum(x => x.Qty);
-                var closing = opening + inQty - outQty;
-                fifoUnitCostByProduct.TryGetValue(p.ProductId, out var unitCost);
+                var opening = closing - inQty + outQty;
+                unitCostByProduct.TryGetValue(p.ProductId, out var unitCost);
                 var closingValue = closing > 0 ? closing * unitCost : 0m;
                 return new InventoryInOutBalanceProductRow(p.ProductId, p.ProductName, p.Sku, opening, inQty, outQty, closing, unitCost, closingValue);
             })
@@ -546,7 +676,8 @@ namespace Storix_BE.Repository.Implementation
                 byProduct.Sum(x => x.ClosingQty),
                 byProduct.Sum(x => x.ClosingValue),
                 byDay,
-                byProduct);
+                byProduct,
+                BuildBatchBreakdown(closingSnapshot.Where(x => productIds.Contains(x.ProductId))));
         }
 
         public async Task<StocktakeVarianceReportData> GetStocktakeVarianceAsync(int companyId, int? warehouseId, int? inventoryCountTicketId, DateTime from, DateTime to)
@@ -558,52 +689,293 @@ namespace Storix_BE.Repository.Implementation
 
             var ticketIds = await ticketQuery.Select(t => t.Id).ToListAsync().ConfigureAwait(false);
             var itemRows = await _context.InventoryCountItems.AsNoTracking().Where(i => i.InventoryCountId.HasValue && ticketIds.Contains(i.InventoryCountId.Value))
-                .Select(i => new
-                {
-                    ProductId = i.ProductId ?? 0,
-                    ProductName = i.Product != null ? i.Product.Name : null,
-                    Sku = i.Product != null ? i.Product.Sku : null,
-                    SystemQty = i.SystemQuantity ?? 0,
-                    CountedQty = i.FinalQuantity ?? i.CountedQuantity ?? 0,
-                    Variance = i.Discrepancy ?? ((i.FinalQuantity ?? i.CountedQuantity ?? 0) - (i.SystemQuantity ?? 0))
-                }).Where(x => x.ProductId > 0).ToListAsync().ConfigureAwait(false);
+                .Select(i => new StocktakeItemContext(
+                    i.ProductId ?? 0,
+                    i.Product != null ? i.Product.Name : null,
+                    i.Product != null ? i.Product.Sku : null,
+                    i.LocationId,
+                    i.SystemQuantity ?? 0,
+                    i.FinalQuantity ?? i.CountedQuantity ?? 0,
+                    i.Discrepancy ?? ((i.FinalQuantity ?? i.CountedQuantity ?? 0) - (i.SystemQuantity ?? 0))))
+                .Where(x => x.ProductId > 0)
+                .ToListAsync()
+                .ConfigureAwait(false);
 
-            var fifoPrices = await ResolveFifoUnitCostByProductAsync(
+            var stocktakeCostContext = await ResolveStocktakeCostContextAsync(
                 companyId,
                 warehouseId,
                 itemRows.Select(x => x.ProductId).Distinct().ToList(),
+                itemRows.Where(x => x.LocationId.HasValue).Select(x => x.LocationId!.Value).Distinct().ToList(),
                 to).ConfigureAwait(false);
+
+            var locationShelfMap = await _context.InventoryLocations
+                .AsNoTracking()
+                .Where(l => itemRows.Where(x => x.LocationId.HasValue).Select(x => x.LocationId!.Value).Contains(l.Id) && l.ShelfId.HasValue)
+                .Select(l => new { l.Id, ShelfId = l.ShelfId!.Value })
+                .ToDictionaryAsync(x => x.Id, x => x.ShelfId)
+                .ConfigureAwait(false);
 
             var items = itemRows.Select(x =>
             {
-                fifoPrices.TryGetValue(x.ProductId, out var cost);
+                var cost = stocktakeCostContext.ResolveUnitCost(x.ProductId, x.LocationId);
                 return new StocktakeVarianceRow(x.ProductId, x.ProductName, x.Sku, x.SystemQty, x.CountedQty, x.Variance, cost, cost * x.Variance);
             }).ToList();
 
-            return new StocktakeVarianceReportData(from, to, warehouseId, inventoryCountTicketId, items.Count, items.Sum(x => x.VarianceQty), items.Sum(x => x.VarianceValue), items);
+            return new StocktakeVarianceReportData(
+                from,
+                to,
+                warehouseId,
+                inventoryCountTicketId,
+                items.Count,
+                items.Sum(x => x.VarianceQty),
+                items.Sum(x => x.VarianceValue),
+                items,
+                BuildStocktakeBatchBreakdown(itemRows, stocktakeCostContext.BatchEntries, locationShelfMap));
         }
-
-
-
-        private async Task<Dictionary<int, decimal>> ResolveUnitCostByProductAsync(List<int> productIds, DateTime upTo)
-        {
-            if (productIds.Count == 0) return new Dictionary<int, decimal>();
-
-            var priceRows = await _context.ProductPrices.AsNoTracking()
-                .Where(p => p.ProductId.HasValue && productIds.Contains(p.ProductId.Value) && p.Date.HasValue && p.Date.Value <= DateOnly.FromDateTime(upTo))
-                .GroupBy(p => p.ProductId!.Value)
-                .Select(g => g.OrderByDescending(x => x.Date).ThenByDescending(x => x.Id).FirstOrDefault())
-                .ToListAsync().ConfigureAwait(false);
-
-            return priceRows
-                .Where(x => x != null && x.ProductId.HasValue)
-                .ToDictionary(x => x!.ProductId!.Value, x => Convert.ToDecimal(x!.Price ?? 0d));
-        }
-
         private sealed class FifoLayer
         {
             public int RemainingQty { get; set; }
             public decimal UnitCost { get; set; }
+        }
+
+        private sealed record BatchSnapshotEntry(
+            int BatchId,
+            int ProductId,
+            string? ProductName,
+            string? Sku,
+            int RemainingQuantity,
+            decimal EffectiveUnitCost,
+            DateTime InboundDate,
+            int? BinId,
+            string? BinCode,
+            string? BinIdCode,
+            int? ShelfId,
+            string? ShelfCode,
+            int? ZoneId,
+            string? ZoneCode,
+            int LocationQuantity);
+
+        private sealed record StocktakeItemContext(
+            int ProductId,
+            string? ProductName,
+            string? Sku,
+            int? LocationId,
+            int SystemQty,
+            int CountedQty,
+            int Variance);
+
+        private sealed record StocktakeCostContext(
+            Dictionary<int, decimal> ProductUnitCosts,
+            Dictionary<(int ProductId, int LocationId), decimal> LocationUnitCosts,
+            IReadOnlyList<BatchSnapshotEntry> BatchEntries)
+        {
+            public decimal ResolveUnitCost(int productId, int? locationId)
+            {
+                if (locationId.HasValue && LocationUnitCosts.TryGetValue((productId, locationId.Value), out var locationCost))
+                    return locationCost;
+
+                return ProductUnitCosts.TryGetValue(productId, out var productCost) ? productCost : 0m;
+            }
+        }
+
+        private async Task<List<BatchSnapshotEntry>> GetRemainingBatchSnapshotAsync(
+            int companyId,
+            int? warehouseId,
+            DateTime upTo,
+            IReadOnlyCollection<int>? productIds = null)
+        {
+            var batchQuery = _context.InventoryBatches
+                .AsNoTracking()
+                .Where(b =>
+                    b.Warehouse != null &&
+                    b.Warehouse.CompanyId == companyId &&
+                    b.InboundDate <= upTo &&
+                    b.RemainingQuantity > 0);
+
+            if (warehouseId.HasValue && warehouseId.Value > 0)
+                batchQuery = batchQuery.Where(b => b.WarehouseId == warehouseId.Value);
+
+            if (productIds != null && productIds.Count > 0)
+                batchQuery = batchQuery.Where(b => productIds.Contains(b.ProductId));
+
+            var batches = await batchQuery
+                .Include(b => b.Product)
+                .Include(b => b.BatchLocations)
+                    .ThenInclude(bl => bl.Bin)
+                        .ThenInclude(bin => bin.Level)
+                            .ThenInclude(level => level!.Shelf)
+                                .ThenInclude(shelf => shelf!.Zone)
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            return batches
+                .SelectMany(
+                    b => b.BatchLocations.Where(bl => bl.Quantity > 0).DefaultIfEmpty(),
+                    (b, bl) => new BatchSnapshotEntry(
+                        b.Id,
+                        b.ProductId,
+                        b.Product?.Name,
+                        b.Product?.Sku,
+                        b.RemainingQuantity,
+                        b.EffectiveUnitCost,
+                        b.InboundDate,
+                        bl?.BinId,
+                        bl?.Bin?.Code,
+                        bl?.Bin?.IdCode,
+                        bl?.Bin?.Level?.ShelfId,
+                        bl?.Bin?.Level?.Shelf?.Code,
+                        bl?.Bin?.Level?.Shelf?.ZoneId,
+                        bl?.Bin?.Level?.Shelf?.Zone?.Code,
+                        bl?.Quantity ?? 0))
+                .ToList();
+        }
+
+        private static Dictionary<int, decimal> BuildWeightedUnitCostLookup(IEnumerable<BatchSnapshotEntry> entries)
+        {
+            return DistinctBatchEntries(entries)
+                .GroupBy(x => x.ProductId)
+                .ToDictionary(
+                    g => g.Key,
+                    g =>
+                    {
+                        var totalQty = g.Sum(x => x.RemainingQuantity);
+                        if (totalQty <= 0) return 0m;
+
+                        var totalValue = g.Sum(x => x.RemainingQuantity * x.EffectiveUnitCost);
+                        return totalValue / totalQty;
+                    });
+        }
+
+        private static IReadOnlyList<BatchSnapshotEntry> DistinctBatchEntries(IEnumerable<BatchSnapshotEntry> entries)
+        {
+            return entries
+                .GroupBy(x => x.BatchId)
+                .Select(g => g.First())
+                .ToList();
+        }
+
+        private static IReadOnlyList<InventoryBatchBreakdownRow> BuildBatchBreakdown(IEnumerable<BatchSnapshotEntry> entries)
+        {
+            return entries
+                .GroupBy(x => new { x.BatchId, x.ProductId, x.ProductName, x.Sku, x.RemainingQuantity, x.EffectiveUnitCost, x.InboundDate })
+                .Select(g => new InventoryBatchBreakdownRow(
+                    g.Key.BatchId,
+                    g.Key.ProductId,
+                    g.Key.ProductName,
+                    g.Key.Sku,
+                    g.Key.RemainingQuantity,
+                    g.Key.EffectiveUnitCost,
+                    g.Key.RemainingQuantity * g.Key.EffectiveUnitCost,
+                    g.Key.InboundDate,
+                    g.Where(x => x.BinId.HasValue)
+                        .Select(x => new InventoryBatchLocationBreakdownRow(
+                            x.BinId!.Value,
+                            x.BinCode,
+                            x.BinIdCode,
+                            x.ShelfId,
+                            x.ShelfCode,
+                            x.ZoneId,
+                            x.ZoneCode,
+                            x.LocationQuantity))
+                        .OrderByDescending(x => x.Quantity)
+                        .ThenBy(x => x.BinId)
+                        .ToList()))
+                .OrderBy(x => x.ProductId)
+                .ThenBy(x => x.InboundDate)
+                .ThenBy(x => x.BatchId)
+                .ToList();
+        }
+
+        private async Task<StocktakeCostContext> ResolveStocktakeCostContextAsync(
+            int companyId,
+            int? warehouseId,
+            List<int> productIds,
+            List<int> locationIds,
+            DateTime upTo)
+        {
+            var batchEntries = await GetRemainingBatchSnapshotAsync(companyId, warehouseId, upTo, productIds)
+                .ConfigureAwait(false);
+
+            var productUnitCosts = BuildWeightedUnitCostLookup(batchEntries);
+            var locationUnitCosts = new Dictionary<(int ProductId, int LocationId), decimal>();
+
+            if (locationIds.Count > 0)
+            {
+                var locationShelfMap = await _context.InventoryLocations
+                    .AsNoTracking()
+                    .Where(l => locationIds.Contains(l.Id) && l.ShelfId.HasValue)
+                    .Select(l => new { LocationId = l.Id, ShelfId = l.ShelfId!.Value })
+                    .ToListAsync()
+                    .ConfigureAwait(false);
+
+                foreach (var location in locationShelfMap)
+                {
+                    var shelfEntries = batchEntries
+                        .Where(x => x.ShelfId == location.ShelfId)
+                        .GroupBy(x => x.ProductId);
+
+                    foreach (var group in shelfEntries)
+                    {
+                        var totalQty = group.Sum(x => x.LocationQuantity > 0 ? x.LocationQuantity : x.RemainingQuantity);
+                        if (totalQty <= 0) continue;
+
+                        var totalValue = group.Sum(x => (x.LocationQuantity > 0 ? x.LocationQuantity : x.RemainingQuantity) * x.EffectiveUnitCost);
+                        locationUnitCosts[(group.Key, location.LocationId)] = totalValue / totalQty;
+                    }
+                }
+            }
+
+            return new StocktakeCostContext(productUnitCosts, locationUnitCosts, batchEntries);
+        }
+
+        private static IReadOnlyList<StocktakeBatchBreakdownRow> BuildStocktakeBatchBreakdown(
+            IReadOnlyList<StocktakeItemContext> itemRows,
+            IReadOnlyList<BatchSnapshotEntry> batchEntries,
+            IReadOnlyDictionary<int, int> locationShelfMap)
+        {
+            var rows = itemRows.ToList();
+            if (!rows.Any() || batchEntries.Count == 0)
+                return Array.Empty<StocktakeBatchBreakdownRow>();
+
+            var breakdown = new List<StocktakeBatchBreakdownRow>();
+
+            foreach (var item in rows)
+            {
+                IEnumerable<BatchSnapshotEntry> relevantEntries = batchEntries.Where(x => x.ProductId == item.ProductId);
+
+                if (item.LocationId != null && locationShelfMap.TryGetValue(item.LocationId.Value, out var shelfId))
+                {
+                    var locationEntries = relevantEntries.Where(x => x.ShelfId == shelfId);
+                    if (locationEntries.Any())
+                        relevantEntries = locationEntries;
+                }
+
+                foreach (var entry in relevantEntries
+                    .OrderBy(x => x.InboundDate)
+                    .ThenBy(x => x.BatchId))
+                {
+                    var denominator = relevantEntries.Sum(x => x.LocationQuantity > 0 ? x.LocationQuantity : x.RemainingQuantity);
+                    var effectiveQty = entry.LocationQuantity > 0 ? entry.LocationQuantity : entry.RemainingQuantity;
+                    var varianceShare = denominator > 0
+                        ? (int)Math.Round(item.Variance * (effectiveQty / (double)denominator), MidpointRounding.AwayFromZero)
+                        : item.Variance;
+
+                    breakdown.Add(new StocktakeBatchBreakdownRow(
+                        item.ProductId,
+                        item.LocationId,
+                        entry.BatchId,
+                        entry.InboundDate,
+                        entry.EffectiveUnitCost,
+                        effectiveQty,
+                        varianceShare,
+                        varianceShare * entry.EffectiveUnitCost,
+                        entry.BinCode,
+                        entry.ShelfCode,
+                        entry.ZoneCode));
+                }
+            }
+
+            return breakdown;
         }
 
         private async Task<Dictionary<int, decimal>> ResolveFifoUnitCostByProductAsync(
@@ -614,130 +986,10 @@ namespace Storix_BE.Repository.Implementation
         {
             if (productIds.Count == 0) return new Dictionary<int, decimal>();
 
-            var inboundOrders = _context.InboundOrders.AsNoTracking()
-                .Where(o => o.Warehouse != null && o.Warehouse.CompanyId == companyId && o.Status == "Completed" && o.CreatedAt.HasValue && o.CreatedAt.Value <= upTo);
-            if (warehouseId.HasValue && warehouseId.Value > 0) inboundOrders = inboundOrders.Where(o => o.WarehouseId == warehouseId.Value);
-
-            var inboundLots = await inboundOrders
-                .SelectMany(o => o.InboundOrderItems.Select(i => new
-                {
-                    ProductId = i.ProductId ?? 0,
-                    Qty = i.ReceivedQuantity ?? 0,
-                    UnitCost = Convert.ToDecimal(i.Price ?? 0d),
-                    Time = o.CreatedAt!.Value,
-                    OrderItemId = i.Id
-                }))
-                .Where(x => x.ProductId > 0 && productIds.Contains(x.ProductId) && x.Qty > 0)
-                .OrderBy(x => x.Time)
-                .ThenBy(x => x.OrderItemId)
-                .ToListAsync()
+            var snapshot = await GetRemainingBatchSnapshotAsync(companyId, warehouseId, upTo, productIds)
                 .ConfigureAwait(false);
 
-            var statusCompletedAt = _context.OutboundOrderStatusHistories
-                .Where(h => h.NewStatus == "Completed")
-                .GroupBy(h => h.OutboundOrderId)
-                .Select(g => new { OutboundOrderId = g.Key, CompletedAt = g.Max(h => (DateTime?)h.ChangedAt) });
-
-            var outboundOrders = _context.OutboundOrders.AsNoTracking()
-                .Where(o => o.Warehouse != null && o.Warehouse.CompanyId == companyId);
-            if (warehouseId.HasValue && warehouseId.Value > 0) outboundOrders = outboundOrders.Where(o => o.WarehouseId == warehouseId.Value);
-
-            var outboundCompleted = await outboundOrders
-                .GroupJoin(statusCompletedAt, o => o.Id, s => s.OutboundOrderId, (o, statuses) => new
-                {
-                    o.Id,
-                    CompletedAt = statuses.Select(x => x.CompletedAt).FirstOrDefault()
-                })
-                .Where(x => x.CompletedAt.HasValue && x.CompletedAt.Value <= upTo)
-                .Select(x => new { x.Id, CompletedAt = x.CompletedAt!.Value })
-                .ToListAsync()
-                .ConfigureAwait(false);
-
-            var outboundIds = outboundCompleted.Select(x => x.Id).ToList();
-            var outboundTimeMap = outboundCompleted.ToDictionary(x => x.Id, x => x.CompletedAt);
-
-            var outboundItems = await _context.OutboundOrderItems.AsNoTracking()
-                .Where(i => i.OutboundOrderId.HasValue && outboundIds.Contains(i.OutboundOrderId.Value) && i.ProductId.HasValue)
-                .Select(i => new
-                {
-                    ProductId = i.ProductId!.Value,
-                    Qty = i.ReceivedQuantity ?? i.ExpectedQuantity ?? i.Quantity ?? 0,
-                    OutboundOrderId = i.OutboundOrderId!.Value,
-                    OrderItemId = i.Id
-                })
-                .Where(x => x.Qty > 0 && productIds.Contains(x.ProductId))
-                .ToListAsync()
-                .ConfigureAwait(false);
-
-            var outboundEvents = outboundItems
-                .Where(x => outboundTimeMap.ContainsKey(x.OutboundOrderId))
-                .Select(x => new
-                {
-                    x.ProductId,
-                    x.Qty,
-                    Time = outboundTimeMap[x.OutboundOrderId],
-                    x.OrderItemId
-                })
-                .OrderBy(x => x.Time)
-                .ThenBy(x => x.OrderItemId)
-                .ToList();
-
-            var events = inboundLots
-                .Select(x => new { x.ProductId, Qty = x.Qty, x.UnitCost, x.Time, IsInbound = true, x.OrderItemId })
-                .Concat(outboundEvents.Select(x => new { x.ProductId, Qty = x.Qty, UnitCost = 0m, x.Time, IsInbound = false, x.OrderItemId }))
-                .OrderBy(x => x.Time)
-                .ThenBy(x => x.OrderItemId)
-                .ToList();
-
-            var layersByProduct = new Dictionary<int, Queue<FifoLayer>>();
-            foreach (var pid in productIds) layersByProduct[pid] = new Queue<FifoLayer>();
-
-            foreach (var e in events)
-            {
-                if (!layersByProduct.TryGetValue(e.ProductId, out var queue))
-                {
-                    queue = new Queue<FifoLayer>();
-                    layersByProduct[e.ProductId] = queue;
-                }
-
-                if (e.IsInbound)
-                {
-                    queue.Enqueue(new FifoLayer { RemainingQty = e.Qty, UnitCost = e.UnitCost });
-                    continue;
-                }
-
-                var remainingOut = e.Qty;
-                while (remainingOut > 0 && queue.Count > 0)
-                {
-                    var layer = queue.Peek();
-                    var consume = Math.Min(remainingOut, layer.RemainingQty);
-                    layer.RemainingQty -= consume;
-                    remainingOut -= consume;
-                    if (layer.RemainingQty <= 0) queue.Dequeue();
-                }
-            }
-
-            var result = new Dictionary<int, decimal>();
-            foreach (var pid in productIds)
-            {
-                if (!layersByProduct.TryGetValue(pid, out var queue) || queue.Count == 0)
-                {
-                    result[pid] = 0m;
-                    continue;
-                }
-
-                var totalQty = queue.Sum(x => x.RemainingQty);
-                if (totalQty <= 0)
-                {
-                    result[pid] = 0m;
-                    continue;
-                }
-
-                var totalValue = queue.Sum(x => x.RemainingQty * x.UnitCost);
-                result[pid] = totalValue / totalQty;
-            }
-
-            return result;
+            return BuildWeightedUnitCostLookup(snapshot);
         }
     }
 }
