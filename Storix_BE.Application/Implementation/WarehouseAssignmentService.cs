@@ -33,7 +33,25 @@ namespace Storix_BE.Service.Implementation
             if (callerRoleId != 2)
                 throw new UnauthorizedAccessException("Only Company Administrator can assign warehouses.");
         }
+        public async Task<List<int>> GetZoneIdsByWarehouseAsync(int companyId, int warehouseId)
+        {
+            if (companyId <= 0) throw new InvalidOperationException("Invalid company id.");
+            if (warehouseId <= 0) throw new InvalidOperationException("Invalid warehouse id.");
 
+            var warehouse = await _assignmentRepository.GetWarehouseByIdAsync(warehouseId);
+            if (warehouse == null)
+                throw new BusinessRuleException("BR-WH-01", "Warehouse not found.");
+            if (warehouse.CompanyId != companyId)
+                throw new BusinessRuleException("BR-WH-08", "Cross-company access is not allowed.");
+
+            return await _assignment_repository_GetZoneIds(warehouseId);
+
+            // Local helper to call repository (keeps callsite readable and testable)
+            async Task<List<int>> _assignment_repository_GetZoneIds(int id)
+            {
+                return await _assignmentRepository.GetZoneIdsByWarehouseIdAsync(id);
+            }
+        }
         private static bool IsInactiveStatus(string? status)
         {
             if (string.IsNullOrWhiteSpace(status)) return false;

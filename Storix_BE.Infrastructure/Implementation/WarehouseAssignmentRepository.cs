@@ -19,7 +19,15 @@ namespace Storix_BE.Repository.Implementation
         {
             _context = context;
         }
-
+        public async Task<List<int>> GetZoneIdsByWarehouseIdAsync(int warehouseId)
+        {
+            if (warehouseId <= 0) return new List<int>();
+            return await _context.StorageZones
+                .AsNoTracking()
+                .Where(z => z.WarehouseId == warehouseId)
+                .Select(z => z.Id)
+                .ToListAsync();
+        }
         public async Task<Warehouse?> GetWarehouseByIdAsync(int warehouseId)
         {
             return await _context.Warehouses.FindAsync(warehouseId);
