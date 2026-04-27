@@ -23,9 +23,6 @@ namespace Storix_BE.Service.Interfaces
 
     public static class ReportTypes
     {
-        public const string OutboundKpiBasic = "OutboundKpiBasic";
-        public const string InventoryTracking = "InventoryTracking";
-        public const string InboundKpiBasic = "InboundKpiBasic";
         public const string InventorySnapshot = "InventorySnapshot";
         public const string InventoryLedger = "InventoryLedger";
         public const string InventoryInOutBalance = "InventoryInOutBalance";
@@ -41,9 +38,6 @@ namespace Storix_BE.Service.Interfaces
 
     public static class ReportSchemaVersions
     {
-        public const string OutboundKpiBasic = "1";
-        public const string InventoryTracking = "1";
-        public const string InboundKpiBasic = "1";
         public const string InventorySnapshot = "1";
         public const string InventoryLedger = "1";
         public const string InventoryInOutBalance = "1";

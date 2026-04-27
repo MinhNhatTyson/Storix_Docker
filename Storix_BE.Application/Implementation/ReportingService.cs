@@ -22,9 +22,6 @@ namespace Storix_BE.Service.Implementation
     {
         private static readonly HashSet<string> SupportedReportTypes = new(StringComparer.Ordinal)
         {
-            ReportTypes.OutboundKpiBasic,
-            ReportTypes.InventoryTracking,
-            ReportTypes.InboundKpiBasic,
             ReportTypes.InventorySnapshot,
             ReportTypes.InventoryLedger,
             ReportTypes.InventoryInOutBalance,
@@ -113,48 +110,7 @@ namespace Storix_BE.Service.Implementation
                     WriteIndented = false
                 };
 
-                if (string.Equals(normalizedReportType, ReportTypes.OutboundKpiBasic, StringComparison.Ordinal))
-                {
-                    var kpi = await _repo.GetOutboundKpiBasicAsync(companyId, payload.WarehouseId, payload.TimeFrom, payload.TimeTo)
-                        .ConfigureAwait(false);
-
-                    report.SummaryJson = JsonSerializer.Serialize(new
-                    {
-                        totalCompleted = kpi.TotalCompleted,
-                        overallAvgLeadTimeHours = kpi.OverallAvgLeadTimeHours
-                    }, jsonOptions);
-                    report.DataJson = JsonSerializer.Serialize(kpi, jsonOptions);
-                    report.SchemaVersion = ReportSchemaVersions.OutboundKpiBasic;
-                }
-                else if (string.Equals(normalizedReportType, ReportTypes.InventoryTracking, StringComparison.Ordinal))
-                {
-                    var inv = await _repo.GetInventoryTrackingAsync(companyId, payload.WarehouseId, payload.TimeFrom, payload.TimeTo)
-                        .ConfigureAwait(false);
-
-                    report.SummaryJson = JsonSerializer.Serialize(new
-                    {
-                        totalInboundTransactions = inv.TotalInboundTransactions,
-                        totalOutboundTransactions = inv.TotalOutboundTransactions,
-                        totalInboundQty = inv.TotalInboundQty,
-                        totalOutboundQty = inv.TotalOutboundQty
-                    }, jsonOptions);
-                    report.DataJson = JsonSerializer.Serialize(inv, jsonOptions);
-                    report.SchemaVersion = ReportSchemaVersions.InventoryTracking;
-                }
-                else if (string.Equals(normalizedReportType, ReportTypes.InboundKpiBasic, StringComparison.Ordinal))
-                {
-                    var inbound = await _repo.GetInboundKpiBasicAsync(companyId, payload.WarehouseId, payload.TimeFrom, payload.TimeTo)
-                        .ConfigureAwait(false);
-
-                    report.SummaryJson = JsonSerializer.Serialize(new
-                    {
-                        totalCompleted = inbound.TotalCompleted,
-                        totalReceivedQty = inbound.TotalReceivedQty
-                    }, jsonOptions);
-                    report.DataJson = JsonSerializer.Serialize(inbound, jsonOptions);
-                    report.SchemaVersion = ReportSchemaVersions.InboundKpiBasic;
-                }
-                else if (string.Equals(normalizedReportType, ReportTypes.InventorySnapshot, StringComparison.Ordinal))
+                if (string.Equals(normalizedReportType, ReportTypes.InventorySnapshot, StringComparison.Ordinal))
                 {
                     var snapshot = await _repo.GetInventorySnapshotAsync(companyId, payload.WarehouseId, payload.TimeFrom, payload.TimeTo)
                         .ConfigureAwait(false);
@@ -324,25 +280,7 @@ namespace Storix_BE.Service.Implementation
             var jsonOptions = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
 
             byte[] pdfBytes;
-            if (string.Equals(report.ReportType, ReportTypes.OutboundKpiBasic, StringComparison.Ordinal))
-            {
-                var data = JsonSerializer.Deserialize<OutboundKpiBasicReportData>(report.DataJson, jsonOptions)
-                    ?? throw new InvalidOperationException("Failed to deserialize report data.");
-                pdfBytes = GenerateOutboundKpiBasicPdf(report, data);
-            }
-            else if (string.Equals(report.ReportType, ReportTypes.InventoryTracking, StringComparison.Ordinal))
-            {
-                var data = JsonSerializer.Deserialize<InventoryTrackingReportData>(report.DataJson, jsonOptions)
-                    ?? throw new InvalidOperationException("Failed to deserialize report data.");
-                pdfBytes = GenerateInventoryTrackingPdf(report, data);
-            }
-            else if (string.Equals(report.ReportType, ReportTypes.InboundKpiBasic, StringComparison.Ordinal))
-            {
-                var data = JsonSerializer.Deserialize<InboundKpiBasicReportData>(report.DataJson, jsonOptions)
-                    ?? throw new InvalidOperationException("Failed to deserialize report data.");
-                pdfBytes = GenerateInboundKpiBasicPdf(report, data);
-            }
-            else if (string.Equals(report.ReportType, ReportTypes.InventorySnapshot, StringComparison.Ordinal))
+            if (string.Equals(report.ReportType, ReportTypes.InventorySnapshot, StringComparison.Ordinal))
             {
                 var data = JsonSerializer.Deserialize<InventorySnapshotReportData>(report.DataJson, jsonOptions)
                     ?? throw new InvalidOperationException("Failed to deserialize report data.");
