@@ -200,7 +200,6 @@ namespace Storix_BE.Service.Implementation
 
             throw new InvalidOperationException("Unable to generate a unique inbound request code.");
         }
-
         public async Task<InboundRequest> UpdateInboundRequestStatusAsync(int ticketRequestId, int approverId, string status)
         {
             if (ticketRequestId <= 0) throw new ArgumentException("Invalid ticket id.", nameof(ticketRequestId));
@@ -598,6 +597,48 @@ namespace Storix_BE.Service.Implementation
             }).ToList();
 
             return result;
+        }
+        public async Task<InboundOrder> AssignStaffToInboundOrderAsync(int companyId, int inboundOrderId, int managerUserId, int staffUserId)
+        {
+            if (companyId <= 0) throw new ArgumentException("Invalid company id.", nameof(companyId));
+            if (inboundOrderId <= 0) throw new ArgumentException("Invalid inboundOrderId.", nameof(inboundOrderId));
+            if (managerUserId <= 0) throw new ArgumentException("Invalid managerUserId.", nameof(managerUserId));
+            if (staffUserId <= 0) throw new ArgumentException("Invalid staffUserId.", nameof(staffUserId));
+
+            var updated = await _repo.AssignStaffToInboundOrderAsync(companyId, inboundOrderId, managerUserId, staffUserId)
+                .ConfigureAwait(false);
+
+            var now = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
+            await _activityLogRepo.AddAsync(new ActivityLog
+            {
+                UserId = managerUserId,
+                Action = "Assign staff to inbound order",
+                Entity = "InboundOrder",
+                EntityId = updated.Id,
+                Timestamp = now
+            }).ConfigureAwait(false);
+
+            try
+            {
+                var title = "Assigned to inbound ticket";
+                var message = $"You were assigned to inbound ticket #{updated.Id}.";
+                await _notificationService.SendNotificationToUserAsync(
+                    staffUserId,
+                    title,
+                    message,
+                    type: "InboundOrder",
+                    category: "Inbound",
+                    referenceType: "InboundOrder",
+                    referenceId: updated.Id,
+                    createdByUserId: managerUserId
+                ).ConfigureAwait(false);
+            }
+            catch
+            {
+                // best-effort notify; swallow exceptions
+            }
+
+            return updated;
         }
     }
 }

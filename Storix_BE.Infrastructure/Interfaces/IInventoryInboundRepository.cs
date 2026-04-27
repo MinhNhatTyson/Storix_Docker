@@ -3,6 +3,7 @@ using Storix_BE.Repository.DTO;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Sockets;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -36,5 +37,6 @@ namespace Storix_BE.Repository.Interfaces
 
         Task AddStorageRecommendationsAsync(IEnumerable<StorageRecommendationCreateDto> requests);
         Task<List<InboundOrderItem>> GetInboundOrderItemsWithRecommendationsAsync(int inboundOrderId);
+        Task<InboundOrder> AssignStaffToInboundOrderAsync(int companyId, int inboundOrderId, int managerUserId, int staffUserId);
     }
 }

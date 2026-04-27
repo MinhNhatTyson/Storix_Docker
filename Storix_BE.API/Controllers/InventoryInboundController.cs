@@ -39,7 +39,7 @@ namespace Storix_BE.API.Controllers
         }
 
         [HttpPut("update-inbound-request/{id}/status")]
-        [Authorize(Roles = "2,3")]
+        [Authorize(Roles = "3")]
         public async Task<IActionResult> UpdateStatus(int id, [FromBody] UpdateInboundRequestStatusRequest request)
         {
             try
@@ -430,6 +430,36 @@ namespace Storix_BE.API.Controllers
                 return StatusCode(500, new { message = ex.Message });
             }
         }
+        [HttpPost("tickets/{ticketId:int}/assign-staff")]
+        [Authorize(Roles = "3")]
+        public async Task<IActionResult> AssignStaffToTicket(int ticketId, [FromBody] AssignStaffRequest request)
+        {
+            if (ticketId <= 0) return BadRequest(new { message = "Invalid ticket id." });
+            if (request == null) return BadRequest(new { message = "Request body is required." });
+            if (request.CompanyId <= 0) return BadRequest(new { message = "CompanyId is required." });
+            if (request.ManagerId <= 0) return BadRequest(new { message = "ManagerId is required." });
+            if (request.StaffId <= 0) return BadRequest(new { message = "StaffId is required." });
+
+            try
+            {
+                var updated = await _service.AssignStaffToInboundOrderAsync(request.CompanyId, ticketId, request.ManagerId, request.StaffId);
+                return Ok(updated);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = ex.Message });
+            }
+        }
+
     }
+    public sealed record AssignStaffRequest(int CompanyId, int ManagerId, int StaffId);
     public sealed record CreateTicketFromRequestRequest(int CreatedBy, int StaffId);
 }
