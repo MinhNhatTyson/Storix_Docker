@@ -493,5 +493,52 @@ namespace Storix_BE.Repository.Implementation
                 throw;
             }
         }
+        public async Task<bool> DisableWarehouseAsync(int warehouseId)
+        {
+            var warehouse = await _context.Warehouses
+                .FirstOrDefaultAsync(w => w.Id == warehouseId)
+                .ConfigureAwait(false);
+
+            if (warehouse == null)
+            {
+                return false;
+            }
+
+            // Find active inbound orders for this warehouse
+            var activeInboundIds = await _context.InboundOrders
+                .Where(o => o.WarehouseId == warehouseId
+                            && (o.Status == null || !InactiveStatuses.Contains(o.Status.ToLower())))
+                .Select(o => o.Id)
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            // Find active outbound orders for this warehouse
+            var activeOutboundIds = await _context.OutboundOrders
+                .Where(o => o.WarehouseId == warehouseId
+                            && (o.Status == null || !InactiveStatuses.Contains(o.Status.ToLower())))
+                .Select(o => o.Id)
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            if (activeInboundIds.Any() || activeOutboundIds.Any())
+            {
+                var messages = new List<string>();
+                if (activeInboundIds.Any())
+                    messages.Add($"Active inbound orders: {string.Join(", ", activeInboundIds)}");
+                if (activeOutboundIds.Any())
+                    messages.Add($"Active outbound orders: {string.Join(", ", activeOutboundIds)}");
+
+                // Throw so service/controller can present message to caller
+                throw new InvalidOperationException($"Cannot disable warehouse. {string.Join("; ", messages)}");
+            }
+
+            // Mark warehouse as inactive/disabled (use "Inactive" status to be consistent with other code)
+            warehouse.Status = "Inactive";
+            warehouse.UpdatedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
+
+            _context.Warehouses.Update(warehouse);
+            await _context.SaveChangesAsync().ConfigureAwait(false);
+            return true;
+        }
     }
 }

@@ -734,5 +734,37 @@ namespace Storix_BE.API.Controllers
                 return BadRequest(new { message = ex.Message });
             }
         }
+        [HttpPut]
+        [Authorize(Roles = "2")]
+        [Route("~/api/disable-company-warehouses/{warehouseId:int}")]
+        public async Task<IActionResult> DisableWarehouse(int warehouseId)
+        {
+            if (warehouseId <= 0)
+                return BadRequest(new { message = "WarehouseId is required." });
+
+            try
+            {
+                var disabled = await _assignmentService.DisableWarehouseAsync(warehouseId);
+                if (!disabled)
+                    return NotFound();
+                return NoContent();
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Forbid();
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (BusinessRuleException ex)
+            {
+                return BadRequest(new { code = ex.Code, message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
     }
 }

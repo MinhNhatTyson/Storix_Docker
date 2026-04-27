@@ -26,5 +26,6 @@ namespace Storix_BE.Repository.Interfaces
         Task<Warehouse?> GetWarehouseWithStructureAsync(int warehouseId);
         Task<bool> DeleteWarehouseAsync(int warehouseId);
         Task<List<ZoneResponse>> GetZoneIdsByWarehouseIdAsync(int warehouseId);
+        Task<bool> DisableWarehouseAsync(int warehouseId);
     }
 }

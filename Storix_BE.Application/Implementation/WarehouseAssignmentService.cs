@@ -553,5 +553,14 @@ namespace Storix_BE.Service.Implementation
 
             return true;
         }
+        public async Task<bool> DisableWarehouseAsync(int warehouseId)
+        {
+            var warehouse = await _assignmentRepository.GetWarehouseByIdAsync(warehouseId).ConfigureAwait(false);
+            if (warehouse == null)
+                throw new InvalidOperationException("Warehouse not found.");
+
+            var result = await _assignmentRepository.DisableWarehouseAsync(warehouseId).ConfigureAwait(false);
+            return result;
+        }
     }
 }
