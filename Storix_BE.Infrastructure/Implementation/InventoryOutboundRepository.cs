@@ -2682,7 +2682,14 @@ namespace Storix_BE.Repository.Implementation
 
             var grouped = rows
                 .GroupBy(x => new { x.ProductId, x.ProductName })
-                .ToDictionary(g => g.Key.ProductId, g => new { g.Key.ProductName, Days = g.ToDictionary(x => x.Day, x => x.Qty) });
+                .ToDictionary(
+                    g => g.Key.ProductId,
+                    g => new
+                    {
+                        g.Key.ProductName,
+                        Days = g.GroupBy(x => x.Day)
+                            .ToDictionary(dayGroup => dayGroup.Key, dayGroup => dayGroup.Sum(x => x.Qty))
+                    });
 
             return productIdList.Select(productId =>
             {
