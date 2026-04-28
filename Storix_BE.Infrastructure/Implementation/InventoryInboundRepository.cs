@@ -163,23 +163,14 @@ namespace Storix_BE.Repository.Implementation
                 ReferenceCode = $"INB-{DateTime.UtcNow:yyyyMMddHHmmss}-{Random.Shared.Next(1000, 9999)}"
             };
 
-            // Copy items: ExpectedQuantity from request items. Do not link InboundOrderId yet.
             foreach (var reqItem in inboundRequest.InboundOrderItems)
             {
-                var orderItem = new InboundOrderItem
-                {
-                    InboundRequestId = inboundRequest.Id,
-                    Price = reqItem.Price,
-                    Discount = reqItem.Discount,
-                    ProductId = reqItem.ProductId,
-                    ExpectedQuantity = reqItem.ExpectedQuantity,
-                    ReceivedQuantity = reqItem.ReceivedQuantity // usually null/0 initially
-                };
-                inboundOrder.InboundOrderItems.Add(orderItem);
+                reqItem.InboundOrder = inboundOrder;
+                inboundOrder.InboundOrderItems.Add(reqItem);
             }
 
             var batchByProduct = new Dictionary<int, InventoryBatch>();
-            // Create skeleton InventoryBatch per product, linked to its InboundOrderItem
+            // Create skeleton InventoryBatch per product, linked to its InboundOrderItem (reuse reqItem instances)
             foreach (var reqItem in inboundRequest.InboundOrderItems)
             {
                 if (!reqItem.ProductId.HasValue) continue;
