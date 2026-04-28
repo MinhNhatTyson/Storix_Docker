@@ -376,7 +376,7 @@ namespace Storix_BE.Service.Implementation
             return new UserDto(u.Id, u.FullName, u.Email, u.Phone);
         }
 
-        private static InboundOrderItemDto MapInboundOrderItem(InboundOrderItem item)
+        private static InboundOrderItemDto MapInboundOrderItem(InboundOrderItem item, IEnumerable<InboundOrderItemPlacementDto>? placements = null)
         {
             if (item == null) return null!;
             var p = item.Product;
@@ -389,12 +389,15 @@ namespace Storix_BE.Service.Implementation
                 item.Discount,
                 item.ExpectedQuantity,
                 p?.Description,
-                p?.Image);
+                p?.Image,
+                placements ?? Enumerable.Empty<InboundOrderItemPlacementDto>());
         }
 
         private static InboundRequestDto MapInboundRequestToDto(InboundRequest r)
         {
-            var items = (r.InboundOrderItems ?? Enumerable.Empty<InboundOrderItem>()).Select(MapInboundOrderItem).ToList();
+            var items = (r.InboundOrderItems ?? Enumerable.Empty<InboundOrderItem>())
+                .Select(i => MapInboundOrderItem(i))
+                .ToList();
             return new InboundRequestDto(
                 r.Id,
                 r.WarehouseId,
@@ -419,7 +422,56 @@ namespace Storix_BE.Service.Implementation
 
         private static InboundOrderDto MapInboundOrderToDto(InboundOrder o)
         {
-            var items = (o.InboundOrderItems ?? Enumerable.Empty<InboundOrderItem>()).Select(MapInboundOrderItem).ToList();
+            // Build placements map if FIFO batches present
+            var placementsByItem = new Dictionary<int, List<InboundOrderItemPlacementDto>>();
+
+            if (o.InventoryBatches != null && o.InventoryBatches.Any())
+            {
+                foreach (var batch in o.InventoryBatches)
+                {
+                    // Batch should reference InboundOrderItemId
+                    var inboundItemId = batch.InboundOrderItemId;
+                    if (inboundItemId <= 0) continue;
+
+                    foreach (var bl in (batch.BatchLocations ?? Enumerable.Empty<InventoryBatchLocation>()))
+                    {
+                        var bin = bl.Bin;
+                        var shelf = bin?.Level?.Shelf;
+                        var zone = shelf?.Zone;
+
+                        var placement = new InboundOrderItemPlacementDto(
+                            BatchId: batch.Id,
+                            BinId: bl.BinId,
+                            BinCode: bin?.Code,
+                            BinIdCode: bin?.IdCode,
+                            ShelfId: shelf?.Id,
+                            ShelfCode: shelf?.Code,
+                            ZoneId: zone?.Id,
+                            ZoneCode: zone?.Code,
+                            Quantity: bl.Quantity,
+                            InboundDate: batch.InboundDate,
+                            BatchUnitCost: batch.EffectiveUnitCost);
+
+                        if (!placementsByItem.TryGetValue(inboundItemId, out var list))
+                        {
+                            list = new List<InboundOrderItemPlacementDto>();
+                            placementsByItem[inboundItemId] = list;
+                        }
+
+                        list.Add(placement);
+                    }
+                }
+            }
+
+            // Attach placements per item when mapping items
+            var items = (o.InboundOrderItems ?? Enumerable.Empty<InboundOrderItem>())
+                .Select(item =>
+                {
+                    placementsByItem.TryGetValue(item.Id, out var pls);
+                    return MapInboundOrderItem(item, pls);
+                })
+                .ToList();
+
             var inboundRequest = o.InboundRequest;
 
             return new InboundOrderDto(

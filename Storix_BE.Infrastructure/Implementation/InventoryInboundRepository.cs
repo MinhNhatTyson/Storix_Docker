@@ -663,6 +663,22 @@ namespace Storix_BE.Repository.Implementation
             if (order == null)
                 throw new InvalidOperationException($"InboundOrder with id {id} not found.");
 
+            if (string.Equals(order.Status, "Completed", StringComparison.OrdinalIgnoreCase))
+            {
+                await _context.Entry(order)
+                    .Collection(o => o.InventoryBatches)
+                    .Query()
+                        .Include(b => b.InboundOrderItem)
+                        .Include(b => b.Product)
+                        .Include(b => b.BatchLocations)
+                            .ThenInclude(bl => bl.Bin)
+                                .ThenInclude(bin => bin.Level)
+                                    .ThenInclude(level => level!.Shelf)
+                                        .ThenInclude(shelf => shelf!.Zone)
+                    .ToListAsync()
+                    .ConfigureAwait(false);
+            }
+
             return order;
         }
         public async Task<bool> InboundRequestCodeExistsAsync(string code)
