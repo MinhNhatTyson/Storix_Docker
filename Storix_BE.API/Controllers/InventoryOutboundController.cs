@@ -635,6 +635,40 @@ namespace Storix_BE.API.Controllers
             }
         }
 
+        [HttpPost("outbound-history")]
+        [Authorize(Roles = "2,3,4")]
+        public async Task<IActionResult> GetOutboundHistory([FromBody] OutboundHistoryRequest request)
+        {
+            if (request == null) return BadRequest(new { message = "Request body is required." });
+            if (request.ProductIds == null || !request.ProductIds.Any()) return BadRequest(new { message = "productIds is required." });
+            if (request.DateFrom == default) return BadRequest(new { message = "dateFrom is required." });
+            if (request.DateTo == default) return BadRequest(new { message = "dateTo is required." });
+
+            var companyId = GetCompanyIdFromClaims();
+            if (!companyId.HasValue)
+                return StatusCode(403, new { message = "CompanyId claim is missing." });
+
+            try
+            {
+                var result = await _service.GetOutboundHistoryAsync(companyId.Value, request.ProductIds, request.WarehouseId, request.DateFrom, request.DateTo).ConfigureAwait(false);
+                return Ok(result);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = ex.Message });
+            }
+        }
+
+        public sealed record OutboundHistoryRequest(IEnumerable<int> ProductIds, DateTime DateFrom, DateTime DateTo, int? WarehouseId);
+
         private IActionResult? EnsureRole(int requiredRole, string forbiddenMessage, string? superAdminMessage = null)
         {
             if (User?.Identity?.IsAuthenticated != true)

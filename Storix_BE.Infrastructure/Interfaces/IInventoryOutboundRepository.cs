@@ -144,6 +144,7 @@ namespace Storix_BE.Repository.Interfaces
         Task<List<OutboundOrder>> GetOutboundOrdersByWarehouseIdAsync(int warehouseId);
         Task<OutboundOrder> GetOutboundOrderByIdAsync(int companyId, int id);
         Task<List<OutboundOrder>> GetOutboundOrdersByStaffAsync(int companyId, int staffId);
+        Task<List<OutboundHistoryProductDto>> GetOutboundHistoryAsync(int companyId, IEnumerable<int> productIds, int? warehouseId, DateTime from, DateTime to);
         Task<OutboundRequestExportDto?> GetOutboundRequestForExportAsync(int outboundRequestId);
         Task<OutboundOrderExportDto?> GetOutboundOrderForExportAsync(int outboundOrderId);
 
@@ -156,6 +157,9 @@ namespace Storix_BE.Repository.Interfaces
     int warehouseId,
     int productId,
     int requiredQuantity);
+
+        public sealed record OutboundHistoryPointDto(DateOnly Date, int Quantity);
+        public sealed record OutboundHistoryProductDto(int ProductId, string? ProductName, IReadOnlyList<OutboundHistoryPointDto> OutboundInfo);
 
         public record FifoBinSuggestionDto(
             int BatchId,

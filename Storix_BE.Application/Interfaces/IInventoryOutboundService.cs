@@ -29,6 +29,7 @@ namespace Storix_BE.Service.Interfaces
         Task<List<OutboundOrderDto>> GetOutboundOrdersByWarehouseIdAsync(int warehouseId);
         Task<OutboundOrderDto> GetOutboundOrderByIdAsync(int companyId, int id);
         Task<List<OutboundOrderDto>> GetOutboundOrdersByStaffAsync(int companyId, int staffId);
+        Task<List<OutboundHistoryProductResponseDto>> GetOutboundHistoryAsync(int companyId, IEnumerable<int> productIds, int? warehouseId, DateTime from, DateTime to);
 
         Task<IReadOnlyList<OutboundOrderItemAvailableLocationsDto>> GetOutboundOrderItemAvailableLocationsAsync(int outboundOrderId);
         Task<IReadOnlyList<OutboundOrderItemSelectedLocationDto>> GetOutboundOrderItemSelectedLocationsAsync(int outboundOrderId);
@@ -290,4 +291,7 @@ namespace Storix_BE.Service.Interfaces
         OutboundWarehouseDto? Warehouse,
         OutboundUserDto? CreatedByUser,
         OutboundUserDto? StaffUser);
+
+    public sealed record OutboundHistoryPointResponseDto(DateOnly Date, int Quantity);
+    public sealed record OutboundHistoryProductResponseDto(int ProductId, string? ProductName, IReadOnlyList<OutboundHistoryPointResponseDto> OutboundInfo);
 }

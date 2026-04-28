@@ -62,11 +62,13 @@ namespace Storix_BE.Service.Implementation
             if (createdByUserId <= 0) throw new ArgumentException("Invalid createdByUserId.", nameof(createdByUserId));
             if (payload == null) throw new ArgumentNullException(nameof(payload));
             if (string.IsNullOrWhiteSpace(payload.ReportType)) throw new ArgumentException("ReportType is required.", nameof(payload.ReportType));
-            if (payload.TimeTo < payload.TimeFrom) throw new ArgumentException("TimeTo must be >= TimeFrom.");
+            var timeFrom = NormalizeToUnspecified(payload.TimeFrom);
+            var timeTo = NormalizeToUnspecified(payload.TimeTo);
+            if (timeTo < timeFrom) throw new ArgumentException("TimeTo must be >= TimeFrom.");
             await ValidateCreatePayloadScopeAsync(companyId, payload).ConfigureAwait(false);
             var normalizedReportType = NormalizeReportType(payload.ReportType);
 
-            var createdAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
+            var createdAt = NormalizeToUnspecified(DateTime.UtcNow);
 
             var paramsOptions = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, WriteIndented = false };
 
@@ -78,8 +80,8 @@ namespace Storix_BE.Service.Implementation
                 WarehouseId = payload.WarehouseId,
                 ProductId = payload.ProductId,
                 InventoryCountTicketId = payload.InventoryCountTicketId,
-                TimeFrom = payload.TimeFrom,
-                TimeTo = payload.TimeTo,
+                TimeFrom = timeFrom,
+                TimeTo = timeTo,
                 Status = ReportStatus.Running,
                 CreatedAt = createdAt,
                 ParametersJson = JsonSerializer.Serialize(new
@@ -133,7 +135,7 @@ namespace Storix_BE.Service.Implementation
 
                 if (string.Equals(normalizedReportType, ReportTypes.InventorySnapshot, StringComparison.Ordinal))
                 {
-                    var snapshot = await _repo.GetInventorySnapshotAsync(companyId, payload.WarehouseId, payload.TimeFrom, payload.TimeTo)
+                    var snapshot = await _repo.GetInventorySnapshotAsync(companyId, payload.WarehouseId, timeFrom, timeTo)
                         .ConfigureAwait(false);
 
                     report.SummaryJson = JsonSerializer.Serialize(new
@@ -147,7 +149,7 @@ namespace Storix_BE.Service.Implementation
                 }
                 else if (string.Equals(normalizedReportType, ReportTypes.InventoryLedger, StringComparison.Ordinal))
                 {
-                    var ledger = await _repo.GetInventoryLedgerAsync(companyId, payload.WarehouseId, payload.ProductId, payload.TimeFrom, payload.TimeTo)
+                    var ledger = await _repo.GetInventoryLedgerAsync(companyId, payload.WarehouseId, payload.ProductId, timeFrom, timeTo)
                         .ConfigureAwait(false);
 
                     report.SummaryJson = JsonSerializer.Serialize(new
@@ -161,7 +163,7 @@ namespace Storix_BE.Service.Implementation
                 }
                 else if (string.Equals(normalizedReportType, ReportTypes.InventoryInOutBalance, StringComparison.Ordinal))
                 {
-                    var inOut = await _repo.GetInventoryInOutBalanceAsync(companyId, payload.WarehouseId, payload.TimeFrom, payload.TimeTo)
+                    var inOut = await _repo.GetInventoryInOutBalanceAsync(companyId, payload.WarehouseId, timeFrom, timeTo)
                         .ConfigureAwait(false);
 
                     report.SummaryJson = JsonSerializer.Serialize(new
@@ -177,7 +179,7 @@ namespace Storix_BE.Service.Implementation
                 }
                 else if (string.Equals(normalizedReportType, ReportTypes.InventoryTracking, StringComparison.Ordinal))
                 {
-                    var stocktake = await _repo.GetStocktakeVarianceAsync(companyId, payload.WarehouseId, payload.InventoryCountTicketId, payload.TimeFrom, payload.TimeTo)
+                    var stocktake = await _repo.GetStocktakeVarianceAsync(companyId, payload.WarehouseId, payload.InventoryCountTicketId, timeFrom, timeTo)
                         .ConfigureAwait(false);
 
                     report.SummaryJson = JsonSerializer.Serialize(new
@@ -199,8 +201,8 @@ namespace Storix_BE.Service.Implementation
                     var recommendation = await _repo.GetReplenishmentRecommendationDataAsync(
                         companyId,
                         payload.WarehouseId,
-                        payload.TimeFrom,
-                        payload.TimeTo,
+                        timeFrom,
+                        timeTo,
                         forecastHorizonDays,
                         defaultLeadTimeDays,
                         serviceLevel,
@@ -222,7 +224,7 @@ namespace Storix_BE.Service.Implementation
                 }
 
                 report.Status = ReportStatus.Succeeded;
-                report.CompletedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
+                report.CompletedAt = NormalizeToUnspecified(DateTime.UtcNow);
                 report.ErrorMessage = null;
                 _logger.LogInformation(
                     "Report generation succeeded. ReportId={ReportId}, ReportType={ReportType}, Status={Status}",
@@ -248,7 +250,7 @@ namespace Storix_BE.Service.Implementation
             catch (Exception ex)
             {
                 report.Status = ReportStatus.Failed;
-                report.CompletedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
+                report.CompletedAt = NormalizeToUnspecified(DateTime.UtcNow);
                 report.ErrorMessage = ex.Message;
                 _logger.LogError(
                     ex,
@@ -363,7 +365,7 @@ namespace Storix_BE.Service.Implementation
                 throw new InvalidOperationException($"PDF export is not implemented for report type '{report.ReportType}'.");
             }
 
-            var fileName = $"report_{report.Id}_{DateTime.UtcNow:yyyyMMdd_HHmmss}.pdf";
+            var fileName = $"report_{report.Id}_{NormalizeToUnspecified(DateTime.UtcNow):yyyyMMdd_HHmmss}.pdf";
             var contentHash = ComputeSha256Hex(pdfBytes);
 
             await using var stream = new MemoryStream(pdfBytes);
@@ -379,7 +381,7 @@ namespace Storix_BE.Service.Implementation
             if (uploadResult.Error != null)
                 throw new InvalidOperationException(uploadResult.Error.Message);
 
-            var now = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
+            var now = NormalizeToUnspecified(DateTime.UtcNow);
             var pdfUrl = uploadResult.SecureUrl?.ToString();
             if (string.IsNullOrWhiteSpace(pdfUrl))
                 throw new InvalidOperationException("Cloudinary did not return a PDF URL.");
@@ -505,7 +507,7 @@ namespace Storix_BE.Service.Implementation
                     page.Footer().AlignCenter().Text(x =>
                     {
                         x.Span("Generated at ");
-                        x.Span(DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss")).SemiBold();
+                        x.Span(NormalizeToUnspecified(DateTime.UtcNow).ToString("yyyy-MM-dd HH:mm:ss")).SemiBold();
                     });
                 });
             });
@@ -646,7 +648,7 @@ namespace Storix_BE.Service.Implementation
                     page.Footer().AlignCenter().Text(x =>
                     {
                         x.Span("Generated at ");
-                        x.Span(DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss")).SemiBold();
+                        x.Span(NormalizeToUnspecified(DateTime.UtcNow).ToString("yyyy-MM-dd HH:mm:ss")).SemiBold();
                     });
                 });
             });
@@ -761,7 +763,7 @@ namespace Storix_BE.Service.Implementation
                     page.Footer().AlignCenter().Text(x =>
                     {
                         x.Span("Generated at ");
-                        x.Span(DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss")).SemiBold();
+                        x.Span(NormalizeToUnspecified(DateTime.UtcNow).ToString("yyyy-MM-dd HH:mm:ss")).SemiBold();
                     });
                 });
             });
@@ -1174,6 +1176,9 @@ namespace Storix_BE.Service.Implementation
             var key = trimmed.Replace("_", string.Empty).Replace("-", string.Empty);
             return ReportTypeAliases.TryGetValue(key, out var normalized) ? normalized : trimmed;
         }
+
+        private static DateTime NormalizeToUnspecified(DateTime value)
+            => DateTime.SpecifyKind(value, DateTimeKind.Unspecified);
 
     }
 }

@@ -734,18 +734,31 @@ namespace Storix_BE.Repository.Implementation
             ticketQuery = ticketQuery.Where(t => t.CreatedAt.HasValue && t.CreatedAt.Value >= from && t.CreatedAt.Value <= to);
 
             var ticketIds = await ticketQuery.Select(t => t.Id).ToListAsync().ConfigureAwait(false);
-            var itemRows = await _context.InventoryCountItems.AsNoTracking().Where(i => i.InventoryCountId.HasValue && ticketIds.Contains(i.InventoryCountId.Value))
-                .Select(i => new StocktakeItemContext(
-                    i.ProductId ?? 0,
-                    i.Product != null ? i.Product.Name : null,
-                    i.Product != null ? i.Product.Sku : null,
+            var rawItemRows = await _context.InventoryCountItems.AsNoTracking().Where(i => i.InventoryCountId.HasValue && ticketIds.Contains(i.InventoryCountId.Value))
+                .Select(i => new
+                {
+                    ProductId = i.ProductId ?? 0,
+                    ProductName = i.Product != null ? i.Product.Name : null,
+                    Sku = i.Product != null ? i.Product.Sku : null,
                     i.LocationId,
-                    i.SystemQuantity ?? 0,
-                    i.FinalQuantity ?? i.CountedQuantity ?? 0,
-                    i.Discrepancy ?? ((i.FinalQuantity ?? i.CountedQuantity ?? 0) - (i.SystemQuantity ?? 0))))
-                .Where(x => x.ProductId > 0)
+                    SystemQty = i.SystemQuantity ?? 0,
+                    CountedQty = i.FinalQuantity ?? i.CountedQuantity ?? 0,
+                    Variance = i.Discrepancy ?? ((i.FinalQuantity ?? i.CountedQuantity ?? 0) - (i.SystemQuantity ?? 0))
+                })
                 .ToListAsync()
                 .ConfigureAwait(false);
+
+            var itemRows = rawItemRows
+                .Where(x => x.ProductId > 0)
+                .Select(x => new StocktakeItemContext(
+                    x.ProductId,
+                    x.ProductName,
+                    x.Sku,
+                    x.LocationId,
+                    x.SystemQty,
+                    x.CountedQty,
+                    x.Variance))
+                .ToList();
 
             var stocktakeCostContext = await ResolveStocktakeCostContextAsync(
                 companyId,
@@ -754,9 +767,10 @@ namespace Storix_BE.Repository.Implementation
                 itemRows.Where(x => x.LocationId.HasValue).Select(x => x.LocationId!.Value).Distinct().ToList(),
                 to).ConfigureAwait(false);
 
+            var locationIds = itemRows.Where(x => x.LocationId.HasValue).Select(x => x.LocationId!.Value).Distinct().ToList();
             var locationShelfMap = await _context.InventoryLocations
                 .AsNoTracking()
-                .Where(l => itemRows.Where(x => x.LocationId.HasValue).Select(x => x.LocationId!.Value).Contains(l.Id) && l.ShelfId.HasValue)
+                .Where(l => locationIds.Contains(l.Id) && l.ShelfId.HasValue)
                 .Select(l => new { l.Id, ShelfId = l.ShelfId!.Value })
                 .ToDictionaryAsync(x => x.Id, x => x.ShelfId)
                 .ConfigureAwait(false);

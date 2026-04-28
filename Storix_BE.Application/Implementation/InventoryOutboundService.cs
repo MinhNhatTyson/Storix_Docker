@@ -541,6 +541,19 @@ namespace Storix_BE.Service.Implementation
             return items.Select(item => MapOutboundOrderToDto(item)).ToList();
         }
 
+        public async Task<List<OutboundHistoryProductResponseDto>> GetOutboundHistoryAsync(int companyId, IEnumerable<int> productIds, int? warehouseId, DateTime from, DateTime to)
+        {
+            if (companyId <= 0) throw new ArgumentException("Invalid company id.", nameof(companyId));
+            if (productIds == null) throw new ArgumentNullException(nameof(productIds));
+            if (to < from) throw new ArgumentException("DateTo must be >= DateFrom.");
+
+            var data = await _repo.GetOutboundHistoryAsync(companyId, productIds, warehouseId, from, to).ConfigureAwait(false);
+            return data.Select(x => new OutboundHistoryProductResponseDto(
+                x.ProductId,
+                x.ProductName,
+                x.OutboundInfo.Select(p => new OutboundHistoryPointResponseDto(p.Date, p.Quantity)).ToList())).ToList();
+        }
+
         public async Task<IReadOnlyList<OutboundOrderItemAvailableLocationsDto>> GetOutboundOrderItemAvailableLocationsAsync(int outboundOrderId)
         {
             if (outboundOrderId <= 0) throw new ArgumentException("Invalid outboundOrderId.", nameof(outboundOrderId));
