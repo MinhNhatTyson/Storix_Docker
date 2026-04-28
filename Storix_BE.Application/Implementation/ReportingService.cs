@@ -25,7 +25,24 @@ namespace Storix_BE.Service.Implementation
             ReportTypes.InventorySnapshot,
             ReportTypes.InventoryLedger,
             ReportTypes.InventoryInOutBalance,
-            ReportTypes.StocktakeVariance
+            ReportTypes.InventoryTracking,
+            ReportTypes.ReplenishmentRecommendation
+        };
+
+        private static readonly Dictionary<string, string> ReportTypeAliases = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["inventorysnapshot"] = ReportTypes.InventorySnapshot,
+            ["inventory-snapshot"] = ReportTypes.InventorySnapshot,
+            ["inventoryledger"] = ReportTypes.InventoryLedger,
+            ["inventory-ledger"] = ReportTypes.InventoryLedger,
+            ["inventoryinoutbalance"] = ReportTypes.InventoryInOutBalance,
+            ["inventory-in-out-balance"] = ReportTypes.InventoryInOutBalance,
+            ["inventory_tracking"] = ReportTypes.InventoryTracking,
+            ["inventorytracking"] = ReportTypes.InventoryTracking,
+            ["inventory-tracking"] = ReportTypes.InventoryTracking,
+            ["stocktakevariance"] = ReportTypes.InventoryTracking,
+            ["replenishmentrecommendation"] = ReportTypes.ReplenishmentRecommendation,
+            ["replenishment-recommendation"] = ReportTypes.ReplenishmentRecommendation
         };
 
         private readonly IReportingRepository _repo;
@@ -47,7 +64,7 @@ namespace Storix_BE.Service.Implementation
             if (string.IsNullOrWhiteSpace(payload.ReportType)) throw new ArgumentException("ReportType is required.", nameof(payload.ReportType));
             if (payload.TimeTo < payload.TimeFrom) throw new ArgumentException("TimeTo must be >= TimeFrom.");
             await ValidateCreatePayloadScopeAsync(companyId, payload).ConfigureAwait(false);
-            var normalizedReportType = payload.ReportType.Trim();
+            var normalizedReportType = NormalizeReportType(payload.ReportType);
 
             var createdAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
 
@@ -72,7 +89,11 @@ namespace Storix_BE.Service.Implementation
                     productId = payload.ProductId,
                     inventoryCountTicketId = payload.InventoryCountTicketId,
                     timeFrom = payload.TimeFrom,
-                    timeTo = payload.TimeTo
+                    timeTo = payload.TimeTo,
+                    forecastHorizonDays = payload.ForecastHorizonDays,
+                    defaultLeadTimeDays = payload.DefaultLeadTimeDays,
+                    serviceLevel = payload.ServiceLevel,
+                    useAiExplanation = payload.UseAiExplanation
                 }, paramsOptions)
             };
 
@@ -154,7 +175,7 @@ namespace Storix_BE.Service.Implementation
                     report.DataJson = JsonSerializer.Serialize(inOut, jsonOptions);
                     report.SchemaVersion = ReportSchemaVersions.InventoryInOutBalance;
                 }
-                else if (string.Equals(normalizedReportType, ReportTypes.StocktakeVariance, StringComparison.Ordinal))
+                else if (string.Equals(normalizedReportType, ReportTypes.InventoryTracking, StringComparison.Ordinal))
                 {
                     var stocktake = await _repo.GetStocktakeVarianceAsync(companyId, payload.WarehouseId, payload.InventoryCountTicketId, payload.TimeFrom, payload.TimeTo)
                         .ConfigureAwait(false);
@@ -166,7 +187,34 @@ namespace Storix_BE.Service.Implementation
                         totalVarianceValue = stocktake.TotalVarianceValue
                     }, jsonOptions);
                     report.DataJson = JsonSerializer.Serialize(stocktake, jsonOptions);
-                    report.SchemaVersion = ReportSchemaVersions.StocktakeVariance;
+                    report.SchemaVersion = ReportSchemaVersions.InventoryTracking;
+                }
+                else if (string.Equals(normalizedReportType, ReportTypes.ReplenishmentRecommendation, StringComparison.Ordinal))
+                {
+                    var forecastHorizonDays = payload.ForecastHorizonDays.GetValueOrDefault(14);
+                    var defaultLeadTimeDays = payload.DefaultLeadTimeDays.GetValueOrDefault(7);
+                    var serviceLevel = payload.ServiceLevel.GetValueOrDefault(0.95);
+                    var useAiExplanation = payload.UseAiExplanation.GetValueOrDefault(true);
+
+                    var recommendation = await _repo.GetReplenishmentRecommendationDataAsync(
+                        companyId,
+                        payload.WarehouseId,
+                        payload.TimeFrom,
+                        payload.TimeTo,
+                        forecastHorizonDays,
+                        defaultLeadTimeDays,
+                        serviceLevel,
+                        useAiExplanation).ConfigureAwait(false);
+
+                    report.SummaryJson = JsonSerializer.Serialize(new
+                    {
+                        totalSkusAnalyzed = recommendation.Summary.TotalSkusAnalyzed,
+                        totalSkusRecommended = recommendation.Summary.TotalSkusRecommended,
+                        totalRecommendedQty = recommendation.Summary.TotalRecommendedQty,
+                        highRiskSkus = recommendation.Summary.HighRiskSkus
+                    }, jsonOptions);
+                    report.DataJson = JsonSerializer.Serialize(recommendation, jsonOptions);
+                    report.SchemaVersion = ReportSchemaVersions.ReplenishmentRecommendation;
                 }
                 else
                 {
@@ -298,11 +346,17 @@ namespace Storix_BE.Service.Implementation
                     ?? throw new InvalidOperationException("Failed to deserialize report data.");
                 pdfBytes = GenerateInventoryInOutBalancePdf(report, data);
             }
-            else if (string.Equals(report.ReportType, ReportTypes.StocktakeVariance, StringComparison.Ordinal))
+            else if (string.Equals(report.ReportType, ReportTypes.InventoryTracking, StringComparison.Ordinal))
             {
                 var data = JsonSerializer.Deserialize<StocktakeVarianceReportData>(report.DataJson, jsonOptions)
                     ?? throw new InvalidOperationException("Failed to deserialize report data.");
                 pdfBytes = GenerateStocktakeVariancePdf(report, data);
+            }
+            else if (string.Equals(report.ReportType, ReportTypes.ReplenishmentRecommendation, StringComparison.Ordinal))
+            {
+                var data = JsonSerializer.Deserialize<ReplenishmentRecommendationReportData>(report.DataJson, jsonOptions)
+                    ?? throw new InvalidOperationException("Failed to deserialize report data.");
+                pdfBytes = GenerateReplenishmentRecommendationPdf(report, data);
             }
             else
             {
@@ -931,6 +985,75 @@ namespace Storix_BE.Service.Implementation
             return document.GeneratePdf();
         }
 
+        private static byte[] GenerateReplenishmentRecommendationPdf(Report report, ReplenishmentRecommendationReportData data)
+        {
+            var document = Document.Create(container =>
+            {
+                container.Page(page =>
+                {
+                    page.Size(PageSizes.A4);
+                    page.Margin(20);
+                    page.DefaultTextStyle(x => x.FontSize(9));
+
+                    page.Header().Column(col =>
+                    {
+                        col.Item().Text($"Report: {report.ReportType} (#{report.Id})").SemiBold().FontSize(14);
+                        col.Item().Text(
+                            $"Warehouse: {(data.Meta.WarehouseId?.ToString() ?? "All")} | Horizon: {data.Meta.ForecastHorizonDays}d | Service Level: {data.Meta.ServiceLevel:0.##}");
+                        col.Item().Text($"Range: {data.Meta.TimeFrom:yyyy-MM-dd} -> {data.Meta.TimeTo:yyyy-MM-dd}");
+                    });
+
+                    page.Content().Column(col =>
+                    {
+                        col.Spacing(6);
+                        col.Item().Text(
+                            $"SKU analyzed: {data.Summary.TotalSkusAnalyzed} | SKU recommended: {data.Summary.TotalSkusRecommended} | Total recommended qty: {data.Summary.TotalRecommendedQty}");
+
+                        col.Item().Table(table =>
+                        {
+                            table.ColumnsDefinition(c =>
+                            {
+                                c.RelativeColumn();
+                                c.ConstantColumn(45);
+                                c.ConstantColumn(55);
+                                c.ConstantColumn(45);
+                                c.ConstantColumn(45);
+                                c.ConstantColumn(45);
+                                c.ConstantColumn(55);
+                                c.ConstantColumn(45);
+                            });
+
+                            table.Header(h =>
+                            {
+                                h.Cell().Text("Product");
+                                h.Cell().AlignRight().Text("OnHand");
+                                h.Cell().AlignRight().Text("Forecast");
+                                h.Cell().AlignRight().Text("Safety");
+                                h.Cell().AlignRight().Text("Reorder");
+                                h.Cell().AlignRight().Text("Recom.");
+                                h.Cell().Text("Risk");
+                                h.Cell().AlignRight().Text("Conf.");
+                            });
+
+                            foreach (var item in data.Items.Take(60))
+                            {
+                                table.Cell().Text($"{item.ProductName ?? "(unknown)"} ({item.Sku ?? "-"})");
+                                table.Cell().AlignRight().Text(item.OnHandQty.ToString());
+                                table.Cell().AlignRight().Text(item.ForecastDemandQty.ToString());
+                                table.Cell().AlignRight().Text(item.SafetyStock.ToString());
+                                table.Cell().AlignRight().Text(item.ReorderPoint.ToString());
+                                table.Cell().AlignRight().Text(item.RecommendedQty.ToString());
+                                table.Cell().Text(item.RiskLevel);
+                                table.Cell().AlignRight().Text(item.Confidence.ToString("0.##"));
+                            }
+                        });
+                    });
+                });
+            });
+
+            return document.GeneratePdf();
+        }
+
         public async Task<List<ReportRequestListItemDto>> ListReportsAsync(
             int companyId,
             string? reportType,
@@ -962,10 +1085,23 @@ namespace Storix_BE.Service.Implementation
 
         private async Task ValidateCreatePayloadScopeAsync(int companyId, CreateReportRequest payload)
         {
-            var reportType = payload.ReportType.Trim();
+            var reportType = NormalizeReportType(payload.ReportType);
             if (!SupportedReportTypes.Contains(reportType))
             {
                 throw new ArgumentException($"Unsupported report type '{reportType}'.", nameof(payload.ReportType));
+            }
+
+            if (string.Equals(reportType, ReportTypes.ReplenishmentRecommendation, StringComparison.Ordinal))
+            {
+                var horizon = payload.ForecastHorizonDays.GetValueOrDefault(14);
+                var leadTime = payload.DefaultLeadTimeDays.GetValueOrDefault(7);
+                var serviceLevel = payload.ServiceLevel.GetValueOrDefault(0.95);
+                if (horizon <= 0)
+                    throw new ArgumentException("ForecastHorizonDays must be greater than 0.", nameof(payload.ForecastHorizonDays));
+                if (leadTime <= 0)
+                    throw new ArgumentException("DefaultLeadTimeDays must be greater than 0.", nameof(payload.DefaultLeadTimeDays));
+                if (serviceLevel <= 0 || serviceLevel >= 1)
+                    throw new ArgumentException("ServiceLevel must be between 0 and 1.", nameof(payload.ServiceLevel));
             }
 
             if (payload.WarehouseId.HasValue)
@@ -1026,6 +1162,18 @@ namespace Storix_BE.Service.Implementation
             }
         }
 
+        private static string NormalizeReportType(string? reportType)
+        {
+            var trimmed = reportType?.Trim() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(trimmed))
+                return string.Empty;
+
+            if (SupportedReportTypes.Contains(trimmed))
+                return trimmed;
+
+            var key = trimmed.Replace("_", string.Empty).Replace("-", string.Empty);
+            return ReportTypeAliases.TryGetValue(key, out var normalized) ? normalized : trimmed;
+        }
+
     }
 }
-

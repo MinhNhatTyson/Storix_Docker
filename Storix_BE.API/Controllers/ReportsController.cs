@@ -46,7 +46,11 @@ namespace Storix_BE.API.Controllers
                     request.ProductId,
                     request.InventoryCountTicketId,
                     request.TimeFrom,
-                    request.TimeTo);
+                    request.TimeTo,
+                    request.ForecastHorizonDays,
+                    request.DefaultLeadTimeDays,
+                    request.ServiceLevel,
+                    request.UseAiExplanation);
                 var result = await _reportingService.CreateReportAsync(effectiveCompanyId, caller!.Id, payload);
                 return Ok(result);
             }
@@ -156,6 +160,49 @@ namespace Storix_BE.API.Controllers
             catch (Exception ex)
             {
                 return HandleUnexpectedException(ex, "export report PDF");
+            }
+        }
+
+        [HttpPost("AI-recommendation")]
+        public async Task<IActionResult> CreateAiRecommendationReport([FromBody] CreateAiRecommendationReportApiRequest request)
+        {
+            if (request == null)
+                return BadRequest(new { message = "Request body is required." });
+
+            var (error, effectiveCompanyId, caller) = await ResolveCallerAsync(request.CompanyId);
+            if (error != null) return error;
+
+            try
+            {
+                var payload = new CreateReportRequest(
+                    ReportTypes.ReplenishmentRecommendation,
+                    request.WarehouseId,
+                    null,
+                    null,
+                    request.TimeFrom,
+                    request.TimeTo,
+                    request.ForecastHorizonDays,
+                    request.DefaultLeadTimeDays,
+                    request.ServiceLevel,
+                    request.UseAiExplanation);
+                var result = await _reportingService.CreateReportAsync(effectiveCompanyId, caller!.Id, payload);
+                return Ok(result);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (DbUpdateException ex)
+            {
+                return HandleDatabaseException(ex, "create AI recommendation report");
+            }
+            catch (Exception ex)
+            {
+                return HandleUnexpectedException(ex, "create AI recommendation report");
             }
         }
 
@@ -274,5 +321,19 @@ namespace Storix_BE.API.Controllers
         DateTime TimeFrom,
         DateTime TimeTo,
         int? InventoryCountTicketId,
-        int? CompanyId);
+        int? CompanyId,
+        int? ForecastHorizonDays = null,
+        int? DefaultLeadTimeDays = null,
+        double? ServiceLevel = null,
+        bool? UseAiExplanation = null);
+
+    public sealed record CreateAiRecommendationReportApiRequest(
+        int? WarehouseId,
+        DateTime TimeFrom,
+        DateTime TimeTo,
+        int? CompanyId,
+        int? ForecastHorizonDays = null,
+        int? DefaultLeadTimeDays = null,
+        double? ServiceLevel = null,
+        bool? UseAiExplanation = null);
 }

@@ -349,12 +349,23 @@ namespace Storix_BE.Service.Implementation
             return new OutboundUserDto(u.Id, u.FullName, u.Email, u.Phone);
         }
 
-        private static OutboundOrderItemDto MapOutboundOrderItem(OutboundOrderItem item)
+        private static OutboundOrderItemAvailableLocationDetailsDto EmptyAvailableLocations(int requiredQuantity = 0)
+            => new(
+                requiredQuantity,
+                Array.Empty<OutboundAvailableShelfDto>(),
+                Array.Empty<OutboundAvailableBinDto>());
+
+        private static OutboundOrderItemDto MapOutboundOrderItem(
+            OutboundOrderItem item,
+            OutboundOrderItemAvailableLocationDetailsDto? availableLocations = null,
+            IReadOnlyList<OutboundOrderItemSelectedLocationDto>? selectedPickLocations = null,
+            IReadOnlyList<FifoBinSuggestionItemDto>? fifoPickingSuggestion = null)
         {
             var p = item.Product;
             var displayPrice = item.CostPrice ?? item.Price;
             // Backward compatible: many UIs bind to Price; if sale Price is null, return the computed cost.
             var priceForUi = item.Price ?? item.CostPrice;
+            var requiredQuantity = item.Quantity ?? item.ReceivedQuantity ?? item.ExpectedQuantity ?? 0;
             return new OutboundOrderItemDto(
                 item.Id,
                 item.ProductId,
@@ -366,12 +377,19 @@ namespace Storix_BE.Service.Implementation
                 priceForUi,
                 item.CostPrice,
                 item.PricingMethod,
-                displayPrice);
+                displayPrice,
+                p?.Image,
+                p?.Description,
+                availableLocations ?? EmptyAvailableLocations(requiredQuantity),
+                selectedPickLocations ?? Array.Empty<OutboundOrderItemSelectedLocationDto>(),
+                fifoPickingSuggestion ?? Array.Empty<FifoBinSuggestionItemDto>());
         }
 
         private static OutboundRequestDto MapOutboundRequestToDto(OutboundRequest r)
         {
-            var items = (r.OutboundOrderItems ?? Enumerable.Empty<OutboundOrderItem>()).Select(MapOutboundOrderItem).ToList();
+            var items = (r.OutboundOrderItems ?? Enumerable.Empty<OutboundOrderItem>())
+                .Select(item => MapOutboundOrderItem(item))
+                .ToList();
             return new OutboundRequestDto(
                 r.Id,
                 r.WarehouseId,
@@ -390,9 +408,38 @@ namespace Storix_BE.Service.Implementation
                 MapUser(r.ApprovedByNavigation));
         }
 
-        private static OutboundOrderDto MapOutboundOrderToDto(OutboundOrder o)
+        private static OutboundOrderDto MapOutboundOrderToDto(
+            OutboundOrder o,
+            IReadOnlyDictionary<int, OutboundOrderItemAvailableLocationDetailsDto>? availableLocationsByItemId = null,
+            IReadOnlyDictionary<int, IReadOnlyList<OutboundOrderItemSelectedLocationDto>>? selectedPickLocationsByItemId = null,
+            IReadOnlyDictionary<int, IReadOnlyList<FifoBinSuggestionItemDto>>? fifoPickingSuggestionsByItemId = null)
         {
-            var items = (o.OutboundOrderItems ?? Enumerable.Empty<OutboundOrderItem>()).Select(MapOutboundOrderItem).ToList();
+            var items = (o.OutboundOrderItems ?? Enumerable.Empty<OutboundOrderItem>())
+                .Select(item =>
+                {
+                    var availableLocations = availableLocationsByItemId != null
+                        && availableLocationsByItemId.TryGetValue(item.Id, out var available)
+                            ? available
+                            : null;
+
+                    var selectedPickLocations = selectedPickLocationsByItemId != null
+                        && selectedPickLocationsByItemId.TryGetValue(item.Id, out var selected)
+                            ? selected
+                            : null;
+
+                    var fifoPickingSuggestion = fifoPickingSuggestionsByItemId != null
+                        && fifoPickingSuggestionsByItemId.TryGetValue(item.Id, out var fifo)
+                            ? fifo
+                            : null;
+
+                    return MapOutboundOrderItem(
+                        item,
+                        availableLocations,
+                        selectedPickLocations,
+                        fifoPickingSuggestion);
+                })
+                .ToList();
+
             return new OutboundOrderDto(
                 o.Id,
                 o.WarehouseId,
@@ -404,7 +451,8 @@ namespace Storix_BE.Service.Implementation
                 o.CreatedAt,
                 items,
                 MapWarehouse(o.Warehouse),
-                MapUser(o.CreatedByNavigation));
+                MapUser(o.CreatedByNavigation),
+                MapUser(o.Staff));
         }
 
         public async Task<List<OutboundRequestDto>> GetAllOutboundRequestsAsync(int companyId, int? warehouseId)
@@ -433,22 +481,56 @@ namespace Storix_BE.Service.Implementation
         {
             if (companyId <= 0) throw new ArgumentException("Invalid company id.", nameof(companyId));
             var items = await _repo.GetAllOutboundOrdersAsync(companyId, warehouseId);
-            return items.Select(MapOutboundOrderToDto).ToList();
+            return items.Select(item => MapOutboundOrderToDto(item)).ToList();
         }
 
         public async Task<List<OutboundOrderDto>> GetOutboundOrdersByWarehouseIdAsync(int warehouseId)
         {
             if (warehouseId <= 0) throw new ArgumentException("Invalid warehouse id.", nameof(warehouseId));
             var items = await _repo.GetOutboundOrdersByWarehouseIdAsync(warehouseId);
-            return items.Select(MapOutboundOrderToDto).ToList();
+            return items.Select(item => MapOutboundOrderToDto(item)).ToList();
         }
 
         public async Task<OutboundOrderDto> GetOutboundOrderByIdAsync(int companyId, int id)
         {
             if (companyId <= 0) throw new ArgumentException("Invalid company id.", nameof(companyId));
             if (id <= 0) throw new ArgumentException("Invalid outbound order id.", nameof(id));
-            var order = await _repo.GetOutboundOrderByIdAsync(companyId, id);
-            return MapOutboundOrderToDto(order);
+            var order = await _repo.GetOutboundOrderByIdAsync(companyId, id).ConfigureAwait(false);
+
+            var selectedLocations = string.Equals(order.Status, "Completed", StringComparison.OrdinalIgnoreCase)
+                ? await GetOutboundOrderItemSelectedLocationsAsync(id).ConfigureAwait(false)
+                : Array.Empty<OutboundOrderItemSelectedLocationDto>();
+
+            var availableLocations = order.WarehouseId.HasValue && order.WarehouseId.Value > 0
+                ? await GetOutboundOrderItemAvailableLocationsAsync(id).ConfigureAwait(false)
+                : Array.Empty<OutboundOrderItemAvailableLocationsDto>();
+
+            var fifoSuggestions = order.WarehouseId.HasValue && order.WarehouseId.Value > 0
+                ? await GetFifoPickingSuggestionsAsync(companyId, id).ConfigureAwait(false)
+                : new List<FifoPickingSuggestionDto>();
+
+            var availableLocationsByItemId = availableLocations.ToDictionary(
+                x => x.OutboundOrderItemId,
+                x => new OutboundOrderItemAvailableLocationDetailsDto(
+                    x.RequiredQuantity,
+                    x.AvailableShelves,
+                    x.AvailableBins));
+
+            var selectedPickLocationsByItemId = selectedLocations
+                .GroupBy(x => x.OutboundOrderItemId)
+                .ToDictionary(
+                    g => g.Key,
+                    g => (IReadOnlyList<OutboundOrderItemSelectedLocationDto>)g.ToList());
+
+            var fifoPickingSuggestionsByItemId = fifoSuggestions.ToDictionary(
+                x => x.OutboundOrderItemId,
+                x => (IReadOnlyList<FifoBinSuggestionItemDto>)x.Suggestions);
+
+            return MapOutboundOrderToDto(
+                order,
+                availableLocationsByItemId,
+                selectedPickLocationsByItemId,
+                fifoPickingSuggestionsByItemId);
         }
         public async Task<List<OutboundOrderDto>> GetOutboundOrdersByStaffAsync(int companyId, int staffId)
         {
@@ -456,7 +538,7 @@ namespace Storix_BE.Service.Implementation
             if (staffId <= 0) throw new ArgumentException("Invalid staff id.", nameof(staffId));
 
             var items = await _repo.GetOutboundOrdersByStaffAsync(companyId, staffId);
-            return items.Select(MapOutboundOrderToDto).ToList();
+            return items.Select(item => MapOutboundOrderToDto(item)).ToList();
         }
 
         public async Task<IReadOnlyList<OutboundOrderItemAvailableLocationsDto>> GetOutboundOrderItemAvailableLocationsAsync(int outboundOrderId)

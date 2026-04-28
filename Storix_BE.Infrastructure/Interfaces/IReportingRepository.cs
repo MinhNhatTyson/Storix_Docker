@@ -33,6 +33,15 @@ namespace Storix_BE.Repository.Interfaces
         Task<InventoryLedgerReportData> GetInventoryLedgerAsync(int companyId, int? warehouseId, int? productId, DateTime from, DateTime to);
         Task<InventoryInOutBalanceReportData> GetInventoryInOutBalanceAsync(int companyId, int? warehouseId, DateTime from, DateTime to);
         Task<StocktakeVarianceReportData> GetStocktakeVarianceAsync(int companyId, int? warehouseId, int? inventoryCountTicketId, DateTime from, DateTime to);
+        Task<ReplenishmentRecommendationReportData> GetReplenishmentRecommendationDataAsync(
+            int companyId,
+            int? warehouseId,
+            DateTime from,
+            DateTime to,
+            int forecastHorizonDays,
+            int defaultLeadTimeDays,
+            double serviceLevel,
+            bool useAiExplanation);
     }
 
     // ── OutboundKpiBasic ──────────────────────────────────────────────────────
@@ -202,5 +211,44 @@ namespace Storix_BE.Repository.Interfaces
         decimal TotalVarianceValue,
         IReadOnlyList<StocktakeVarianceRow> Items,
         IReadOnlyList<StocktakeBatchBreakdownRow>? BatchBreakdown = null);
-}
 
+    public sealed record ReplenishmentRecommendationMeta(
+        int? WarehouseId,
+        DateTime TimeFrom,
+        DateTime TimeTo,
+        int ForecastHorizonDays,
+        int DefaultLeadTimeDays,
+        double ServiceLevel,
+        string ModelVersion,
+        string Source);
+
+    public sealed record ReplenishmentRecommendationSummary(
+        int TotalSkusAnalyzed,
+        int TotalSkusRecommended,
+        int TotalRecommendedQty,
+        int HighRiskSkus);
+
+    public sealed record ReplenishmentRecommendationItem(
+        int ProductId,
+        string? ProductName,
+        string? Sku,
+        int OnHandQty,
+        int InboundPlannedQty,
+        int ForecastDemandQty,
+        double AvgDailyDemand,
+        double DemandStdDev,
+        int LeadTimeDays,
+        int SafetyStock,
+        int ReorderPoint,
+        int RecommendedQty,
+        double Confidence,
+        string RiskLevel,
+        int? DaysToStockout,
+        IReadOnlyList<string> ReasonCodes,
+        string? AiReasoning);
+
+    public sealed record ReplenishmentRecommendationReportData(
+        ReplenishmentRecommendationMeta Meta,
+        ReplenishmentRecommendationSummary Summary,
+        IReadOnlyList<ReplenishmentRecommendationItem> Items);
+}

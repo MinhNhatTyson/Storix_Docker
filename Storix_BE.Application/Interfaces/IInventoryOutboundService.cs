@@ -158,7 +158,12 @@ namespace Storix_BE.Service.Interfaces
         double? Price,
         double? CostPrice,
         string? PricingMethod,
-        double? DisplayPrice);
+        double? DisplayPrice,
+        string? ProductImage,
+        string? ProductDescription,
+        OutboundOrderItemAvailableLocationDetailsDto AvailableLocations,
+        IReadOnlyList<OutboundOrderItemSelectedLocationDto> SelectedPickLocations,
+        IReadOnlyList<FifoBinSuggestionItemDto> FifoPickingSuggestion);
 
     public sealed record OutboundAvailableShelfDto(
         int ShelfId,
@@ -185,6 +190,11 @@ namespace Storix_BE.Service.Interfaces
         int OutboundOrderItemId,
         int ProductId,
         string? ProductName,
+        int RequiredQuantity,
+        IReadOnlyList<OutboundAvailableShelfDto> AvailableShelves,
+        IReadOnlyList<OutboundAvailableBinDto> AvailableBins);
+
+    public sealed record OutboundOrderItemAvailableLocationDetailsDto(
         int RequiredQuantity,
         IReadOnlyList<OutboundAvailableShelfDto> AvailableShelves,
         IReadOnlyList<OutboundAvailableBinDto> AvailableBins);
@@ -278,5 +288,6 @@ namespace Storix_BE.Service.Interfaces
         DateTime? CreatedAt,
         IEnumerable<OutboundOrderItemDto> Items,
         OutboundWarehouseDto? Warehouse,
-        OutboundUserDto? CreatedByUser);
+        OutboundUserDto? CreatedByUser,
+        OutboundUserDto? StaffUser);
 }

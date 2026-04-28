@@ -424,14 +424,60 @@ namespace Storix_BE.Repository.Implementation
             var batchSnapshot = await GetRemainingBatchSnapshotAsync(companyId, warehouseId, to)
                 .ConfigureAwait(false);
 
-            var unitCostByProduct = BuildWeightedUnitCostLookup(batchSnapshot);
+            if (batchSnapshot.Count > 0)
+            {
+                var unitCostByProduct = BuildWeightedUnitCostLookup(batchSnapshot);
 
-            var items = DistinctBatchEntries(batchSnapshot)
-                .GroupBy(r => new { r.ProductId, r.ProductName, r.Sku })
+                var items = DistinctBatchEntries(batchSnapshot)
+                    .GroupBy(r => new { r.ProductId, r.ProductName, r.Sku })
+                    .Select(g =>
+                    {
+                        var qty = g.Sum(x => x.RemainingQuantity);
+                        unitCostByProduct.TryGetValue(g.Key.ProductId, out var unitCost);
+                        return new InventorySnapshotRow(g.Key.ProductId, g.Key.ProductName, g.Key.Sku, qty, unitCost, unitCost * qty);
+                    })
+                    .OrderByDescending(x => x.InventoryValue)
+                    .ToList();
+
+                return new InventorySnapshotReportData(
+                    from,
+                    to,
+                    warehouseId,
+                    items.Count,
+                    items.Sum(x => x.Quantity),
+                    items.Sum(x => x.InventoryValue),
+                    items,
+                    BuildBatchBreakdown(batchSnapshot));
+            }
+
+            var inventoryFallbackQuery = _context.Inventories
+                .AsNoTracking()
+                .Where(i =>
+                    i.Warehouse != null &&
+                    i.Warehouse.CompanyId == companyId);
+
+            if (warehouseId.HasValue && warehouseId.Value > 0)
+                inventoryFallbackQuery = inventoryFallbackQuery.Where(i => i.WarehouseId == warehouseId.Value);
+
+            var inventoryFallbackRows = await inventoryFallbackQuery
+                .Select(i => new
+                {
+                    i.ProductId,
+                    ProductName = i.Product != null ? i.Product.Name : null,
+                    Sku = i.Product != null ? i.Product.Sku : null,
+                    Qty = (i.Quantity ?? 0) - (i.ReservedQuantity ?? 0),
+                    UnitCost = i.Product != null ? (decimal?)i.Product.ProductPrices.OrderByDescending(p => p.Date).Select(p => p.Price).FirstOrDefault() : null
+                })
+                .Where(x => x.ProductId.HasValue && x.ProductId.Value > 0 && x.Qty > 0)
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            var fallbackItems = inventoryFallbackRows
+                .GroupBy(x => new { ProductId = x.ProductId!.Value, x.ProductName, x.Sku })
                 .Select(g =>
                 {
-                    var qty = g.Sum(x => x.RemainingQuantity);
-                    unitCostByProduct.TryGetValue(g.Key.ProductId, out var unitCost);
+                    var qty = g.Sum(x => x.Qty);
+                    var unitCost = g.Select(x => x.UnitCost ?? 0m).FirstOrDefault();
                     return new InventorySnapshotRow(g.Key.ProductId, g.Key.ProductName, g.Key.Sku, qty, unitCost, unitCost * qty);
                 })
                 .OrderByDescending(x => x.InventoryValue)
@@ -441,11 +487,11 @@ namespace Storix_BE.Repository.Implementation
                 from,
                 to,
                 warehouseId,
-                items.Count,
-                items.Sum(x => x.Quantity),
-                items.Sum(x => x.InventoryValue),
-                items,
-                BuildBatchBreakdown(batchSnapshot));
+                fallbackItems.Count,
+                fallbackItems.Sum(x => x.Quantity),
+                fallbackItems.Sum(x => x.InventoryValue),
+                fallbackItems,
+                Array.Empty<InventoryBatchBreakdownRow>());
         }
 
         public async Task<InventoryLedgerReportData> GetInventoryLedgerAsync(int companyId, int? warehouseId, int? productId, DateTime from, DateTime to)
@@ -732,6 +778,303 @@ namespace Storix_BE.Repository.Implementation
                 items,
                 BuildStocktakeBatchBreakdown(itemRows, stocktakeCostContext.BatchEntries, locationShelfMap));
         }
+
+        public async Task<ReplenishmentRecommendationReportData> GetReplenishmentRecommendationDataAsync(
+            int companyId,
+            int? warehouseId,
+            DateTime from,
+            DateTime to,
+            int forecastHorizonDays,
+            int defaultLeadTimeDays,
+            double serviceLevel,
+            bool useAiExplanation)
+        {
+            if (companyId <= 0) throw new ArgumentException("Invalid companyId.", nameof(companyId));
+            if (to < from) throw new ArgumentException("TimeTo must be >= TimeFrom.");
+            if (forecastHorizonDays <= 0) throw new ArgumentException("ForecastHorizonDays must be greater than 0.");
+            if (defaultLeadTimeDays <= 0) throw new ArgumentException("DefaultLeadTimeDays must be greater than 0.");
+            if (serviceLevel <= 0 || serviceLevel >= 1) throw new ArgumentException("ServiceLevel must be between 0 and 1.");
+
+            var onHandRowsQuery = _context.InventoryBatches
+                .AsNoTracking()
+                .Where(b =>
+                    b.Warehouse != null &&
+                    b.Warehouse.CompanyId == companyId &&
+                    b.RemainingQuantity > 0);
+            if (warehouseId.HasValue && warehouseId.Value > 0)
+                onHandRowsQuery = onHandRowsQuery.Where(b => b.WarehouseId == warehouseId.Value);
+
+            var onHandRows = await onHandRowsQuery
+                .Select(b => new
+                {
+                    b.ProductId,
+                    ProductName = b.Product != null ? b.Product.Name : null,
+                    Sku = b.Product != null ? b.Product.Sku : null,
+                    Qty = b.RemainingQuantity
+                })
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            var onHandByProduct = onHandRows
+                .GroupBy(x => x.ProductId)
+                .ToDictionary(g => g.Key, g => g.Sum(x => x.Qty));
+
+            var inboundPlannedQuery = _context.InboundOrderItems
+                .AsNoTracking()
+                .Where(i =>
+                    i.InboundOrder != null &&
+                    i.InboundOrder.Warehouse != null &&
+                    i.InboundOrder.Warehouse.CompanyId == companyId &&
+                    i.ProductId.HasValue &&
+                    i.InboundOrder.Status != "Completed");
+            if (warehouseId.HasValue && warehouseId.Value > 0)
+                inboundPlannedQuery = inboundPlannedQuery.Where(i => i.InboundOrder.WarehouseId == warehouseId.Value);
+
+            var inboundPlannedRows = await inboundPlannedQuery
+                .Select(i => new
+                {
+                    ProductId = i.ProductId!.Value,
+                    Qty = i.ExpectedQuantity ?? i.ReceivedQuantity ?? 0
+                })
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            var inboundPlannedByProduct = inboundPlannedRows
+                .GroupBy(x => x.ProductId)
+                .ToDictionary(g => g.Key, g => g.Sum(x => Math.Max(0, x.Qty)));
+
+            var outboundTxQuery = _context.InventoryTransactions
+                .AsNoTracking()
+                .Where(t =>
+                    t.Warehouse != null &&
+                    t.Warehouse.CompanyId == companyId &&
+                    t.ProductId.HasValue &&
+                    t.TransactionType == "Outbound" &&
+                    t.CreatedAt.HasValue &&
+                    t.CreatedAt.Value >= from &&
+                    t.CreatedAt.Value <= to);
+            if (warehouseId.HasValue && warehouseId.Value > 0)
+                outboundTxQuery = outboundTxQuery.Where(t => t.WarehouseId == warehouseId.Value);
+
+            var outboundTxRows = await outboundTxQuery
+                .Select(t => new
+                {
+                    ProductId = t.ProductId!.Value,
+                    Day = t.CreatedAt!.Value.Date,
+                    Qty = Math.Abs(t.QuantityChange ?? 0),
+                    ProductName = t.Product != null ? t.Product.Name : null,
+                    Sku = t.Product != null ? t.Product.Sku : null
+                })
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            var dailyOutboundByProduct = outboundTxRows
+                .GroupBy(x => new { x.ProductId, x.Day })
+                .Select(g => new { g.Key.ProductId, g.Key.Day, Qty = g.Sum(x => x.Qty) })
+                .ToList();
+
+            var forecastQuery = _context.StorageForecasts
+                .AsNoTracking()
+                .Where(f =>
+                    f.Warehouse != null &&
+                    f.Warehouse.CompanyId == companyId &&
+                    f.ProductId.HasValue);
+            if (warehouseId.HasValue && warehouseId.Value > 0)
+                forecastQuery = forecastQuery.Where(f => f.WarehouseId == warehouseId.Value);
+
+            var forecastRows = await forecastQuery
+                .OrderByDescending(f => f.CreatedAt)
+                .Select(f => new
+                {
+                    ProductId = f.ProductId!.Value,
+                    f.PredictedStock,
+                    f.DaysToStockout,
+                    f.RiskLevel,
+                    f.Confidence
+                })
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            var latestForecastByProduct = forecastRows
+                .GroupBy(x => x.ProductId)
+                .ToDictionary(g => g.Key, g => g.First());
+
+            var productNameSku = onHandRows
+                .Select(x => new { x.ProductId, x.ProductName, x.Sku })
+                .Concat(outboundTxRows.Select(x => new { x.ProductId, x.ProductName, x.Sku }))
+                .GroupBy(x => x.ProductId)
+                .ToDictionary(g => g.Key, g => g.First());
+
+            var productIds = onHandByProduct.Keys
+                .Concat(inboundPlannedByProduct.Keys)
+                .Concat(dailyOutboundByProduct.Select(x => x.ProductId))
+                .Concat(latestForecastByProduct.Keys)
+                .Distinct()
+                .Where(x => x > 0)
+                .ToList();
+
+            var zScore = ResolveZScore(serviceLevel);
+            var items = new List<ReplenishmentRecommendationItem>();
+            foreach (var productId in productIds)
+            {
+                productNameSku.TryGetValue(productId, out var meta);
+                var onHand = onHandByProduct.TryGetValue(productId, out var onHandQty) ? onHandQty : 0;
+                var inboundPlanned = inboundPlannedByProduct.TryGetValue(productId, out var inboundQty) ? inboundQty : 0;
+                var dailySeries = dailyOutboundByProduct.Where(x => x.ProductId == productId).Select(x => (double)x.Qty).ToList();
+                var avgDailyDemand = dailySeries.Any() ? dailySeries.Average() : 0.0;
+                var demandStdDev = ComputeStdDev(dailySeries);
+
+                int? forecastDaysToStockout = null;
+                double forecastDailyDemand = avgDailyDemand;
+                double forecastConfidence = 0.5;
+                string? forecastRiskLevel = null;
+                if (latestForecastByProduct.TryGetValue(productId, out var forecast))
+                {
+                    forecastDaysToStockout = forecast.DaysToStockout;
+                    forecastRiskLevel = forecast.RiskLevel;
+                    if (forecast.Confidence.HasValue)
+                        forecastConfidence = Math.Clamp(forecast.Confidence.Value, 0.0, 1.0);
+                    if (forecast.PredictedStock.HasValue && forecast.DaysToStockout.HasValue && forecast.DaysToStockout.Value > 0)
+                    {
+                        forecastDailyDemand = Math.Max(avgDailyDemand, forecast.PredictedStock.Value / (double)forecast.DaysToStockout.Value);
+                    }
+                }
+
+                if (forecastDailyDemand <= 0)
+                    forecastDailyDemand = avgDailyDemand;
+
+                var leadTimeDays = defaultLeadTimeDays;
+                var forecastDemandQty = (int)Math.Ceiling(Math.Max(0, forecastDailyDemand * forecastHorizonDays));
+                var safetyStock = (int)Math.Ceiling(Math.Max(0, zScore * demandStdDev * Math.Sqrt(Math.Max(1, leadTimeDays))));
+                var reorderPoint = (int)Math.Ceiling(Math.Max(0, (forecastDailyDemand * leadTimeDays) + safetyStock));
+                var netAvailable = onHand + inboundPlanned;
+                var recommendedQty = Math.Max(0, forecastDemandQty + safetyStock - netAvailable);
+
+                var daysToStockout = forecastDaysToStockout;
+                if (!daysToStockout.HasValue && forecastDailyDemand > 0)
+                    daysToStockout = (int)Math.Floor(onHand / forecastDailyDemand);
+
+                var riskLevel = NormalizeRiskLevel(forecastRiskLevel, daysToStockout, forecastHorizonDays, recommendedQty, onHand);
+                var reasonCodes = BuildReasonCodes(onHand, reorderPoint, recommendedQty, daysToStockout, forecastDailyDemand, avgDailyDemand);
+                var aiReasoning = useAiExplanation
+                    ? BuildAiReasoning(meta?.ProductName, onHand, forecastDemandQty, safetyStock, recommendedQty, daysToStockout, reasonCodes)
+                    : null;
+
+                items.Add(new ReplenishmentRecommendationItem(
+                    productId,
+                    meta?.ProductName,
+                    meta?.Sku,
+                    onHand,
+                    inboundPlanned,
+                    forecastDemandQty,
+                    Math.Round(avgDailyDemand, 2),
+                    Math.Round(demandStdDev, 2),
+                    leadTimeDays,
+                    safetyStock,
+                    reorderPoint,
+                    recommendedQty,
+                    Math.Round(forecastConfidence, 2),
+                    riskLevel,
+                    daysToStockout,
+                    reasonCodes,
+                    aiReasoning));
+            }
+
+            var orderedItems = items
+                .OrderByDescending(x => x.RecommendedQty)
+                .ThenByDescending(x => x.ForecastDemandQty)
+                .ThenBy(x => x.ProductId)
+                .ToList();
+
+            var summary = new ReplenishmentRecommendationSummary(
+                orderedItems.Count,
+                orderedItems.Count(x => x.RecommendedQty > 0),
+                orderedItems.Sum(x => x.RecommendedQty),
+                orderedItems.Count(x => string.Equals(x.RiskLevel, "High", StringComparison.OrdinalIgnoreCase)));
+
+            return new ReplenishmentRecommendationReportData(
+                new ReplenishmentRecommendationMeta(
+                    warehouseId,
+                    from,
+                    to,
+                    forecastHorizonDays,
+                    defaultLeadTimeDays,
+                    serviceLevel,
+                    "hybrid-rule-v1",
+                    "storage_forecasts+consumption_fallback"),
+                summary,
+                orderedItems);
+        }
+
+        private static double ResolveZScore(double serviceLevel)
+        {
+            if (serviceLevel >= 0.995) return 2.58;
+            if (serviceLevel >= 0.99) return 2.33;
+            if (serviceLevel >= 0.975) return 1.96;
+            if (serviceLevel >= 0.95) return 1.65;
+            if (serviceLevel >= 0.90) return 1.28;
+            if (serviceLevel >= 0.85) return 1.04;
+            return 0.84;
+        }
+
+        private static double ComputeStdDev(IReadOnlyList<double> series)
+        {
+            if (series.Count <= 1) return 0;
+            var avg = series.Average();
+            var variance = series.Sum(x => (x - avg) * (x - avg)) / (series.Count - 1);
+            return Math.Sqrt(Math.Max(0, variance));
+        }
+
+        private static string NormalizeRiskLevel(string? forecastRiskLevel, int? daysToStockout, int forecastHorizonDays, int recommendedQty, int onHand)
+        {
+            if (!string.IsNullOrWhiteSpace(forecastRiskLevel))
+            {
+                var risk = forecastRiskLevel.Trim();
+                if (risk.Equals("high", StringComparison.OrdinalIgnoreCase)) return "High";
+                if (risk.Equals("medium", StringComparison.OrdinalIgnoreCase)) return "Medium";
+                if (risk.Equals("low", StringComparison.OrdinalIgnoreCase)) return "Low";
+            }
+
+            if (daysToStockout.HasValue && daysToStockout.Value <= Math.Max(1, forecastHorizonDays / 2)) return "High";
+            if (recommendedQty > 0 && onHand <= 0) return "High";
+            if (recommendedQty > 0) return "Medium";
+            return "Low";
+        }
+
+        private static IReadOnlyList<string> BuildReasonCodes(
+            int onHand,
+            int reorderPoint,
+            int recommendedQty,
+            int? daysToStockout,
+            double forecastDailyDemand,
+            double avgDailyDemand)
+        {
+            var reasons = new List<string>();
+            if (onHand < reorderPoint) reasons.Add("LOW_STOCK");
+            if (recommendedQty > 0) reasons.Add("REPLENISHMENT_NEEDED");
+            if (daysToStockout.HasValue && daysToStockout.Value <= 7) reasons.Add("STOCKOUT_RISK");
+            if (forecastDailyDemand > avgDailyDemand * 1.2 && avgDailyDemand > 0) reasons.Add("DEMAND_SPIKE");
+            if (!reasons.Any()) reasons.Add("STABLE_STOCK");
+            return reasons;
+        }
+
+        private static string BuildAiReasoning(
+            string? productName,
+            int onHand,
+            int forecastDemandQty,
+            int safetyStock,
+            int recommendedQty,
+            int? daysToStockout,
+            IReadOnlyList<string> reasonCodes)
+        {
+            var display = string.IsNullOrWhiteSpace(productName) ? "SKU" : productName;
+            var stockoutText = daysToStockout.HasValue ? $"{daysToStockout.Value} days" : "unknown";
+            if (recommendedQty <= 0)
+                return $"{display}: Current stock is sufficient for projected demand. No replenishment is required now.";
+
+            return $"{display}: On-hand stock ({onHand}) is below projected demand ({forecastDemandQty}) plus safety stock ({safetyStock}). Recommended replenishment is {recommendedQty} units. Estimated stockout window: {stockoutText}. Reasons: {string.Join(", ", reasonCodes)}.";
+        }
+
         private sealed class FifoLayer
         {
             public int RemainingQty { get; set; }
@@ -993,4 +1336,3 @@ namespace Storix_BE.Repository.Implementation
         }
     }
 }
-
