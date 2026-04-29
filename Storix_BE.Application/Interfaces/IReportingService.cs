@@ -9,6 +9,7 @@ namespace Storix_BE.Service.Interfaces
     {
         Task<ReportDetailDto> CreateReportAsync(int companyId, int createdByUserId, CreateReportRequest payload);
         Task<ReportDetailDto?> GetReportAsync(int companyId, int reportId);
+        Task<ReportDetailDto> UpdateAiRecommendationAsync(int companyId, int reportId, IReadOnlyList<AiRecommendationItemDto> recommendations);
         Task<ReportPdfArtifactDto> ExportReportPdfAsync(int companyId, int reportId);
 
         Task<List<ReportRequestListItemDto>> ListReportsAsync(
@@ -80,6 +81,16 @@ namespace Storix_BE.Service.Interfaces
         string? ContentHash,
         DateTime? GeneratedAt);
 
+    public sealed record AiRecommendationItemDto(
+        int ProductId,
+        int ForecastedQuantity,
+        string Reason);
+
+    public sealed record AiRecommendationResponseDto(
+        int ProductId,
+        string? ProductName,
+        int ForecastedQuantity,
+        string Reason);
 
     public sealed record ReportDetailDto(
         int Id,

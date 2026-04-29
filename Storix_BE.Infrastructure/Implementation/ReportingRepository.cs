@@ -74,6 +74,7 @@ namespace Storix_BE.Repository.Implementation
                 .ConfigureAwait(false);
         }
 
+
         public async Task<List<Report>> ListReportsAsync(
             int companyId,
             string? reportType,

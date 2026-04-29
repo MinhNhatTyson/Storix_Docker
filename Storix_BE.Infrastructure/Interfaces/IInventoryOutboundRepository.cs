@@ -159,7 +159,7 @@ namespace Storix_BE.Repository.Interfaces
     int requiredQuantity);
 
         public sealed record OutboundHistoryPointDto(DateOnly Date, int Quantity);
-        public sealed record OutboundHistoryProductDto(int ProductId, string? ProductName, IReadOnlyList<OutboundHistoryPointDto> OutboundInfo);
+        public sealed record OutboundHistoryProductDto(int ProductId, string? ProductName, int CurrentStock, IReadOnlyList<OutboundHistoryPointDto> OutboundInfo);
 
         public record FifoBinSuggestionDto(
             int BatchId,

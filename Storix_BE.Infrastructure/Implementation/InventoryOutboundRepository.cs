@@ -2680,6 +2680,45 @@ namespace Storix_BE.Repository.Implementation
                 .ToListAsync()
                 .ConfigureAwait(false);
 
+            var productNames = await _context.Products
+                .AsNoTracking()
+                .Where(p => productIdList.Contains(p.Id) && p.CompanyId == companyId)
+                .Select(p => new { p.Id, p.Name })
+                .ToDictionaryAsync(x => x.Id, x => x.Name)
+                .ConfigureAwait(false);
+
+            var currentStockQuery = _context.Inventories
+                .AsNoTracking()
+                .Where(i => i.ProductId.HasValue && productIdList.Contains(i.ProductId.Value) && i.Warehouse != null && i.Warehouse.CompanyId == companyId);
+            if (warehouseId.HasValue && warehouseId.Value > 0)
+                currentStockQuery = currentStockQuery.Where(i => i.WarehouseId == warehouseId.Value);
+
+            var currentStockMap = await currentStockQuery
+                .Select(i => new
+                {
+                    ProductId = i.ProductId!.Value,
+                    Qty = i.Quantity ?? 0
+                })
+                .GroupBy(x => x.ProductId)
+                .ToDictionaryAsync(g => g.Key, g => g.Sum(x => x.Qty))
+                .ConfigureAwait(false);
+
+            var txToReverseQuery = _context.InventoryTransactions
+                .AsNoTracking()
+                .Where(t => t.ProductId.HasValue && productIdList.Contains(t.ProductId.Value) && t.CreatedAt.HasValue && t.CreatedAt.Value.Date > endDate && t.Warehouse != null && t.Warehouse.CompanyId == companyId);
+            if (warehouseId.HasValue && warehouseId.Value > 0)
+                txToReverseQuery = txToReverseQuery.Where(t => t.WarehouseId == warehouseId.Value);
+
+            var reverseAfterDateMap = await txToReverseQuery
+                .Select(t => new
+                {
+                    ProductId = t.ProductId!.Value,
+                    Qty = t.QuantityChange ?? 0
+                })
+                .GroupBy(x => x.ProductId)
+                .ToDictionaryAsync(g => g.Key, g => g.Sum(x => x.Qty))
+                .ConfigureAwait(false);
+
             var grouped = rows
                 .GroupBy(x => new { x.ProductId, x.ProductName })
                 .ToDictionary(
@@ -2694,10 +2733,15 @@ namespace Storix_BE.Repository.Implementation
             return productIdList.Select(productId =>
             {
                 grouped.TryGetValue(productId, out var meta);
+                productNames.TryGetValue(productId, out var productName);
+                currentStockMap.TryGetValue(productId, out var currentQuantity);
+                reverseAfterDateMap.TryGetValue(productId, out var quantityChangeAfterDateTo);
+                var currentStockAtDateTo = currentQuantity - quantityChangeAfterDateTo;
+
                 var outboundInfo = allDays.Select(day => new IInventoryOutboundRepository.OutboundHistoryPointDto(
                     day,
                     meta != null && meta.Days.TryGetValue(day, out var qty) ? qty : 0)).ToList();
-                return new IInventoryOutboundRepository.OutboundHistoryProductDto(productId, meta?.ProductName, outboundInfo);
+                return new IInventoryOutboundRepository.OutboundHistoryProductDto(productId, meta?.ProductName ?? productName, currentStockAtDateTo, outboundInfo);
             }).ToList();
         }
 

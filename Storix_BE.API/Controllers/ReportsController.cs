@@ -164,28 +164,24 @@ namespace Storix_BE.API.Controllers
         }
 
         [HttpPost("AI-recommendation")]
-        public async Task<IActionResult> CreateAiRecommendationReport([FromBody] CreateAiRecommendationReportApiRequest request)
+        public async Task<IActionResult> CreateAiRecommendationReport([FromBody] UpdateAiRecommendationApiRequest request)
         {
             if (request == null)
                 return BadRequest(new { message = "Request body is required." });
 
-            var (error, effectiveCompanyId, caller) = await ResolveCallerAsync(request.CompanyId);
+            if (request.ReportId <= 0)
+                return BadRequest(new { message = "reportId is required." });
+
+            if (request.Recommendations == null || request.Recommendations.Count == 0)
+                return BadRequest(new { message = "recommendations is required." });
+
+            var (error, effectiveCompanyId, _) = await ResolveCallerAsync(request.CompanyId);
             if (error != null) return error;
 
             try
             {
-                var payload = new CreateReportRequest(
-                    ReportTypes.ReplenishmentRecommendation,
-                    request.WarehouseId,
-                    null,
-                    null,
-                    request.TimeFrom,
-                    request.TimeTo,
-                    request.ForecastHorizonDays,
-                    request.DefaultLeadTimeDays,
-                    request.ServiceLevel,
-                    request.UseAiExplanation);
-                var result = await _reportingService.CreateReportAsync(effectiveCompanyId, caller!.Id, payload);
+                var normalized = request.Recommendations.Select(r => new AiRecommendationItemDto(r.ProductId, r.ForecastedQuantity, r.Reason)).ToList();
+                var result = await _reportingService.UpdateAiRecommendationAsync(effectiveCompanyId, request.ReportId, normalized);
                 return Ok(result);
             }
             catch (ArgumentException ex)
@@ -198,11 +194,11 @@ namespace Storix_BE.API.Controllers
             }
             catch (DbUpdateException ex)
             {
-                return HandleDatabaseException(ex, "create AI recommendation report");
+                return HandleDatabaseException(ex, "update AI recommendation report");
             }
             catch (Exception ex)
             {
-                return HandleUnexpectedException(ex, "create AI recommendation report");
+                return HandleUnexpectedException(ex, "update AI recommendation report");
             }
         }
 
@@ -327,13 +323,8 @@ namespace Storix_BE.API.Controllers
         double? ServiceLevel = null,
         bool? UseAiExplanation = null);
 
-    public sealed record CreateAiRecommendationReportApiRequest(
-        int? WarehouseId,
-        DateTime TimeFrom,
-        DateTime TimeTo,
+    public sealed record UpdateAiRecommendationApiRequest(
+        int ReportId,
         int? CompanyId,
-        int? ForecastHorizonDays = null,
-        int? DefaultLeadTimeDays = null,
-        double? ServiceLevel = null,
-        bool? UseAiExplanation = null);
+        System.Collections.Generic.IReadOnlyList<Storix_BE.Service.Interfaces.AiRecommendationItemDto> Recommendations);
 }

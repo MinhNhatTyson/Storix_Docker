@@ -551,7 +551,11 @@ namespace Storix_BE.Service.Implementation
             return data.Select(x => new OutboundHistoryProductResponseDto(
                 x.ProductId,
                 x.ProductName,
-                x.OutboundInfo.Select(p => new OutboundHistoryPointResponseDto(p.Date, p.Quantity)).ToList())).ToList();
+                x.CurrentStock,
+                x.OutboundInfo.Select(p => new OutboundHistoryPointResponseDto(
+                    p.Date,
+                    p.Quantity)).ToList()
+            )).ToList();
         }
 
         public async Task<IReadOnlyList<OutboundOrderItemAvailableLocationsDto>> GetOutboundOrderItemAvailableLocationsAsync(int outboundOrderId)

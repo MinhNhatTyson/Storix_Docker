@@ -309,6 +309,39 @@ namespace Storix_BE.Service.Implementation
                 pdfDto);
         }
 
+        public async Task<ReportDetailDto> UpdateAiRecommendationAsync(int companyId, int reportId, IReadOnlyList<AiRecommendationItemDto> recommendations)
+        {
+            if (companyId <= 0) throw new ArgumentException("Invalid companyId.", nameof(companyId));
+            if (reportId <= 0) throw new ArgumentException("Invalid reportId.", nameof(reportId));
+            if (recommendations == null) throw new ArgumentNullException(nameof(recommendations));
+            if (!recommendations.Any()) throw new ArgumentException("At least one recommendation is required.", nameof(recommendations));
+
+            var report = await _repo.GetReportByIdAsync(companyId, reportId).ConfigureAwait(false)
+                ?? throw new InvalidOperationException("Report not found.");
+
+            var json = JsonSerializer.Serialize(recommendations, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+            report.DataJson = json;
+            report.SchemaVersion = "ai-recommendation-v1";
+            report.CompletedAt = NormalizeToUnspecified(DateTime.UtcNow);
+            report.Status = ReportStatus.Succeeded;
+            report.ErrorMessage = null;
+            await _repo.UpdateReportAsync(report).ConfigureAwait(false);
+
+            return new ReportDetailDto(
+                report.Id,
+                report.ReportType,
+                report.CompanyId,
+                report.WarehouseId,
+                report.Status,
+                report.TimeFrom,
+                report.TimeTo,
+                report.CreatedAt,
+                report.CompletedAt,
+                report.ErrorMessage,
+                new ReportResultDto(null, TryParseJson(report.DataJson), report.SchemaVersion),
+                report.PdfUrl == null ? null : new ReportPdfArtifactDto(report.PdfUrl, report.PdfFileName, report.PdfContentHash, report.PdfGeneratedAt));
+        }
+
         public async Task<ReportPdfArtifactDto> ExportReportPdfAsync(int companyId, int reportId)
         {
             if (companyId <= 0) throw new ArgumentException("Invalid companyId.", nameof(companyId));

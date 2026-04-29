@@ -293,5 +293,5 @@ namespace Storix_BE.Service.Interfaces
         OutboundUserDto? StaffUser);
 
     public sealed record OutboundHistoryPointResponseDto(DateOnly Date, int Quantity);
-    public sealed record OutboundHistoryProductResponseDto(int ProductId, string? ProductName, IReadOnlyList<OutboundHistoryPointResponseDto> OutboundInfo);
+    public sealed record OutboundHistoryProductResponseDto(int ProductId, string? ProductName, int CurrentStock, IReadOnlyList<OutboundHistoryPointResponseDto> OutboundInfo);
 }
