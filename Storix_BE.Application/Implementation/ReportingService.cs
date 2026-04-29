@@ -342,6 +342,69 @@ namespace Storix_BE.Service.Implementation
                 report.PdfUrl == null ? null : new ReportPdfArtifactDto(report.PdfUrl, report.PdfFileName, report.PdfContentHash, report.PdfGeneratedAt));
         }
 
+        public async Task<ReportDetailDto> SaveAiRecommendationPayloadAsync(int companyId, SaveAiRecommendationPayloadRequest request)
+        {
+            if (companyId <= 0) throw new ArgumentException("Invalid companyId.", nameof(companyId));
+            if (request == null) throw new ArgumentNullException(nameof(request));
+            if (request.ReportId <= 0) throw new ArgumentException("Invalid reportId.", nameof(request.ReportId));
+            if (request.Recommendations == null || request.Recommendations.Count == 0)
+                throw new ArgumentException("At least one recommendation is required.", nameof(request.Recommendations));
+
+            var report = await _repo.GetReportByIdAsync(companyId, request.ReportId).ConfigureAwait(false)
+                ?? throw new InvalidOperationException("Report not found.");
+
+            var normalized = request.Recommendations.Select(x => new
+            {
+                productId = x.ProductId,
+                productName = x.ProductName,
+                forecastedQuantity = Math.Max(0, x.ForecastedQuantity),
+                isSlowMoving = x.IsSlowMoving,
+                slowMovingWarning = x.SlowMovingWarning,
+                needsRestock = x.NeedsRestock,
+                suggestedRestockQuantity = Math.Max(0, x.SuggestedRestockQuantity),
+                reason = x.Reason
+            }).ToList();
+
+            var summary = new
+            {
+                totalItems = normalized.Count,
+                restockItems = normalized.Count(x => x.needsRestock),
+                slowMovingItems = normalized.Count(x => x.isSlowMoving),
+                totalSuggestedRestock = normalized.Sum(x => x.suggestedRestockQuantity)
+            };
+
+            var data = new
+            {
+                reportId = request.ReportId,
+                source = "FE_AI_RECOMMENDATION",
+                items = normalized
+            };
+
+            var options = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+            report.DataJson = JsonSerializer.Serialize(data, options);
+            report.SummaryJson = JsonSerializer.Serialize(summary, options);
+            report.SchemaVersion = "ai-recommendation-fe-v1";
+            report.Status = ReportStatus.Succeeded;
+            report.CompletedAt = NormalizeToUnspecified(DateTime.UtcNow);
+            report.ErrorMessage = null;
+
+            await _repo.UpdateReportAsync(report).ConfigureAwait(false);
+
+            return new ReportDetailDto(
+                report.Id,
+                report.ReportType,
+                report.CompanyId,
+                report.WarehouseId,
+                report.Status,
+                report.TimeFrom,
+                report.TimeTo,
+                report.CreatedAt,
+                report.CompletedAt,
+                report.ErrorMessage,
+                new ReportResultDto(TryParseJson(report.SummaryJson), TryParseJson(report.DataJson), report.SchemaVersion),
+                report.PdfUrl == null ? null : new ReportPdfArtifactDto(report.PdfUrl, report.PdfFileName, report.PdfContentHash, report.PdfGeneratedAt));
+        }
+
         public async Task<ReportPdfArtifactDto> ExportReportPdfAsync(int companyId, int reportId)
         {
             if (companyId <= 0) throw new ArgumentException("Invalid companyId.", nameof(companyId));

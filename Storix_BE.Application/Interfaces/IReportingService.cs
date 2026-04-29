@@ -10,6 +10,7 @@ namespace Storix_BE.Service.Interfaces
         Task<ReportDetailDto> CreateReportAsync(int companyId, int createdByUserId, CreateReportRequest payload);
         Task<ReportDetailDto?> GetReportAsync(int companyId, int reportId);
         Task<ReportDetailDto> UpdateAiRecommendationAsync(int companyId, int reportId, IReadOnlyList<AiRecommendationItemDto> recommendations);
+        Task<ReportDetailDto> SaveAiRecommendationPayloadAsync(int companyId, SaveAiRecommendationPayloadRequest request);
         Task<ReportPdfArtifactDto> ExportReportPdfAsync(int companyId, int reportId);
 
         Task<List<ReportRequestListItemDto>> ListReportsAsync(
@@ -90,6 +91,20 @@ namespace Storix_BE.Service.Interfaces
         int ProductId,
         string? ProductName,
         int ForecastedQuantity,
+        string Reason);
+
+    public sealed record SaveAiRecommendationPayloadRequest(
+        int ReportId,
+        IReadOnlyList<AiRecommendationPayloadItemDto> Recommendations);
+
+    public sealed record AiRecommendationPayloadItemDto(
+        int ProductId,
+        string? ProductName,
+        int ForecastedQuantity,
+        bool IsSlowMoving,
+        string? SlowMovingWarning,
+        bool NeedsRestock,
+        int SuggestedRestockQuantity,
         string Reason);
 
     public sealed record ReportDetailDto(

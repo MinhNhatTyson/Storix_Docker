@@ -202,6 +202,56 @@ namespace Storix_BE.API.Controllers
             }
         }
 
+        [HttpPost("AI-recommendation/save")]
+        public async Task<IActionResult> SaveAiRecommendationPayload([FromBody] SaveAiRecommendationPayloadApiRequest request)
+        {
+            if (request == null)
+                return BadRequest(new { message = "Request body is required." });
+
+            if (request.ReportId <= 0)
+                return BadRequest(new { message = "reportId is required." });
+
+            if (request.Recommendations == null || request.Recommendations.Count == 0)
+                return BadRequest(new { message = "recommendations is required." });
+
+            var (error, effectiveCompanyId, _) = await ResolveCallerAsync(request.CompanyId);
+            if (error != null) return error;
+
+            try
+            {
+                var payload = new SaveAiRecommendationPayloadRequest(
+                    request.ReportId,
+                    request.Recommendations.Select(x => new AiRecommendationPayloadItemDto(
+                        x.ProductId,
+                        x.ProductName,
+                        x.ForecastedQuantity,
+                        x.IsSlowMoving,
+                        x.SlowMovingWarning,
+                        x.NeedsRestock,
+                        x.SuggestedRestockQuantity,
+                        x.Reason)).ToList());
+
+                var result = await _reportingService.SaveAiRecommendationPayloadAsync(effectiveCompanyId, payload);
+                return Ok(result);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (DbUpdateException ex)
+            {
+                return HandleDatabaseException(ex, "save AI recommendation payload");
+            }
+            catch (Exception ex)
+            {
+                return HandleUnexpectedException(ex, "save AI recommendation payload");
+            }
+        }
+
 
         /// <summary>
         /// Resolves the authenticated caller and effective companyId for company-scoped report access.
@@ -327,4 +377,19 @@ namespace Storix_BE.API.Controllers
         int ReportId,
         int? CompanyId,
         System.Collections.Generic.IReadOnlyList<Storix_BE.Service.Interfaces.AiRecommendationItemDto> Recommendations);
+
+    public sealed record SaveAiRecommendationPayloadApiRequest(
+        int ReportId,
+        int? CompanyId,
+        System.Collections.Generic.IReadOnlyList<AiRecommendationPayloadItemApiRequest> Recommendations);
+
+    public sealed record AiRecommendationPayloadItemApiRequest(
+        int ProductId,
+        string? ProductName,
+        int ForecastedQuantity,
+        bool IsSlowMoving,
+        string? SlowMovingWarning,
+        bool NeedsRestock,
+        int SuggestedRestockQuantity,
+        string Reason);
 }
