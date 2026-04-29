@@ -2011,115 +2011,7 @@ namespace Storix_BE.Repository.Implementation
             int performedBy,
             DateTime now)
         {
-            if (!order.WarehouseId.HasValue)
-                throw new InvalidOperationException("OutboundOrder must specify WarehouseId to update inventory.");
-
-            var productGroups = orderItems
-                .Where(i => i.ProductId.HasValue)
-                .GroupBy(i => i.ProductId!.Value)
-                .Select(g => new
-                {
-                    ProductId = g.Key,
-                    Quantity = g.Sum(x => x.Quantity ?? x.ReceivedQuantity ?? x.ExpectedQuantity ?? 0)
-                })
-                .Where(x => x.Quantity > 0)
-                .ToList();
-
-            if (!productGroups.Any())
-                throw new InvalidOperationException("Outbound order has no valid items to deduct inventory.");
-
-            var productIds = productGroups.Select(x => x.ProductId).ToList();
-            var inventories = await _context.Inventories
-                .Where(i => i.WarehouseId == order.WarehouseId && i.ProductId.HasValue && productIds.Contains(i.ProductId.Value))
-                .ToListAsync()
-                .ConfigureAwait(false);
-
-            var batches = await _context.InventoryBatches
-                .Include(b => b.BatchLocations)
-                    .ThenInclude(bl => bl.Bin)
-                        .ThenInclude(b => b.Level)
-                            .ThenInclude(l => l!.Shelf)
-                                .ThenInclude(s => s!.Zone)
-                .Where(b => b.WarehouseId == order.WarehouseId && productIds.Contains(b.ProductId) && !b.IsExhausted && b.RemainingQuantity > 0)
-                .OrderBy(b => b.InboundDate)
-                .ThenBy(b => b.Id)
-                .ToListAsync()
-                .ConfigureAwait(false);
-
-            foreach (var group in productGroups)
-            {
-                var remainingToDeduct = group.Quantity;
-                var inventory = inventories.FirstOrDefault(i => i.ProductId == group.ProductId)
-                    ?? throw new InvalidOperationException($"Insufficient stock for ProductId {group.ProductId}. Available: 0, Requested: {group.Quantity}");
-
-                var productBatches = batches
-                    .Where(b => b.ProductId == group.ProductId)
-                    .OrderBy(b => b.InboundDate)
-                    .ThenBy(b => b.Id)
-                    .ToList();
-
-                foreach (var batch in productBatches)
-                {
-                    if (remainingToDeduct <= 0) break;
-
-                    var deductQty = Math.Min(batch.RemainingQuantity, remainingToDeduct);
-                    if (deductQty <= 0) continue;
-
-                    var locations = batch.BatchLocations
-                        .Where(bl => bl.Quantity > 0)
-                        .OrderByDescending(bl => bl.Quantity)
-                        .ToList();
-
-                    foreach (var location in locations)
-                    {
-                        if (remainingToDeduct <= 0) break;
-
-                        var locationDeduct = Math.Min(location.Quantity, remainingToDeduct);
-                        if (locationDeduct <= 0) continue;
-
-                        location.Quantity -= locationDeduct;
-                        location.UpdatedAt = now;
-                        remainingToDeduct -= locationDeduct;
-                        batch.RemainingQuantity -= locationDeduct;
-
-                        _context.ActivityLogs.Add(new ActivityLog
-                        {
-                            UserId = performedBy,
-                            Entity = "OutboundBatch",
-                            EntityId = order.Id,
-                            Action = $"OUTBOUND_FIFO_BATCH_DEDUCT:ORDER={order.Id};PRODUCT={group.ProductId};BATCH={batch.Id};BIN={location.BinId};QTY={locationDeduct};INBOUND_DATE={batch.InboundDate:O}",
-                            Timestamp = now
-                        });
-                    }
-
-                    if (batch.RemainingQuantity <= 0)
-                    {
-                        batch.RemainingQuantity = 0;
-                        batch.IsExhausted = true;
-                    }
-
-                    batch.UpdatedAt = now;
-                }
-
-                if (remainingToDeduct > 0)
-                    throw new InvalidOperationException($"Insufficient batch stock for ProductId {group.ProductId}. Remaining shortage: {remainingToDeduct}");
-
-                inventory.Quantity = (inventory.Quantity ?? 0) - group.Quantity;
-                if ((inventory.Quantity ?? 0) < 0)
-                    throw new InvalidOperationException($"Inventory became negative for ProductId {group.ProductId}.");
-
-                inventory.LastUpdated = now;
-                _context.InventoryTransactions.Add(new InventoryTransaction
-                {
-                    WarehouseId = order.WarehouseId,
-                    ProductId = group.ProductId,
-                    TransactionType = "Outbound",
-                    QuantityChange = -group.Quantity,
-                    ReferenceId = order.Id,
-                    PerformedBy = performedBy,
-                    CreatedAt = now
-                });
-            }
+            await DeductOutboundByFifoAsync(order, orderItems.AsEnumerable(), performedBy, now).ConfigureAwait(false);
         }
 
         private static int CalculateBinPercentageDeduction(Product product, ShelfLevelBin bin, int quantity)
@@ -2202,6 +2094,7 @@ namespace Storix_BE.Repository.Implementation
 
             var selectedBins = await LoadOutboundBinAssignmentsAsync(order.Id, items.Select(i => i.Id))
                 .ConfigureAwait(false);
+            var deductedByProductBin = new Dictionary<(int ProductId, int BinId), int>();
 
             if (selectedBins.Any())
             {
@@ -2289,6 +2182,10 @@ namespace Storix_BE.Repository.Implementation
                         batch.RemainingQuantity -= assignment.Quantity;
                         batch.UpdatedAt = now;
                         remainingToDeduct -= assignment.Quantity;
+                        var assignmentKey = (item.ProductId, location.BinId);
+                        deductedByProductBin[assignmentKey] = deductedByProductBin.TryGetValue(assignmentKey, out var deductedAssignedQty)
+                            ? deductedAssignedQty + assignment.Quantity
+                            : assignment.Quantity;
 
                         _context.ActivityLogs.Add(new ActivityLog
                         {
@@ -2331,6 +2228,10 @@ namespace Storix_BE.Repository.Implementation
                             location.UpdatedAt = now;
                             remainingToDeduct -= deductFromLocation;
                             batch.RemainingQuantity -= deductFromLocation;
+                            var deductionKey = (item.ProductId, location.BinId);
+                            deductedByProductBin[deductionKey] = deductedByProductBin.TryGetValue(deductionKey, out var deductedQty)
+                                ? deductedQty + deductFromLocation
+                                : deductFromLocation;
                         }
 
                         if (batch.RemainingQuantity <= 0)
@@ -2344,52 +2245,50 @@ namespace Storix_BE.Repository.Implementation
                 }
 
                 if (remainingToDeduct > 0)
-                    _logger.LogWarning("FIFO deduction shortfall for ProductId={ProductId}, OutboundOrderId={OrderId}. Unresolved qty={Remaining}", item.ProductId, order.Id, remainingToDeduct);
+                    throw new InvalidOperationException($"Insufficient batch/location stock for ProductId {item.ProductId} in outbound order {order.Id}. Remaining shortage: {remainingToDeduct}.");
             }
 
-            if (selectedBins.Any())
+            if (deductedByProductBin.Any())
             {
-                var binCodes = selectedBins.Select(x => x.BinIdCode).Distinct().ToList();
+                var binIds = deductedByProductBin.Keys.Select(x => x.BinId).Distinct().ToList();
                 var bins = await _context.ShelfLevelBins
                     .Include(b => b.Level)
                         .ThenInclude(l => l!.Shelf)
                             .ThenInclude(s => s!.Zone)
-                    .Where(b => b.IdCode != null && binCodes.Contains(b.IdCode))
+                    .Where(b => binIds.Contains(b.Id))
                     .ToListAsync()
                     .ConfigureAwait(false);
 
-                var binByCode = bins
-                    .Where(b => !string.IsNullOrWhiteSpace(b.IdCode))
-                    .GroupBy(b => b.IdCode!)
-                    .ToDictionary(g => g.Key, g => g.First());
+                var binById = bins.ToDictionary(b => b.Id);
 
                 var products = await _context.Products
                     .Where(p => productIds.Contains(p.Id))
                     .ToListAsync()
                     .ConfigureAwait(false);
 
-                var shelfAllocations = selectedBins
+                var binAllocations = deductedByProductBin
                     .Select(x =>
                     {
-                        if (!binByCode.TryGetValue(x.BinIdCode, out var bin))
-                            throw new InvalidOperationException($"ShelfLevelBin with IdCode {x.BinIdCode} not found.");
+                        if (!binById.TryGetValue(x.Key.BinId, out var bin))
+                            throw new InvalidOperationException($"ShelfLevelBin with Id {x.Key.BinId} not found.");
 
                         var shelfId = bin.Level?.ShelfId;
                         var warehouseId = bin.Level?.Shelf?.Zone?.WarehouseId;
                         if (!shelfId.HasValue || !warehouseId.HasValue || warehouseId.Value != order.WarehouseId.Value)
-                            throw new InvalidOperationException($"Bin {x.BinIdCode} is invalid or does not belong to outbound warehouse.");
+                            throw new InvalidOperationException($"Bin {bin.IdCode ?? bin.Id.ToString()} is invalid or does not belong to outbound warehouse.");
 
                         return new
                         {
-                            x.ProductId,
+                            ProductId = x.Key.ProductId,
+                            BinId = x.Key.BinId,
                             ShelfId = shelfId.Value,
-                            x.Quantity,
+                            Quantity = x.Value,
                             Bin = bin
                         };
                     })
                     .ToList();
 
-                var shelfDeductions = shelfAllocations
+                var shelfDeductions = binAllocations
                     .GroupBy(x => new { x.ProductId, x.ShelfId })
                     .Select(g => new
                     {
@@ -2417,14 +2316,11 @@ namespace Storix_BE.Repository.Implementation
                     invLoc.UpdatedAt = now;
                 }
 
-                foreach (var assignment in selectedBins)
+                foreach (var assignment in binAllocations)
                 {
                     var inventory = inventories.First(i => i.ProductId == assignment.ProductId);
-                    if (!binByCode.TryGetValue(assignment.BinIdCode, out var bin))
-                        throw new InvalidOperationException($"ShelfLevelBin with IdCode {assignment.BinIdCode} not found.");
-
-                    if (bin.InventoryId.HasValue && bin.InventoryId.Value != inventory.Id)
-                        throw new InvalidOperationException($"Bin {assignment.BinIdCode} does not currently map to inventory {inventory.Id} for product {assignment.ProductId}.");
+                    if (!binById.TryGetValue(assignment.BinId, out var bin))
+                        throw new InvalidOperationException($"ShelfLevelBin with Id {assignment.BinId} not found.");
 
                     var product = products.FirstOrDefault(p => p.Id == assignment.ProductId);
                     if (product == null)
@@ -2444,7 +2340,7 @@ namespace Storix_BE.Repository.Implementation
 
                     if (nextPercent <= 0 && bin.InventoryId == inventory.Id)
                         bin.InventoryId = null;
-                    else if (nextPercent > 0 && !bin.InventoryId.HasValue)
+                    else if (nextPercent > 0 && bin.InventoryId != inventory.Id)
                         bin.InventoryId = inventory.Id;
 
                     _context.ActivityLogs.Add(new ActivityLog
@@ -2452,7 +2348,7 @@ namespace Storix_BE.Repository.Implementation
                         UserId = performedBy,
                         Entity = "OutboundOrder",
                         EntityId = order.Id,
-                        Action = $"OUTBOUND_LOCATION_TRANSITION:PRODUCT={assignment.ProductId};SHELF={bin.Level!.ShelfId};BIN={assignment.BinIdCode};QTY={assignment.Quantity}",
+                        Action = $"OUTBOUND_LOCATION_TRANSITION:PRODUCT={assignment.ProductId};SHELF={bin.Level!.ShelfId};BIN={bin.IdCode ?? bin.Id.ToString()};QTY={assignment.Quantity}",
                         Timestamp = now
                     });
                 }
