@@ -53,7 +53,6 @@ namespace Storix_BE.Service.Interfaces
     public sealed record UpdateProductTypeRequest(string Name);
     public sealed record CreateProductRequest(
     int CompanyId,
-    string? Sku,           // kept for manual override; null = auto-generate
     string? Name,
     int? CategoryId,
     string? Unit,
@@ -68,7 +67,6 @@ namespace Storix_BE.Service.Interfaces
     bool? IsHighValue,
     string? Description,
     IFormFile? Image,
-    // ── SKU-related additions ──────────────────────────────────────────────
     int? DefaultSupplierId,
     string? Material,
     string? PackageType,
@@ -76,7 +74,6 @@ namespace Storix_BE.Service.Interfaces
 
     public sealed record UpdateProductRequest(
         int CompanyId,
-        string Sku,
         string? Name,
         int? CategoryId,
         string? Unit,
@@ -90,7 +87,11 @@ namespace Storix_BE.Service.Interfaces
         bool? IsVulnerable,
         bool? IsHighValue,
         string? Description,
-        IFormFile? Image);
+        IFormFile? Image,
+        int? DefaultSupplierId,
+        string? Material,
+        string? PackageType,
+        string? SizeStandard);
     public sealed record ProductResponseDTO(
         int ProductId,
         string? Name,

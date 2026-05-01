@@ -144,18 +144,15 @@ namespace Storix_BE.Repository.Implementation
 
         public async Task<int> UpdateAsync(Product product)
         {
-            // Validate existing product exists
             var existing = await _context.Products.FirstOrDefaultAsync(p => p.Id == product.Id);
             if (existing == null)
                 throw new InvalidOperationException($"Product with id {product.Id} not found.");
 
-            // If CategoryId changed / provided, validate and attach
             if (product.CategoryId.HasValue)
             {
                 var category = await _context.ProductCategories.FindAsync(product.CategoryId.Value);
                 if (category == null)
                     throw new InvalidOperationException($"Product category with id {product.CategoryId.Value} not found.");
-                // ensure category belongs to same company when both sides have company id
                 if (category.CompanyId.HasValue && product.CompanyId.HasValue && category.CompanyId != product.CompanyId)
                     throw new InvalidOperationException("Product category does not belong to the same company as the product.");
                 existing.CategoryId = product.CategoryId;
@@ -166,10 +163,7 @@ namespace Storix_BE.Repository.Implementation
                 existing.CategoryId = null;
                 existing.Category = null;
             }
-
-            // Patch other fields
             existing.CompanyId = product.CompanyId;
-            existing.Sku = product.Sku;
             existing.Name = product.Name;
             existing.Unit = product.Unit;
             existing.Weight = product.Weight;
@@ -183,6 +177,10 @@ namespace Storix_BE.Repository.Implementation
             existing.IsVulnerable = product.IsVulnerable;
             existing.IsHighValue = product.IsHighValue;
             existing.Image = product.Image;
+            existing.DefaultSupplierId = product.DefaultSupplierId; 
+            existing.Material = product.Material;          
+            existing.PackageType = product.PackageType;       
+            existing.SizeStandard = product.SizeStandard;       
             existing.UpdatedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
 
             _context.Products.Update(existing);

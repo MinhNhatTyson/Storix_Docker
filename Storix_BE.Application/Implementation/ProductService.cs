@@ -115,21 +115,7 @@ namespace Storix_BE.Service.Implementation
             if (request.CompanyId <= 0) throw new InvalidOperationException("CompanyId must be a positive integer.");
             if (string.IsNullOrWhiteSpace(request.Name)) throw new InvalidOperationException("Product name is required.");
             if (request.Weight.HasValue && request.Weight.Value < 0) throw new InvalidOperationException("Weight cannot be negative.");
-
-            // ── Validate manual SKU if provided ───────────────────────────────────
-            string? resolvedSku = null;
-            if (!string.IsNullOrWhiteSpace(request.Sku))
-            {
-                if (request.Sku.Length > 100)
-                    throw new InvalidOperationException("SKU is too long (max 100 chars).");
-                foreach (char c in request.Sku)
-                    if (!(char.IsLetterOrDigit(c) || c == '-' || c == '_'))
-                        throw new InvalidOperationException("SKU contains invalid characters.");
-
-                var exists = await _repo.GetBySkuAsync(request.Sku, request.CompanyId);
-                if (exists != null) throw new InvalidOperationException("SKU already exists.");
-                resolvedSku = request.Sku;
-            }
+            
 
             // ── Category validation ────────────────────────────────────────────────
             string categoryCode = "GEN";
@@ -157,10 +143,7 @@ namespace Storix_BE.Service.Implementation
                 supplierName = supplier.Name;
             }
 
-            // ── Auto-generate SKU if not manually provided ─────────────────────────
-            if (resolvedSku is null)
-            {
-                resolvedSku = await GenerateSkuAsync(
+                var resolvedSku = await GenerateSkuAsync(
                     request.CompanyId,
                     supplierName,
                     categoryCode,
@@ -171,7 +154,7 @@ namespace Storix_BE.Service.Implementation
                     request.IsCold ?? false,
                     request.IsVulnerable ?? false,
                     request.IsHighValue ?? false);
-            }
+            
 
             // ── Image upload ───────────────────────────────────────────────────────
             string? imageUrl = null;
@@ -209,50 +192,36 @@ namespace Storix_BE.Service.Implementation
         {
             if (request == null) throw new InvalidOperationException("Request cannot be null.");
             if (request.CompanyId <= 0) throw new InvalidOperationException("CompanyId must be a positive integer.");
-            if (string.IsNullOrWhiteSpace(request.Sku)) throw new InvalidOperationException("SKU is required when updating a product.");
             if (request.Weight.HasValue && request.Weight.Value < 0) throw new InvalidOperationException("Weight cannot be negative.");
 
-            // SKU format validation
-            if (request.Sku.Length > 100) throw new InvalidOperationException("SKU is too long (max 100 chars).");
-            foreach (char c in request.Sku)
-            {
-                if (!(char.IsLetterOrDigit(c) || c == '-' || c == '_'))
-                    throw new InvalidOperationException("SKU contains invalid characters. Only letters, digits, '-' and '_' are allowed.");
-            }
             if (request.CategoryId.HasValue)
             {
                 var category = await _repo.GetCategoryByIdAsync(request.CategoryId.Value);
-
                 if (category == null)
                     throw new InvalidOperationException("Product category not found.");
-
                 if (category.CompanyId.HasValue && category.CompanyId != request.CompanyId)
                     throw new InvalidOperationException("Category does not belong to this company.");
-
                 var hasChildren = await _repo.CategoryHasChildrenAsync(category.Id);
-
                 if (hasChildren)
-                    throw new InvalidOperationException(
-                        "Product must be assigned to the lowest level category.");
+                    throw new InvalidOperationException("Product must be assigned to the lowest level category.");
+            }
+
+            // Validate default supplier belongs to this company if provided
+            if (request.DefaultSupplierId.HasValue)
+            {
+                var supplier = await _repo.GetSupplierByIdAsync(request.DefaultSupplierId.Value, request.CompanyId);
+                if (supplier == null)
+                    throw new InvalidOperationException($"Supplier with id {request.DefaultSupplierId.Value} not found.");
             }
 
             var existing = await _repo.GetByIdAsync(id, request.CompanyId);
             if (existing == null) return null;
 
             string? imageUrl = null;
-
             if (request.Image != null)
             {
                 imageUrl = await _imageService.UploadProductImageAsync(request.Image);
                 existing.Image = imageUrl;
-            }
-
-            if (!string.IsNullOrWhiteSpace(request.Sku) && request.Sku != existing.Sku)
-            {
-                var skuCollision = await _repo.GetBySkuAsync(request.Sku, request.CompanyId);
-                if (skuCollision != null && skuCollision.Id != id)
-                    throw new InvalidOperationException("SKU already exists.");
-                existing.Sku = request.Sku;
             }
 
             if (request.Name != null) existing.Name = request.Name;
@@ -268,6 +237,10 @@ namespace Storix_BE.Service.Implementation
             if (request.IsVulnerable.HasValue) existing.IsVulnerable = request.IsVulnerable;
             if (request.IsHighValue.HasValue) existing.IsHighValue = request.IsHighValue;
             if (request.Description != null) existing.Description = request.Description;
+            existing.DefaultSupplierId = request.DefaultSupplierId;
+            if (request.Material != null) existing.Material = request.Material;
+            if (request.PackageType != null) existing.PackageType = request.PackageType;
+            if (request.SizeStandard != null) existing.SizeStandard = request.SizeStandard;
 
             await _repo.UpdateAsync(existing);
             return existing;
