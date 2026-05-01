@@ -206,7 +206,6 @@ namespace Storix_BE.Service.Implementation
                     throw new InvalidOperationException("Product must be assigned to the lowest level category.");
             }
 
-            // Validate default supplier belongs to this company if provided
             if (request.DefaultSupplierId.HasValue)
             {
                 var supplier = await _repo.GetSupplierByIdAsync(request.DefaultSupplierId.Value, request.CompanyId);

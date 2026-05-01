@@ -252,6 +252,37 @@ namespace Storix_BE.API.Controllers
             }
         }
 
+        [HttpGet("AI-recommendation/save/{reportId:int}")]
+        public async Task<IActionResult> GetSavedAiRecommendationPayload(int reportId, [FromQuery] int? companyId = null)
+        {
+            if (reportId <= 0)
+                return BadRequest(new { message = "reportId is required." });
+
+            var (error, effectiveCompanyId, _) = await ResolveCallerAsync(companyId);
+            if (error != null) return error;
+
+            try
+            {
+                var report = await _reportingService.GetReportAsync(effectiveCompanyId, reportId);
+                if (report == null)
+                    return NotFound(new { message = "Report not found." });
+
+                return Ok(report);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (DbUpdateException ex)
+            {
+                return HandleDatabaseException(ex, "load AI recommendation payload");
+            }
+            catch (Exception ex)
+            {
+                return HandleUnexpectedException(ex, "load AI recommendation payload");
+            }
+        }
+
 
         /// <summary>
         /// Resolves the authenticated caller and effective companyId for company-scoped report access.
