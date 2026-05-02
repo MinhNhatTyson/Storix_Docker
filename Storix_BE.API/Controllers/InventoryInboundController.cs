@@ -16,7 +16,7 @@ namespace Storix_BE.API.Controllers
             _service = service;
         }
         [HttpPost("create-inbound-request")]
-        [Authorize(Roles = "2,3")]
+        [Authorize(Roles = "2,3,4")]
         public async Task<IActionResult> CreateRequest([FromBody] CreateInboundRequestRequest request)
         {
             try
