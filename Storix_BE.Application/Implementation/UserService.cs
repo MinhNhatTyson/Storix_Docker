@@ -397,5 +397,10 @@ namespace Storix_BE.Service.Implementation
             var users = await _accRepository.GetStaffsByCompanyIdAsync(companyId);
             return users;
         }
+        public async Task<List<User>> GetStaffsByWarehouseIdAsync(int warehouseId)
+        {
+            var users = await _accRepository.GetStaffsByWarehouseIdAsync(warehouseId);
+            return users;
+        }
     }
 }

@@ -162,6 +162,35 @@ namespace Storix_BE.API.Controllers
                 return BadRequest(new { message = ex.Message });
             }
         }
+        [HttpGet("get-staffs-by-warehouseId/{warehouseId:int}")]
+        [Authorize(Roles = "2,3")]
+        public async Task<IActionResult> GetStaffsByWarehouseId(int warehouseId)
+        {
+            if (warehouseId <= 0)
+                return BadRequest(new { message = "WarehouseId is required." });
+
+            try
+            {
+                var users = await _userService.GetStaffsByWarehouseIdAsync(warehouseId);
+                return Ok(users.Select(MapUser));
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Forbid();
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (BusinessRuleException ex)
+            {
+                return BadRequest(new { code = ex.Code, message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
         /// <summary>
         /// Get a user by id (must belong to your company). Company Administrator only.
         /// </summary>

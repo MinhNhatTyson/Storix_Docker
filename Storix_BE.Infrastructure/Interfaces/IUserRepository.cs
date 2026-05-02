@@ -44,5 +44,6 @@ namespace Storix_BE.Repository.Interfaces
         Task RevokeRefreshTokenAsync(string token);
         Task RevokeAllRefreshTokensForUserAsync(int userId);
         Task<List<User>> GetStaffsByCompanyIdAsync(int companyId);
+        Task<List<User>> GetStaffsByWarehouseIdAsync(int warehouseId);
     }
 }

@@ -434,5 +434,15 @@ namespace Storix_BE.Repository.Implementation
                 .OrderBy(u => u.Id)
                 .ToListAsync();
         }
+        public async Task<List<User>> GetStaffsByWarehouseIdAsync(int warehouseId)
+        {
+            return await _context.Users
+                .Include(u => u.Role)
+                .Include(u => u.WarehouseAssignments)
+                    .ThenInclude(a => a.Warehouse)
+                .Where(u => u.WarehouseAssignments.Any(a => a.WarehouseId == warehouseId) && u.RoleId == 4)
+                .OrderBy(u => u.Id)
+                .ToListAsync();
+        }
     }
 }
