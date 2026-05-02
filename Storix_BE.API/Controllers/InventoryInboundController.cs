@@ -160,7 +160,7 @@ namespace Storix_BE.API.Controllers
             }
         }
         [HttpGet("get-all-inbound-requests/{companyId:int}/warehouse/{warehouseId:int}")]
-        [Authorize(Roles = "2,3")]
+        [Authorize(Roles = "2,3,4")]
         public async Task<IActionResult> GetAllRequestsByWarehouse(int companyId, int warehouseId)
         {
             if (companyId <= 0) return BadRequest(new { message = "Invalid company id." });
@@ -186,7 +186,7 @@ namespace Storix_BE.API.Controllers
         }
 
         [HttpGet("get-all-inbound-tickets/{companyId:int}/warehouse/{warehouseId:int}")]
-        [Authorize(Roles = "2,3")]
+        [Authorize(Roles = "2,3,4")]
         public async Task<IActionResult> GetAllTicketsByWarehouse(int companyId, int warehouseId)
         {
             if (companyId <= 0) return BadRequest(new { message = "Invalid company id." });
