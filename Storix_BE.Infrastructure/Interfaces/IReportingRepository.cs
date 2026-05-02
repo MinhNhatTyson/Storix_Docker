@@ -31,6 +31,7 @@ namespace Storix_BE.Repository.Interfaces
 
         Task<InventorySnapshotReportData> GetInventorySnapshotAsync(int companyId, int? warehouseId, DateTime from, DateTime to);
         Task<InventoryLedgerReportData> GetInventoryLedgerAsync(int companyId, int? warehouseId, int? productId, DateTime from, DateTime to);
+        Task<InventoryOverallLedgerReportData> GetInventoryOverallLedgerAsync(int companyId, int? warehouseId, DateTime from, DateTime to);
         Task<InventoryInOutBalanceReportData> GetInventoryInOutBalanceAsync(int companyId, int? warehouseId, DateTime from, DateTime to);
         Task<StocktakeVarianceReportData> GetStocktakeVarianceAsync(int companyId, int? warehouseId, int? inventoryCountTicketId, DateTime from, DateTime to);
         Task<ReplenishmentRecommendationReportData> GetReplenishmentRecommendationDataAsync(
@@ -152,9 +153,9 @@ namespace Storix_BE.Repository.Interfaces
         int ClosingQuantity,
         IReadOnlyList<InventoryLedgerRow> Rows);
 
-    public sealed record InventoryInOutBalanceDayPoint(DateTime Day, int InboundQty, int OutboundQty);
+    public sealed record InventoryOverallLedgerDayPoint(DateTime Day, int InboundQty, int OutboundQty);
 
-    public sealed record InventoryInOutBalanceProductRow(
+    public sealed record InventoryOverallLedgerProductRow(
         int ProductId,
         string? ProductName,
         string? Sku,
@@ -165,7 +166,7 @@ namespace Storix_BE.Repository.Interfaces
         decimal UnitCost,
         decimal ClosingValue);
 
-    public sealed record InventoryInOutBalanceReportData(
+    public sealed record InventoryOverallLedgerReportData(
         DateTime TimeFrom,
         DateTime TimeTo,
         int? WarehouseId,
@@ -174,9 +175,32 @@ namespace Storix_BE.Repository.Interfaces
         int TotalOutboundQty,
         int TotalClosingQty,
         decimal TotalClosingValue,
-        IReadOnlyList<InventoryInOutBalanceDayPoint> ByDay,
-        IReadOnlyList<InventoryInOutBalanceProductRow> ByProduct,
+        IReadOnlyList<InventoryOverallLedgerDayPoint> ByDay,
+        IReadOnlyList<InventoryOverallLedgerProductRow> ByProduct,
         IReadOnlyList<InventoryBatchBreakdownRow>? BatchBreakdown = null);
+
+    public sealed record InventoryInOutBalanceItemRow(
+        string? ProductName,
+        int Quantity,
+        string? SkuId);
+
+    public sealed record InventoryInOutBalanceTransactionRow(
+        int TransactionId,
+        DateTime Date,
+        string TransactionType,
+        string? NguoiTao,
+        string? NhanVien,
+        IReadOnlyList<InventoryInOutBalanceItemRow> Items);
+
+    public sealed record InventoryInOutBalanceReportData(
+        DateTime TimeFrom,
+        DateTime TimeTo,
+        int? WarehouseId,
+        int TotalTransactions,
+        int TotalInboundTransactions,
+        int TotalOutboundTransactions,
+        int TotalItemLines,
+        IReadOnlyList<InventoryInOutBalanceTransactionRow> Rows);
 
     public sealed record StocktakeBatchBreakdownRow(
         int ProductId,
@@ -191,7 +215,7 @@ namespace Storix_BE.Repository.Interfaces
         string? ShelfCode,
         string? ZoneCode);
 
-    public sealed record StocktakeVarianceRow(
+    public sealed record StocktakeVarianceItemRow(
         int ProductId,
         string? ProductName,
         string? Sku,
@@ -201,6 +225,14 @@ namespace Storix_BE.Repository.Interfaces
         decimal UnitCost,
         decimal VarianceValue);
 
+    public sealed record StocktakeVarianceGroupRow(
+        DateTime Date,
+        int TicketId,
+        string? TicketName,
+        string? CreatedBy,
+        string? AssignedStaff,
+        IReadOnlyList<StocktakeVarianceItemRow> Items);
+
     public sealed record StocktakeVarianceReportData(
         DateTime TimeFrom,
         DateTime TimeTo,
@@ -209,7 +241,8 @@ namespace Storix_BE.Repository.Interfaces
         int TotalItems,
         int TotalVarianceQty,
         decimal TotalVarianceValue,
-        IReadOnlyList<StocktakeVarianceRow> Items,
+        IReadOnlyList<StocktakeVarianceGroupRow> Rows,
+        IReadOnlyList<StocktakeVarianceItemRow> Items,
         IReadOnlyList<StocktakeBatchBreakdownRow>? BatchBreakdown = null);
 
     public sealed record ReplenishmentRecommendationMeta(

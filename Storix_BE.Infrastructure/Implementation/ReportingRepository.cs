@@ -562,7 +562,7 @@ namespace Storix_BE.Repository.Implementation
             return new InventoryLedgerReportData(from, to, warehouseId, productId, opening, running, ledger);
         }
 
-        public async Task<InventoryInOutBalanceReportData> GetInventoryInOutBalanceAsync(int companyId, int? warehouseId, DateTime from, DateTime to)
+        public async Task<InventoryOverallLedgerReportData> GetInventoryOverallLedgerAsync(int companyId, int? warehouseId, DateTime from, DateTime to)
         {
             var closingSnapshot = await GetRemainingBatchSnapshotAsync(companyId, warehouseId, to)
                 .ConfigureAwait(false);
@@ -685,7 +685,7 @@ namespace Storix_BE.Repository.Implementation
                 .Concat(outboundMaterialized.Select(x => new { x.Day, In = 0, Out = x.Qty }))
                 .GroupBy(x => x.Day)
                 .OrderBy(g => g.Key)
-                .Select(g => new InventoryInOutBalanceDayPoint(g.Key, g.Sum(x => x.In), g.Sum(x => x.Out)))
+                .Select(g => new InventoryOverallLedgerDayPoint(g.Key, g.Sum(x => x.In), g.Sum(x => x.Out)))
                 .ToList();
 
             var allProducts = inboundRows.Select(x => new { x.ProductId, x.ProductName, x.Sku })
@@ -708,12 +708,12 @@ namespace Storix_BE.Repository.Implementation
                 var opening = closing - inQty + outQty;
                 unitCostByProduct.TryGetValue(p.ProductId, out var unitCost);
                 var closingValue = closing > 0 ? closing * unitCost : 0m;
-                return new InventoryInOutBalanceProductRow(p.ProductId, p.ProductName, p.Sku, opening, inQty, outQty, closing, unitCost, closingValue);
+                return new InventoryOverallLedgerProductRow(p.ProductId, p.ProductName, p.Sku, opening, inQty, outQty, closing, unitCost, closingValue);
             })
             .OrderByDescending(x => x.ClosingValue)
             .ToList();
 
-            return new InventoryInOutBalanceReportData(
+            return new InventoryOverallLedgerReportData(
                 from,
                 to,
                 warehouseId,
@@ -727,6 +727,178 @@ namespace Storix_BE.Repository.Implementation
                 BuildBatchBreakdown(closingSnapshot.Where(x => productIds.Contains(x.ProductId))));
         }
 
+        public async Task<InventoryInOutBalanceReportData> GetInventoryInOutBalanceAsync(int companyId, int? warehouseId, DateTime from, DateTime to)
+        {
+            if (companyId <= 0) throw new ArgumentException("Invalid companyId.", nameof(companyId));
+            if (to < from) throw new ArgumentException("TimeTo must be >= TimeFrom.");
+
+            var inboundOrdersQuery = _context.InboundOrders
+                .AsNoTracking()
+                .Where(o =>
+                    o.Warehouse != null &&
+                    o.Warehouse.CompanyId == companyId &&
+                    o.Status == "Completed" &&
+                    o.CreatedAt.HasValue &&
+                    o.CreatedAt.Value >= from &&
+                    o.CreatedAt.Value <= to);
+            if (warehouseId.HasValue && warehouseId.Value > 0)
+                inboundOrdersQuery = inboundOrdersQuery.Where(o => o.WarehouseId == warehouseId.Value);
+
+            var inboundOrders = await inboundOrdersQuery
+                .Select(o => new
+                {
+                    o.Id,
+                    Date = o.CreatedAt!.Value,
+                    NguoiTao = o.CreatedByNavigation != null ? o.CreatedByNavigation.FullName : null,
+                    NhanVien = o.Staff != null ? o.Staff.FullName : null
+                })
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            var inboundOrderIds = inboundOrders.Select(x => x.Id).ToList();
+            var inboundItemsRaw = await _context.InboundOrderItems
+                .AsNoTracking()
+                .Where(i => i.InboundOrderId.HasValue && inboundOrderIds.Contains(i.InboundOrderId.Value) && i.ProductId.HasValue)
+                .Select(i => new
+                {
+                    InboundOrderId = i.InboundOrderId!.Value,
+                    ProductName = i.Product != null ? i.Product.Name : null,
+                    Sku = i.Product != null ? i.Product.Sku : null,
+                    Qty = i.ReceivedQuantity ?? i.ExpectedQuantity ?? 0
+                })
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            var inboundItemsByOrder = inboundItemsRaw
+                .Where(x => x.Qty > 0)
+                .GroupBy(x => x.InboundOrderId)
+                .ToDictionary(
+                    g => g.Key,
+                    g => (IReadOnlyList<InventoryInOutBalanceItemRow>)g
+                        .Select(x => new InventoryInOutBalanceItemRow(x.ProductName, x.Qty, x.Sku))
+                        .ToList());
+
+            var inboundRows = inboundOrders.Select(x => new InventoryInOutBalanceTransactionRow(
+                x.Id,
+                x.Date,
+                "Inbound",
+                x.NguoiTao,
+                x.NhanVien,
+                inboundItemsByOrder.TryGetValue(x.Id, out var items) ? items : Array.Empty<InventoryInOutBalanceItemRow>()))
+                .Where(x => x.Items.Count > 0)
+                .ToList();
+
+            var outboundBase = _context.OutboundOrders
+                .AsNoTracking()
+                .Where(o => o.Warehouse != null && o.Warehouse.CompanyId == companyId);
+            if (warehouseId.HasValue && warehouseId.Value > 0)
+                outboundBase = outboundBase.Where(o => o.WarehouseId == warehouseId.Value);
+
+            var statusCompletedAt = _context.OutboundOrderStatusHistories
+                .Where(h => h.NewStatus == "Completed")
+                .GroupBy(h => h.OutboundOrderId)
+                .Select(g => new { OutboundOrderId = g.Key, CompletedAt = g.Max(h => (DateTime?)h.ChangedAt) });
+
+            var txCompletedAt = _context.InventoryTransactions
+                .AsNoTracking()
+                .Where(t =>
+                    t.Warehouse != null &&
+                    t.Warehouse.CompanyId == companyId &&
+                    t.TransactionType == "Outbound" &&
+                    t.CreatedAt.HasValue)
+                .Where(t => !warehouseId.HasValue || warehouseId.Value <= 0 || t.WarehouseId == warehouseId.Value)
+                .GroupBy(t => t.ReferenceId)
+                .Select(g => new { ReferenceId = g.Key, CompletedAt = g.Max(t => (DateTime?)t.CreatedAt) });
+
+            var outboundOrders = await outboundBase
+                .Select(o => new
+                {
+                    o.Id,
+                    NguoiTao = o.CreatedByNavigation != null ? o.CreatedByNavigation.FullName : null,
+                    NhanVien = o.Staff != null ? o.Staff.FullName : null
+                })
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            var outboundOrderIdsForScope = outboundOrders.Select(x => x.Id).ToList();
+            var statusCompletedMap = await statusCompletedAt
+                .Where(x => outboundOrderIdsForScope.Contains(x.OutboundOrderId))
+                .ToDictionaryAsync(x => x.OutboundOrderId, x => x.CompletedAt)
+                .ConfigureAwait(false);
+            var txCompletedMap = await txCompletedAt
+                .Where(x => x.ReferenceId.HasValue && outboundOrderIdsForScope.Contains(x.ReferenceId.Value))
+                .ToDictionaryAsync(x => x.ReferenceId!.Value, x => x.CompletedAt)
+                .ConfigureAwait(false);
+
+            var outboundRowsScoped = outboundOrders
+                .Select(o =>
+                {
+                    statusCompletedMap.TryGetValue(o.Id, out var statusCompleted);
+                    txCompletedMap.TryGetValue(o.Id, out var txCompleted);
+                    var completedAt = statusCompleted ?? txCompleted;
+
+                    return new
+                    {
+                        o.Id,
+                        Date = completedAt,
+                        o.NguoiTao,
+                        o.NhanVien
+                    };
+                })
+                .Where(x => x.Date.HasValue && x.Date.Value >= from && x.Date.Value <= to)
+                .ToList();
+
+            var outboundOrderIds = outboundRowsScoped.Select(x => x.Id).Distinct().ToList();
+            var outboundItemsRaw = await _context.OutboundOrderItems
+                .AsNoTracking()
+                .Where(i => i.OutboundOrderId.HasValue && outboundOrderIds.Contains(i.OutboundOrderId.Value) && i.ProductId.HasValue)
+                .Select(i => new
+                {
+                    OutboundOrderId = i.OutboundOrderId!.Value,
+                    ProductName = i.Product != null ? i.Product.Name : null,
+                    Sku = i.Product != null ? i.Product.Sku : null,
+                    Qty = i.ReceivedQuantity ?? i.ExpectedQuantity ?? i.Quantity ?? 0
+                })
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            var outboundItemsByOrder = outboundItemsRaw
+                .Where(x => x.Qty > 0)
+                .GroupBy(x => x.OutboundOrderId)
+                .ToDictionary(
+                    g => g.Key,
+                    g => (IReadOnlyList<InventoryInOutBalanceItemRow>)g
+                        .Select(x => new InventoryInOutBalanceItemRow(x.ProductName, x.Qty, x.Sku))
+                        .ToList());
+
+            var outboundRows = outboundRowsScoped
+                .Select(x => new InventoryInOutBalanceTransactionRow(
+                    x.Id,
+                    x.Date!.Value,
+                    "Outbound",
+                    x.NguoiTao,
+                    x.NhanVien,
+                    outboundItemsByOrder.TryGetValue(x.Id, out var items) ? items : Array.Empty<InventoryInOutBalanceItemRow>()))
+                .Where(x => x.Items.Count > 0)
+                .ToList();
+
+            var rows = inboundRows
+                .Concat(outboundRows)
+                .OrderByDescending(x => x.Date)
+                .ThenByDescending(x => x.TransactionId)
+                .ToList();
+
+            return new InventoryInOutBalanceReportData(
+                from,
+                to,
+                warehouseId,
+                rows.Count,
+                rows.Count(x => string.Equals(x.TransactionType, "Inbound", StringComparison.Ordinal)),
+                rows.Count(x => string.Equals(x.TransactionType, "Outbound", StringComparison.Ordinal)),
+                rows.Sum(x => x.Items.Count),
+                rows);
+        }
+
         public async Task<StocktakeVarianceReportData> GetStocktakeVarianceAsync(int companyId, int? warehouseId, int? inventoryCountTicketId, DateTime from, DateTime to)
         {
             var ticketQuery = _context.InventoryCountsTickets.AsNoTracking().Where(t => t.Warehouse != null && t.Warehouse.CompanyId == companyId);
@@ -734,10 +906,23 @@ namespace Storix_BE.Repository.Implementation
             if (inventoryCountTicketId.HasValue && inventoryCountTicketId.Value > 0) ticketQuery = ticketQuery.Where(t => t.Id == inventoryCountTicketId.Value);
             ticketQuery = ticketQuery.Where(t => t.CreatedAt.HasValue && t.CreatedAt.Value >= from && t.CreatedAt.Value <= to);
 
-            var ticketIds = await ticketQuery.Select(t => t.Id).ToListAsync().ConfigureAwait(false);
+            var tickets = await ticketQuery
+                .Select(t => new
+                {
+                    t.Id,
+                    Date = t.CreatedAt!.Value,
+                    TicketName = !string.IsNullOrWhiteSpace(t.Name) ? t.Name : $"Stocktake #{t.Id}",
+                    CreatedBy = t.PerformedByNavigation != null ? t.PerformedByNavigation.FullName : null,
+                    AssignedStaff = t.AssignedToNavigation != null ? t.AssignedToNavigation.FullName : null
+                })
+                .ToListAsync()
+                .ConfigureAwait(false);
+            var ticketIds = tickets.Select(t => t.Id).ToList();
+
             var rawItemRows = await _context.InventoryCountItems.AsNoTracking().Where(i => i.InventoryCountId.HasValue && ticketIds.Contains(i.InventoryCountId.Value))
                 .Select(i => new
                 {
+                    TicketId = i.InventoryCountId!.Value,
                     ProductId = i.ProductId ?? 0,
                     ProductName = i.Product != null ? i.Product.Name : null,
                     Sku = i.Product != null ? i.Product.Sku : null,
@@ -751,7 +936,8 @@ namespace Storix_BE.Repository.Implementation
 
             var itemRows = rawItemRows
                 .Where(x => x.ProductId > 0)
-                .Select(x => new StocktakeItemContext(
+                .Select(x => new StocktakeTicketItemContext(
+                    x.TicketId,
                     x.ProductId,
                     x.ProductName,
                     x.Sku,
@@ -776,11 +962,38 @@ namespace Storix_BE.Repository.Implementation
                 .ToDictionaryAsync(x => x.Id, x => x.ShelfId)
                 .ConfigureAwait(false);
 
-            var items = itemRows.Select(x =>
-            {
-                var cost = stocktakeCostContext.ResolveUnitCost(x.ProductId, x.LocationId);
-                return new StocktakeVarianceRow(x.ProductId, x.ProductName, x.Sku, x.SystemQty, x.CountedQty, x.Variance, cost, cost * x.Variance);
-            }).ToList();
+            var ticketItems = itemRows
+                .Select(x =>
+                {
+                    var cost = stocktakeCostContext.ResolveUnitCost(x.ProductId, x.LocationId);
+                    var item = new StocktakeVarianceItemRow(x.ProductId, x.ProductName, x.Sku, x.SystemQty, x.CountedQty, x.Variance, cost, cost * x.Variance);
+                    return new { x.TicketId, Item = item };
+                })
+                .ToList();
+
+            var items = ticketItems.Select(x => x.Item).ToList();
+
+            var itemsByTicketId = ticketItems
+                .GroupBy(x => x.TicketId)
+                .ToDictionary(g => g.Key, g => (IReadOnlyList<StocktakeVarianceItemRow>)g.Select(x => x.Item).ToList());
+
+            var rows = tickets
+                .Select(t =>
+                {
+                    itemsByTicketId.TryGetValue(t.Id, out var ticketItems);
+                    ticketItems ??= Array.Empty<StocktakeVarianceItemRow>();
+                    return new StocktakeVarianceGroupRow(
+                        t.Date,
+                        t.Id,
+                        t.TicketName,
+                        t.CreatedBy,
+                        t.AssignedStaff,
+                        ticketItems);
+                })
+                .Where(x => x.Items.Count > 0)
+                .OrderByDescending(x => x.Date)
+                .ThenByDescending(x => x.TicketId)
+                .ToList();
 
             return new StocktakeVarianceReportData(
                 from,
@@ -790,6 +1003,7 @@ namespace Storix_BE.Repository.Implementation
                 items.Count,
                 items.Sum(x => x.VarianceQty),
                 items.Sum(x => x.VarianceValue),
+                rows,
                 items,
                 BuildStocktakeBatchBreakdown(itemRows, stocktakeCostContext.BatchEntries, locationShelfMap));
         }
@@ -1113,7 +1327,8 @@ namespace Storix_BE.Repository.Implementation
             string? ZoneCode,
             int LocationQuantity);
 
-        private sealed record StocktakeItemContext(
+        private sealed record StocktakeTicketItemContext(
+            int TicketId,
             int ProductId,
             string? ProductName,
             string? Sku,
@@ -1287,7 +1502,7 @@ namespace Storix_BE.Repository.Implementation
         }
 
         private static IReadOnlyList<StocktakeBatchBreakdownRow> BuildStocktakeBatchBreakdown(
-            IReadOnlyList<StocktakeItemContext> itemRows,
+            IReadOnlyList<StocktakeTicketItemContext> itemRows,
             IReadOnlyList<BatchSnapshotEntry> batchEntries,
             IReadOnlyDictionary<int, int> locationShelfMap)
         {

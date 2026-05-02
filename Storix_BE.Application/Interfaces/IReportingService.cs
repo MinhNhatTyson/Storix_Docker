@@ -27,6 +27,8 @@ namespace Storix_BE.Service.Interfaces
     {
         public const string InventorySnapshot = "InventorySnapshot";
         public const string InventoryLedger = "InventoryLedger";
+        public const string InventoryOverallLedger = "InventoryOverallLedger";
+        // Legacy alias kept for backward compatibility with existing clients/data.
         public const string InventoryInOutBalance = "InventoryInOutBalance";
         public const string InventoryTracking = "InventoryTracking";
         public const string ReplenishmentRecommendation = "ReplenishmentRecommendation";
@@ -43,8 +45,11 @@ namespace Storix_BE.Service.Interfaces
     {
         public const string InventorySnapshot = "1";
         public const string InventoryLedger = "1";
+        public const string InventoryOverallLedger = "1";
+        // Legacy key retained; both map to the same schema version.
         public const string InventoryInOutBalance = "1";
         public const string InventoryTracking = "1";
+        public const string InventoryTrackingGrouped = "inventory-tracking-v2-grouped";
         public const string ReplenishmentRecommendation = "1";
     }
 
