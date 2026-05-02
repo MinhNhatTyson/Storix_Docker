@@ -14,12 +14,18 @@ using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 
 namespace Storix_BE.Service.Implementation
 {
     public class ReportingService : IReportingService
     {
+        private const string AiRecommendationSchemaVersion = "ai-recommendation-v1";
+        private const string AiRecommendationFeSchemaVersion = "ai-recommendation-fe-v1";
+        private const string AiRecommendationBasicSource = "AI_RECOMMENDATION_BASIC";
+        private const string AiRecommendationFeSource = "FE_AI_RECOMMENDATION";
+
         private static readonly HashSet<string> SupportedReportTypes = new(StringComparer.Ordinal)
         {
             ReportTypes.InventorySnapshot,
@@ -286,9 +292,10 @@ namespace Storix_BE.Service.Implementation
             var report = await _repo.GetReportByIdAsync(companyId, reportId).ConfigureAwait(false);
             if (report == null) return null;
 
+            var normalizedDataJson = NormalizeReportDataForRead(report.DataJson, report.SchemaVersion);
             var resultDto = (string.IsNullOrWhiteSpace(report.SummaryJson) && string.IsNullOrWhiteSpace(report.DataJson) && string.IsNullOrWhiteSpace(report.SchemaVersion))
                 ? null
-                : new ReportResultDto(TryParseJson(report.SummaryJson), TryParseJson(report.DataJson), report.SchemaVersion);
+                : new ReportResultDto(TryParseJson(report.SummaryJson), TryParseJson(normalizedDataJson), report.SchemaVersion);
 
             var pdfDto = string.IsNullOrWhiteSpace(report.PdfUrl)
                 ? null
@@ -319,14 +326,28 @@ namespace Storix_BE.Service.Implementation
             var report = await _repo.GetReportByIdAsync(companyId, reportId).ConfigureAwait(false)
                 ?? throw new InvalidOperationException("Report not found.");
 
-            var json = JsonSerializer.Serialize(recommendations, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
-            report.DataJson = json;
-            report.SchemaVersion = "ai-recommendation-v1";
-            report.CompletedAt = NormalizeToUnspecified(DateTime.UtcNow);
+            var savedAt = NormalizeToUnspecified(DateTime.UtcNow);
+            var aiPayload = new
+            {
+                source = AiRecommendationBasicSource,
+                items = recommendations.Select(x => new
+                {
+                    productId = x.ProductId,
+                    forecastedQuantity = Math.Max(0, x.ForecastedQuantity),
+                    reason = x.Reason
+                }).ToList(),
+                savedAt,
+                version = AiRecommendationSchemaVersion
+            };
+
+            report.DataJson = MergeAiRecommendationIntoReportData(report.DataJson, aiPayload);
+            report.SchemaVersion = AiRecommendationSchemaVersion;
+            report.CompletedAt = savedAt;
             report.Status = ReportStatus.Succeeded;
             report.ErrorMessage = null;
             await _repo.UpdateReportAsync(report).ConfigureAwait(false);
 
+            var normalizedDataJson = NormalizeReportDataForRead(report.DataJson, report.SchemaVersion);
             return new ReportDetailDto(
                 report.Id,
                 report.ReportType,
@@ -338,7 +359,7 @@ namespace Storix_BE.Service.Implementation
                 report.CreatedAt,
                 report.CompletedAt,
                 report.ErrorMessage,
-                new ReportResultDto(null, TryParseJson(report.DataJson), report.SchemaVersion),
+                new ReportResultDto(TryParseJson(report.SummaryJson), TryParseJson(normalizedDataJson), report.SchemaVersion),
                 report.PdfUrl == null ? null : new ReportPdfArtifactDto(report.PdfUrl, report.PdfFileName, report.PdfContentHash, report.PdfGeneratedAt));
         }
 
@@ -373,23 +394,26 @@ namespace Storix_BE.Service.Implementation
                 totalSuggestedRestock = normalized.Sum(x => x.suggestedRestockQuantity)
             };
 
-            var data = new
+            var savedAt = NormalizeToUnspecified(DateTime.UtcNow);
+            var aiRecommendation = new
             {
-                reportId = request.ReportId,
-                source = "FE_AI_RECOMMENDATION",
-                items = normalized
+                source = AiRecommendationFeSource,
+                items = normalized,
+                savedAt,
+                version = AiRecommendationFeSchemaVersion
             };
 
             var options = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
-            report.DataJson = JsonSerializer.Serialize(data, options);
+            report.DataJson = MergeAiRecommendationIntoReportData(report.DataJson, aiRecommendation);
             report.SummaryJson = JsonSerializer.Serialize(summary, options);
-            report.SchemaVersion = "ai-recommendation-fe-v1";
+            report.SchemaVersion = AiRecommendationFeSchemaVersion;
             report.Status = ReportStatus.Succeeded;
-            report.CompletedAt = NormalizeToUnspecified(DateTime.UtcNow);
+            report.CompletedAt = savedAt;
             report.ErrorMessage = null;
 
             await _repo.UpdateReportAsync(report).ConfigureAwait(false);
 
+            var normalizedDataJson = NormalizeReportDataForRead(report.DataJson, report.SchemaVersion);
             return new ReportDetailDto(
                 report.Id,
                 report.ReportType,
@@ -401,7 +425,7 @@ namespace Storix_BE.Service.Implementation
                 report.CreatedAt,
                 report.CompletedAt,
                 report.ErrorMessage,
-                new ReportResultDto(TryParseJson(report.SummaryJson), TryParseJson(report.DataJson), report.SchemaVersion),
+                new ReportResultDto(TryParseJson(report.SummaryJson), TryParseJson(normalizedDataJson), report.SchemaVersion),
                 report.PdfUrl == null ? null : new ReportPdfArtifactDto(report.PdfUrl, report.PdfFileName, report.PdfContentHash, report.PdfGeneratedAt));
         }
 
@@ -511,6 +535,111 @@ namespace Storix_BE.Service.Implementation
                 // If stored JSON is invalid/corrupt, don't break the whole response.
                 return null;
             }
+        }
+
+        private static string? NormalizeReportDataForRead(string? dataJson, string? schemaVersion)
+        {
+            if (string.IsNullOrWhiteSpace(dataJson))
+                return dataJson;
+
+            JsonNode? node;
+            try
+            {
+                node = JsonNode.Parse(dataJson);
+            }
+            catch
+            {
+                return dataJson;
+            }
+
+            if (node == null)
+                return dataJson;
+
+            if (node is JsonArray arrayNode)
+            {
+                var wrapped = new JsonObject
+                {
+                    ["aiRecommendation"] = BuildAiRecommendationObject(
+                        AiRecommendationBasicSource,
+                        arrayNode,
+                        null,
+                        string.IsNullOrWhiteSpace(schemaVersion) ? AiRecommendationSchemaVersion : schemaVersion)
+                };
+                return wrapped.ToJsonString();
+            }
+
+            if (node is JsonObject objectNode)
+            {
+                if (objectNode["aiRecommendation"] is JsonObject)
+                    return objectNode.ToJsonString();
+
+                if (objectNode["items"] is JsonArray legacyItems &&
+                    objectNode["source"] != null)
+                {
+                    var source = objectNode["source"]?.GetValue<string>() ?? AiRecommendationBasicSource;
+                    objectNode["aiRecommendation"] = BuildAiRecommendationObject(
+                        source,
+                        legacyItems,
+                        objectNode["savedAt"],
+                        string.IsNullOrWhiteSpace(schemaVersion) ? AiRecommendationSchemaVersion : schemaVersion);
+                    objectNode.Remove("source");
+                    objectNode.Remove("items");
+                    objectNode.Remove("savedAt");
+                    objectNode.Remove("version");
+                }
+
+                return objectNode.ToJsonString();
+            }
+
+            return dataJson;
+        }
+
+        private static string MergeAiRecommendationIntoReportData(string? existingDataJson, object aiRecommendationPayload)
+        {
+            var baseObject = ToJsonObject(existingDataJson);
+            var aiNode = JsonSerializer.SerializeToNode(aiRecommendationPayload) ?? new JsonObject();
+            baseObject["aiRecommendation"] = aiNode;
+            return baseObject.ToJsonString();
+        }
+
+        private static JsonObject ToJsonObject(string? json)
+        {
+            if (string.IsNullOrWhiteSpace(json))
+                return new JsonObject();
+
+            try
+            {
+                var parsed = JsonNode.Parse(json);
+                if (parsed is JsonObject obj)
+                    return obj;
+
+                var wrapper = new JsonObject();
+                if (parsed is JsonArray array)
+                {
+                    wrapper["legacyAiRecommendationItems"] = array;
+                }
+                else if (parsed != null)
+                {
+                    wrapper["legacyData"] = parsed;
+                }
+
+                return wrapper;
+            }
+            catch
+            {
+                return new JsonObject();
+            }
+        }
+
+        private static JsonObject BuildAiRecommendationObject(string source, JsonArray items, JsonNode? savedAt, string version)
+        {
+            return new JsonObject
+            {
+                ["source"] = source,
+                ["items"] = items,
+                ["savedAt"] = savedAt,
+                ["version"] = version
+            };
         }
 
         private static byte[] GenerateOutboundKpiBasicPdf(Report report, OutboundKpiBasicReportData data)
