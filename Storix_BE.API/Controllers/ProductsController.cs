@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using Org.BouncyCastle.Asn1.Ocsp;
+using Storix_BE.Domain.Enum;
 using Storix_BE.Service.Implementation;
 using Storix_BE.Service.Interfaces;
 
@@ -363,7 +364,26 @@ namespace Storix_BE.API.Controllers
                 return BadRequest(new { message = ex.Message });
             }
         }
+        [HttpGet("categories/resolve-code")]
+        [Authorize(Roles = "2")]
+        public IActionResult ResolveCategoryCode([FromQuery] string name)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+                return BadRequest(new { message = "Name is required." });
 
+            var code = ProductCategoryCodeResolver.ResolveAsString(name);
+            var isKnown = ProductCategoryCodeResolver.IsKnown(name);
+
+            return Ok(new
+            {
+                name,
+                resolvedCode = code,
+                isKnown,
+                note = isKnown
+                    ? $"Name matched a known electronics category → code '{code}' will be assigned."
+                    : $"Name did not match any known category → fallback code 'GEN' will be assigned."
+            });
+        }
         [HttpDelete("categories/{id:int}")]
         [Authorize(Roles = "2")]
         public async Task<IActionResult> DeleteCategory(int id)

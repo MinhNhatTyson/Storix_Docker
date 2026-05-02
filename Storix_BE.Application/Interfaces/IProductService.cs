@@ -113,9 +113,7 @@ namespace Storix_BE.Service.Interfaces
         string? DefaultSupplierName,
     IFormFile? Image);
     public sealed record CreateProductCategoryRequest(
-    int CompanyId,
-    string Name,
-    /// <summary>Uppercase SKU code, max 10 chars. E.g. "CAP", "RES", "IC".</summary>
-    string CategoryCode,
-    int? ParentCategoryId);
+        int CompanyId,
+        string Name,
+        int? ParentCategoryId);
 }

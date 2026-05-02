@@ -3,6 +3,7 @@ using DocumentFormat.OpenXml.Office2016.Excel;
 using DocumentFormat.OpenXml.Wordprocessing;
 using Microsoft.AspNetCore.Http;
 using Org.BouncyCastle.Asn1.Ocsp;
+using Storix_BE.Domain.Enum;
 using Storix_BE.Domain.Models;
 using Storix_BE.Repository.DTO;
 using Storix_BE.Repository.Implementation;
@@ -361,16 +362,19 @@ namespace Storix_BE.Service.Implementation
         {
             if (request == null) throw new InvalidOperationException("Request cannot be null.");
             if (request.CompanyId <= 0) throw new InvalidOperationException("CompanyId must be a positive integer.");
+
             var name = request.Name?.Trim();
-            if (string.IsNullOrWhiteSpace(name)) throw new InvalidOperationException("Product category name is required.");
-            if (string.IsNullOrWhiteSpace(request.CategoryCode))
-                throw new InvalidOperationException("Category code is required.");
+            if (string.IsNullOrWhiteSpace(name))
+                throw new InvalidOperationException("Product category name is required.");
+
+            // ── Auto-resolve category code from the Vietnamese / English name ──────
+            var categoryCode = ProductCategoryCodeResolver.ResolveAsString(name);
 
             var toCreate = new ProductCategory
             {
                 CompanyId = request.CompanyId,
                 Name = name,
-                CategoryCode = request.CategoryCode.Trim().ToUpperInvariant(),
+                CategoryCode = categoryCode,
                 ParentCategoryId = (request.ParentCategoryId.HasValue && request.ParentCategoryId.Value == 0)
                                        ? null
                                        : request.ParentCategoryId

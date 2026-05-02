@@ -514,14 +514,13 @@ namespace Storix_BE.Repository.Implementation
         {
             if (category == null) throw new InvalidOperationException("Category cannot be null.");
             var name = category.Name?.Trim();
-            if (string.IsNullOrWhiteSpace(name)) throw new InvalidOperationException("Product category name is required.");
+            if (string.IsNullOrWhiteSpace(name))
+                throw new InvalidOperationException("Product category name is required.");
 
-            // ── NEW: validate CategoryCode ─────────────────────────────────────────
+            // CategoryCode is now always resolver-provided; validate it is non-empty
             var code = category.CategoryCode?.Trim().ToUpperInvariant();
             if (string.IsNullOrWhiteSpace(code))
-                throw new InvalidOperationException("Category code is required (e.g. CAP, RES, IC).");
-            if (code.Length > 10)
-                throw new InvalidOperationException("Category code must be 10 characters or fewer.");
+                throw new InvalidOperationException("Category code could not be resolved.");
 
             var nameLower = name.ToLowerInvariant();
             var parentId = category.ParentCategoryId;
@@ -534,24 +533,21 @@ namespace Storix_BE.Repository.Implementation
                     c.Name != null && c.Name.ToLower() == nameLower);
 
             if (exists != null)
-                throw new InvalidOperationException($"Product category with name '{name}' already exists in the same scope.");
-
-            // check CategoryCode uniqueness within the company ──────────────
-            var codeExists = await _context.ProductCategories
-                .AsNoTracking()
-                .AnyAsync(c => c.CompanyId == category.CompanyId &&
-                               c.CategoryCode.ToUpper() == code);
-            if (codeExists)
-                throw new InvalidOperationException($"Category code '{code}' is already used by another category in this company.");
+                throw new InvalidOperationException(
+                    $"Product category with name '{name}' already exists in the same scope.");
 
             int level = 0;
             if (parentId.HasValue)
             {
                 var parent = await _context.ProductCategories.FindAsync(parentId.Value);
                 if (parent == null)
-                    throw new InvalidOperationException($"Parent product category with id {parentId.Value} not found.");
-                if (parent.CompanyId.HasValue && category.CompanyId.HasValue && parent.CompanyId != category.CompanyId)
-                    throw new InvalidOperationException("Parent category does not belong to the same company as the new category.");
+                    throw new InvalidOperationException(
+                        $"Parent product category with id {parentId.Value} not found.");
+                if (parent.CompanyId.HasValue &&
+                    category.CompanyId.HasValue &&
+                    parent.CompanyId != category.CompanyId)
+                    throw new InvalidOperationException(
+                        "Parent category does not belong to the same company as the new category.");
                 level = parent.Level + 1;
             }
 
