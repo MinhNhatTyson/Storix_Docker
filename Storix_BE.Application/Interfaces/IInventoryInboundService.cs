@@ -39,6 +39,8 @@ namespace Storix_BE.Service.Interfaces
         Task AddStorageRecommendationsAsync(AddStorageRecommendationsRequest request);
         Task<List<InboundItemRecommendationsDto>> GetStorageRecommendationsByInboundOrderIdAsync(int inboundOrderId);
         Task<InboundOrder> AssignStaffToInboundOrderAsync(int companyId, int inboundOrderId, int managerUserId, int staffUserId);
+        Task<List<InboundRequestDto>> GetInboundRequestsByWarehouseAsync(int companyId, int warehouseId);
+        Task<List<InboundOrderDto>> GetInboundOrdersByWarehouseAsync(int companyId, int warehouseId);
     }
     public sealed record SupplierDto(int Id, string? Name, string? Phone, string? Email);
 

@@ -672,6 +672,40 @@ namespace Storix_BE.Repository.Implementation
 
             return order;
         }
+        public async Task<List<InboundRequest>> GetInboundRequestsByWarehouseAsync(int companyId, int warehouseId)
+        {
+            if (companyId <= 0) throw new ArgumentException("Invalid company id.", nameof(companyId));
+            if (warehouseId <= 0) throw new ArgumentException("Invalid warehouse id.", nameof(warehouseId));
+
+            return await _context.InboundRequests
+                .Include(r => r.InboundOrderItems)
+                .Include(r => r.Supplier)
+                .Include(r => r.Warehouse)
+                .Include(r => r.RequestedByNavigation)
+                .Include(r => r.ApprovedByNavigation)
+                .Where(r => r.WarehouseId == warehouseId && r.RequestedByNavigation.CompanyId == companyId)
+                .OrderByDescending(r => r.CreatedAt)
+                .ToListAsync()
+                .ConfigureAwait(false);
+        }
+
+        public async Task<List<InboundOrder>> GetInboundOrdersByWarehouseAsync(int companyId, int warehouseId)
+        {
+            if (companyId <= 0) throw new ArgumentException("Invalid company id.", nameof(companyId));
+            if (warehouseId <= 0) throw new ArgumentException("Invalid warehouse id.", nameof(warehouseId));
+
+            return await _context.InboundOrders
+                .Include(o => o.InboundOrderItems)
+                    .ThenInclude(i => i.Product)
+                .Include(o => o.InboundRequest)
+                .Include(o => o.Supplier)
+                .Include(o => o.Warehouse)
+                .Include(o => o.CreatedByNavigation)
+                .Where(o => o.WarehouseId == warehouseId && o.Warehouse != null && o.Warehouse.CompanyId == companyId)
+                .OrderByDescending(o => o.CreatedAt)
+                .ToListAsync()
+                .ConfigureAwait(false);
+        }
         public async Task<bool> InboundRequestCodeExistsAsync(string code)
         {
             if (string.IsNullOrWhiteSpace(code)) return false;

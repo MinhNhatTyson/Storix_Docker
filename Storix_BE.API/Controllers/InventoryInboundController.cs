@@ -39,7 +39,7 @@ namespace Storix_BE.API.Controllers
         }
 
         [HttpPut("update-inbound-request/{id}/status")]
-        [Authorize(Roles = "3")]
+        [Authorize(Roles = "2,3")]
         public async Task<IActionResult> UpdateStatus(int id, [FromBody] UpdateInboundRequestStatusRequest request)
         {
             try
@@ -159,7 +159,57 @@ namespace Storix_BE.API.Controllers
                 return StatusCode(500, new { message = ex.Message });
             }
         }
+        [HttpGet("get-all-inbound-requests/{companyId:int}/warehouse/{warehouseId:int}")]
+        [Authorize(Roles = "2,3")]
+        public async Task<IActionResult> GetAllRequestsByWarehouse(int companyId, int warehouseId)
+        {
+            if (companyId <= 0) return BadRequest(new { message = "Invalid company id." });
+            if (warehouseId <= 0) return BadRequest(new { message = "Invalid warehouse id." });
 
+            try
+            {
+                var items = await _service.GetInboundRequestsByWarehouseAsync(companyId, warehouseId);
+                return Ok(items);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = ex.Message });
+            }
+        }
+
+        [HttpGet("get-all-inbound-tickets/{companyId:int}/warehouse/{warehouseId:int}")]
+        [Authorize(Roles = "2,3")]
+        public async Task<IActionResult> GetAllTicketsByWarehouse(int companyId, int warehouseId)
+        {
+            if (companyId <= 0) return BadRequest(new { message = "Invalid company id." });
+            if (warehouseId <= 0) return BadRequest(new { message = "Invalid warehouse id." });
+
+            try
+            {
+                var items = await _service.GetInboundOrdersByWarehouseAsync(companyId, warehouseId);
+                return Ok(items);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = ex.Message });
+            }
+        }
         [HttpGet("requests/{companyId:int}/{id:int}")]
         public async Task<IActionResult> GetRequestById(int companyId, int id)
         {

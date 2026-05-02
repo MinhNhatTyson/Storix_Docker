@@ -534,6 +534,23 @@ namespace Storix_BE.Service.Implementation
             var items = await _repo.GetInboundOrdersByStaffAsync(companyId, staffId);
             return items.Select(MapInboundOrderToDto).ToList();
         }
+        public async Task<List<InboundRequestDto>> GetInboundRequestsByWarehouseAsync(int companyId, int warehouseId)
+        {
+            if (companyId <= 0) throw new ArgumentException("Invalid company id.", nameof(companyId));
+            if (warehouseId <= 0) throw new ArgumentException("Invalid warehouse id.", nameof(warehouseId));
+
+            var items = await _repo.GetInboundRequestsByWarehouseAsync(companyId, warehouseId).ConfigureAwait(false);
+            return items.Select(MapInboundRequestToDto).ToList();
+        }
+
+        public async Task<List<InboundOrderDto>> GetInboundOrdersByWarehouseAsync(int companyId, int warehouseId)
+        {
+            if (companyId <= 0) throw new ArgumentException("Invalid company id.", nameof(companyId));
+            if (warehouseId <= 0) throw new ArgumentException("Invalid warehouse id.", nameof(warehouseId));
+
+            var items = await _repo.GetInboundOrdersByWarehouseAsync(companyId, warehouseId).ConfigureAwait(false);
+            return items.Select(MapInboundOrderToDto).ToList();
+        }
         public async Task<InboundRequestExportDto> GetInboundRequestForExportAsync(int inboundRequestId)
         {
             if (inboundRequestId <= 0) throw new ArgumentException("Invalid inbound request id.", nameof(inboundRequestId));
