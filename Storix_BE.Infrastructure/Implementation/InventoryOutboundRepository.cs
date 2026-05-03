@@ -683,6 +683,14 @@ namespace Storix_BE.Repository.Implementation
                     if (!order.WarehouseId.HasValue || order.WarehouseId.Value <= 0)
                         throw new InvalidOperationException("OutboundOrder must specify WarehouseId to update inventory.");
 
+                    var productIdsForReconcile = order.OutboundOrderItems
+                        .Where(i => i.ProductId.HasValue)
+                        .Select(i => i.ProductId!.Value)
+                        .Distinct()
+                        .ToList();
+                    await ReconcileInventoryLocationsForProductsAsync(order.WarehouseId.Value, productIdsForReconcile, performedBy, "OutboundStatusComplete")
+                        .ConfigureAwait(false);
+
                     await DeductOutboundByFifoAsync(order, order.OutboundOrderItems.Where(i => i.Id > 0 && i.ProductId.HasValue), performedBy, now)
                         .ConfigureAwait(false);
                 }
@@ -696,6 +704,19 @@ namespace Storix_BE.Repository.Implementation
                     ChangedByUserId = performedBy,
                     ChangedAt = now
                 });
+
+                if (string.Equals(finalStatus, "Completed", StringComparison.OrdinalIgnoreCase)
+                    && order.WarehouseId.HasValue
+                    && order.WarehouseId.Value > 0)
+                {
+                    var productIds = order.OutboundOrderItems
+                        .Where(i => i.ProductId.HasValue)
+                        .Select(i => i.ProductId!.Value)
+                        .Distinct()
+                        .ToList();
+                    await EnsureInventoryLocationInvariantAsync(order.WarehouseId.Value, productIds, "OutboundStatusComplete")
+                        .ConfigureAwait(false);
+                }
 
                 await _context.SaveChangesAsync().ConfigureAwait(false);
                 await tx.CommitAsync().ConfigureAwait(false);
@@ -1495,6 +1516,9 @@ namespace Storix_BE.Repository.Implementation
             var oldStatusForHistory = order.Status;
             try
             {
+                await ReconcileInventoryLocationsForProductsAsync(order.WarehouseId!.Value, orderProductIds, performedBy, "OutboundConfirmComplete")
+                    .ConfigureAwait(false);
+
                 await DeductOutboundByFifoAsync(order, orderItems, performedBy, now).ConfigureAwait(false);
 
                 if (locationList.Any())
@@ -1552,6 +1576,12 @@ namespace Storix_BE.Repository.Implementation
                     ChangedByUserId = performedBy,
                     ChangedAt = now
                 });
+
+                if (order.WarehouseId.HasValue && order.WarehouseId.Value > 0)
+                {
+                    await EnsureInventoryLocationInvariantAsync(order.WarehouseId.Value, orderProductIds, "OutboundConfirmComplete")
+                        .ConfigureAwait(false);
+                }
 
                 await _context.SaveChangesAsync().ConfigureAwait(false);
                 await tx.CommitAsync().ConfigureAwait(false);
@@ -2780,6 +2810,176 @@ namespace Storix_BE.Repository.Implementation
                     var available = inventory?.Quantity ?? 0;
                     throw new InvalidOperationException($"Insufficient stock for ProductId {item.ProductId}. Available: {available}, Requested: {item.Quantity}");
                 }
+            }
+        }
+
+        private async Task EnsureInventoryLocationInvariantAsync(int warehouseId, IEnumerable<int> productIds, string context)
+        {
+            var distinctProductIds = productIds?
+                .Where(x => x > 0)
+                .Distinct()
+                .ToList() ?? new List<int>();
+
+            if (!distinctProductIds.Any())
+                return;
+
+            var inventories = await _context.Inventories
+                .Where(i => i.WarehouseId == warehouseId
+                            && i.ProductId.HasValue
+                            && distinctProductIds.Contains(i.ProductId.Value))
+                .Select(i => new { i.Id, ProductId = i.ProductId!.Value, Quantity = i.Quantity ?? 0 })
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            if (!inventories.Any())
+                return;
+
+            var inventoryIds = inventories.Select(x => x.Id).ToList();
+            var locationSums = await _context.InventoryLocations
+                .Where(il => il.InventoryId.HasValue && inventoryIds.Contains(il.InventoryId.Value))
+                .GroupBy(il => il.InventoryId!.Value)
+                .Select(g => new { InventoryId = g.Key, Quantity = g.Sum(x => x.Quantity ?? 0) })
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            var locationQtyByInventory = locationSums.ToDictionary(x => x.InventoryId, x => x.Quantity);
+
+            foreach (var inv in inventories)
+            {
+                var locationQty = locationQtyByInventory.TryGetValue(inv.Id, out var qty) ? qty : 0;
+                if (inv.Quantity != locationQty)
+                {
+                    throw new InvalidOperationException(
+                        $"Inventory-location mismatch in {context}: WarehouseId={warehouseId}, ProductId={inv.ProductId}, InventoryQty={inv.Quantity}, LocationQty={locationQty}.");
+                }
+            }
+        }
+
+        private async Task ReconcileInventoryLocationsForProductsAsync(int warehouseId, IEnumerable<int> productIds, int? performedBy, string context)
+        {
+            var distinctProductIds = productIds?
+                .Where(x => x > 0)
+                .Distinct()
+                .ToList() ?? new List<int>();
+
+            if (!distinctProductIds.Any())
+                return;
+
+            var now = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
+            var inventories = await _context.Inventories
+                .Where(i => i.WarehouseId == warehouseId
+                            && i.ProductId.HasValue
+                            && distinctProductIds.Contains(i.ProductId.Value))
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            if (!inventories.Any())
+                return;
+
+            var batchShelfRollup = await _context.InventoryBatchLocations
+                .Where(bl => bl.Batch != null
+                             && bl.Batch.WarehouseId == warehouseId
+                             && distinctProductIds.Contains(bl.Batch.ProductId)
+                             && bl.Bin != null
+                             && bl.Bin.Level != null
+                             && bl.Bin.Level.ShelfId.HasValue)
+                .Select(bl => new
+                {
+                    ProductId = bl.Batch!.ProductId,
+                    ShelfId = bl.Bin!.Level!.ShelfId!.Value,
+                    Quantity = bl.Quantity
+                })
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            var rollupByProductShelf = batchShelfRollup
+                .GroupBy(x => new { x.ProductId, x.ShelfId })
+                .ToDictionary(g => (g.Key.ProductId, g.Key.ShelfId), g => g.Sum(x => x.Quantity));
+
+            var inventoryIds = inventories.Select(i => i.Id).ToList();
+            var existingLocations = await _context.InventoryLocations
+                .Where(il => il.InventoryId.HasValue && inventoryIds.Contains(il.InventoryId.Value))
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            foreach (var inv in inventories)
+            {
+                var productId = inv.ProductId!.Value;
+                var targetTotal = inv.Quantity ?? 0;
+                var targets = rollupByProductShelf
+                    .Where(kv => kv.Key.ProductId == productId)
+                    .Select(kv => new { kv.Key.ShelfId, Quantity = kv.Value })
+                    .OrderBy(x => x.ShelfId)
+                    .ToList();
+
+                var currentLocs = existingLocations
+                    .Where(x => x.InventoryId == inv.Id)
+                    .ToList();
+                var currentTotal = currentLocs.Sum(x => x.Quantity ?? 0);
+
+                if (!targets.Any() && targetTotal > 0)
+                {
+                    var fallback = currentLocs.OrderByDescending(x => x.Quantity ?? 0).FirstOrDefault();
+                    if (fallback == null || !fallback.ShelfId.HasValue)
+                        throw new InvalidOperationException($"Cannot reconcile inventory locations in {context} for WarehouseId={warehouseId}, ProductId={productId}. No shelf placement exists.");
+
+                    targets.Add(new { ShelfId = fallback.ShelfId.Value, Quantity = targetTotal });
+                }
+
+                if (targets.Any())
+                {
+                    var rollupTotal = targets.Sum(x => x.Quantity);
+                    var delta = targetTotal - rollupTotal;
+                    if (delta != 0)
+                    {
+                        var first = targets[0];
+                        targets[0] = new { first.ShelfId, Quantity = Math.Max(0, first.Quantity + delta) };
+                    }
+                }
+
+                var targetByShelf = targets
+                    .Where(x => x.ShelfId > 0)
+                    .ToDictionary(x => x.ShelfId, x => Math.Max(0, x.Quantity));
+
+                foreach (var loc in currentLocs)
+                {
+                    if (!loc.ShelfId.HasValue || !targetByShelf.TryGetValue(loc.ShelfId.Value, out var targetQty))
+                    {
+                        if ((loc.Quantity ?? 0) != 0)
+                        {
+                            loc.Quantity = 0;
+                            loc.UpdatedAt = now;
+                        }
+                        continue;
+                    }
+
+                    if ((loc.Quantity ?? 0) != targetQty)
+                    {
+                        loc.Quantity = targetQty;
+                        loc.UpdatedAt = now;
+                    }
+                }
+
+                var existingShelfIds = currentLocs.Where(x => x.ShelfId.HasValue).Select(x => x.ShelfId!.Value).ToHashSet();
+                foreach (var kv in targetByShelf.Where(kv => !existingShelfIds.Contains(kv.Key)))
+                {
+                    _context.InventoryLocations.Add(new InventoryLocation
+                    {
+                        InventoryId = inv.Id,
+                        ShelfId = kv.Key,
+                        Quantity = kv.Value,
+                        UpdatedAt = now
+                    });
+                }
+
+                _context.ActivityLogs.Add(new ActivityLog
+                {
+                    UserId = performedBy,
+                    Entity = "OutboundOrder",
+                    EntityId = 0,
+                    Action = $"OUTBOUND_RECONCILE_LOCATION:{context};WAREHOUSE={warehouseId};PRODUCT={productId};INV_QTY={targetTotal};LOC_BEFORE={currentTotal};LOC_TARGET={targetTotal}",
+                    Timestamp = now
+                });
             }
         }
 
