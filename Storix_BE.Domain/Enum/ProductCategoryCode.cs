@@ -48,6 +48,7 @@ namespace Storix_BE.Domain.Enum
         PCB,    // Bo mạch in
         HSK,    // Tản nhiệt
         ENC,    // Vỏ hộp / Enclosure
+        VTM,    // Bút thử điện
 
         // ── Cables & Wire ─────────────────────────────────────────────────────
         WIRE,   // Dây dẫn / Cáp

@@ -43,17 +43,15 @@ namespace Storix_BE.Service.Implementation
             // 1. Supplier initials
             var supplierCode = BuildSupplierInitials(supplierName);
 
-            // 2. Category code (already validated upstream)
+            // 2. Category code (already resolved upstream via ProductCategoryCodeResolver)
             var catCode = string.IsNullOrWhiteSpace(categoryCode)
                 ? "GEN"
                 : categoryCode.Trim().ToUpperInvariant();
 
-            // 3. Package type
-            var pkgCode = string.IsNullOrWhiteSpace(packageType)
-                ? "GEN"
-                : packageType.Trim().ToUpperInvariant().Replace(" ", "");
+            // 3. Package type — resolve Vietnamese/English free-text → standard code
+            var pkgCode = ProductPackageTypeResolver.ResolveAsString(packageType);
 
-            // 4. Size standard
+            // 4. Size standard — keep as-is, just normalise
             var sizeCode = string.IsNullOrWhiteSpace(sizeStandard)
                 ? "STD"
                 : sizeStandard.Trim().ToUpperInvariant().Replace(" ", "");
@@ -70,7 +68,7 @@ namespace Storix_BE.Service.Implementation
             // 6. Sequence — Repository owns the DB call
             var seq = await _repo.ClaimNextSkuSequenceAsync(companyId);
 
-            // 7. Assemble — CONCAT_WS equivalent: skip null segments
+            // 7. Assemble
             var segments = new List<string> { supplierCode, catCode, pkgCode, sizeCode };
             if (flags is not null) segments.Add(flags);
             segments.Add(seq.ToString("D5"));

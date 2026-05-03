@@ -462,5 +462,25 @@ namespace Storix_BE.API.Controllers
 
             return Ok(result);
         }
+        [HttpGet("package-types/resolve-code")]
+        [Authorize(Roles = "2,3")]
+        public IActionResult ResolvePackageTypeCode([FromQuery] string input)
+        {
+            if (string.IsNullOrWhiteSpace(input))
+                return BadRequest(new { message = "Input is required." });
+
+            var code = ProductPackageTypeResolver.ResolveAsString(input);
+            var isKnown = ProductPackageTypeResolver.IsKnown(input);
+
+            return Ok(new
+            {
+                input,
+                resolvedCode = code,
+                isKnown,
+                note = isKnown
+                    ? $"Matched a known package type → code '{code}' will be used in SKU."
+                    : "No match found → fallback code 'PKG' will be used in SKU."
+            });
+        }
     }
 }
