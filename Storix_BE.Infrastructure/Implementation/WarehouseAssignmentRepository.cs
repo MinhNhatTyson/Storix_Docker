@@ -198,15 +198,11 @@ namespace Storix_BE.Repository.Implementation
         }
         public async Task<bool> UpdateWarehouseStructureAsync(int warehouseId, Warehouse warehouseStructure)
         {
-            if (warehouseStructure == null) throw new System.ArgumentNullException(nameof(warehouseStructure));
-            if (warehouseId <= 0) throw new System.ArgumentException("Invalid warehouse id.", nameof(warehouseId));
+            if (warehouseStructure == null) throw new ArgumentNullException(nameof(warehouseStructure));
+            if (warehouseId <= 0) throw new ArgumentException("Invalid warehouse id.", nameof(warehouseId));
 
-            // Load existing warehouse with related collections to remove them safely
             var existing = await _context.Warehouses
                 .Include(w => w.NavEdges)
-                    .ThenInclude(e => e.NodeFromNavigation)
-                .Include(w => w.NavEdges)
-                    .ThenInclude(e => e.NodeToNavigation)
                 .Include(w => w.NavNodes)
                 .Include(w => w.StorageZones)
                     .ThenInclude(z => z.Shelves)
@@ -215,167 +211,380 @@ namespace Storix_BE.Repository.Implementation
                 .Include(w => w.StorageZones)
                     .ThenInclude(z => z.Shelves)
                         .ThenInclude(s => s.ShelfNodes)
-                            .ThenInclude(sn => sn.Node)
                 .FirstOrDefaultAsync(w => w.Id == warehouseId);
 
-            if (existing == null) throw new System.InvalidOperationException("Warehouse not found.");
+            if (existing == null) throw new InvalidOperationException("Warehouse not found.");
 
             await using var tx = await _context.Database.BeginTransactionAsync();
             try
             {
-                // Explicitly remove nested children to avoid leftover duplicates when cascade is not configured
-                // Remove shelf level bins
-                var bins = existing.StorageZones?
-                    .SelectMany(z => z.Shelves ?? Enumerable.Empty<Shelf>())
-                    .SelectMany(s => s.ShelfLevels ?? Enumerable.Empty<ShelfLevel>())
-                    .SelectMany(l => l.ShelfLevelBins ?? Enumerable.Empty<ShelfLevelBin>())
-                    .ToList() ?? new List<ShelfLevelBin>();
-                if (bins.Any()) _context.ShelfLevelBins.RemoveRange(bins);
-
-                // Remove shelf levels
-                var levels = existing.StorageZones?
-                    .SelectMany(z => z.Shelves ?? Enumerable.Empty<Shelf>())
-                    .SelectMany(s => s.ShelfLevels ?? Enumerable.Empty<ShelfLevel>())
-                    .ToList() ?? new List<ShelfLevel>();
-                if (levels.Any()) _context.ShelfLevels.RemoveRange(levels);
-
-                // Remove shelf nodes (associations)
-                var shelfNodes = existing.StorageZones?
-                    .SelectMany(z => z.Shelves ?? Enumerable.Empty<Shelf>())
-                    .SelectMany(s => s.ShelfNodes ?? Enumerable.Empty<ShelfNode>())
-                    .ToList() ?? new List<ShelfNode>();
-                if (shelfNodes.Any()) _context.ShelfNodes.RemoveRange(shelfNodes);
-
-                // Remove shelves
-                var shelves = existing.StorageZones?
-                    .SelectMany(z => z.Shelves ?? Enumerable.Empty<Shelf>())
-                    .ToList() ?? new List<Shelf>();
-                if (shelves.Any()) _context.Shelves.RemoveRange(shelves);
-
-                // Remove zones
-                var zones = existing.StorageZones?.ToList() ?? new List<StorageZone>();
-                if (zones.Any()) _context.StorageZones.RemoveRange(zones);
-
-                // Remove nav edges
-                var edges = existing.NavEdges?.ToList() ?? new List<NavEdge>();
-                if (edges.Any()) _context.NavEdges.RemoveRange(edges);
-
-                // Remove nav nodes
-                var nodes = existing.NavNodes?.ToList() ?? new List<NavNode>();
-                if (nodes.Any()) _context.NavNodes.RemoveRange(nodes);
-
-                await _context.SaveChangesAsync();
-
-                // Update dimensions
+                // Update warehouse dimensions
                 existing.Width = warehouseStructure.Width;
                 existing.Height = warehouseStructure.Height;
                 existing.Length = warehouseStructure.Length;
 
-                var now = System.DateTime.SpecifyKind(System.DateTime.UtcNow, System.DateTimeKind.Unspecified);
+                var now = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
 
-                // Keep track of nodes we add to avoid adding the same logical node twice
-                var addedNodesByIdCode = new Dictionary<string, NavNode>(System.StringComparer.OrdinalIgnoreCase);
+                // ── NavNodes ──────────────────────────────────────────────────────────
+                var incomingNodes = warehouseStructure.NavNodes ?? new List<NavNode>();
+                var incomingNodeCodes = incomingNodes
+                    .Where(n => !string.IsNullOrWhiteSpace(n.IdCode))
+                    .Select(n => n.IdCode!)
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-                // Add new NavNodes (if any)
-                if (warehouseStructure.NavNodes != null)
+                // Remove nodes that no longer exist
+                var nodesToRemove = existing.NavNodes
+                    .Where(n => string.IsNullOrWhiteSpace(n.IdCode) || !incomingNodeCodes.Contains(n.IdCode))
+                    .ToList();
+                if (nodesToRemove.Any()) _context.NavNodes.RemoveRange(nodesToRemove);
+
+                // Build a map of existing nodes by IdCode for upsert
+                var existingNodeByCode = existing.NavNodes
+                    .Where(n => !string.IsNullOrWhiteSpace(n.IdCode))
+                    .ToDictionary(n => n.IdCode!, StringComparer.OrdinalIgnoreCase);
+
+                // Upsert nodes; track all resulting node entities by IdCode
+                var nodeByCode = new Dictionary<string, NavNode>(StringComparer.OrdinalIgnoreCase);
+                foreach (var incoming in incomingNodes)
                 {
-                    foreach (var n in warehouseStructure.NavNodes)
+                    if (string.IsNullOrWhiteSpace(incoming.IdCode))
                     {
-                        // Use the provided IdCode as key; avoid adding duplicate node instances
-                        n.Warehouse = existing;
-                        n.Id = 0;
-                        _context.NavNodes.Add(n);
-                        if (!string.IsNullOrWhiteSpace(n.IdCode) && !addedNodesByIdCode.ContainsKey(n.IdCode))
-                            addedNodesByIdCode[n.IdCode] = n;
+                        // No IdCode — always insert
+                        incoming.WarehouseId = warehouseId;
+                        incoming.Id = 0;
+                        _context.NavNodes.Add(incoming);
+                        continue;
+                    }
+
+                    if (existingNodeByCode.TryGetValue(incoming.IdCode, out var existingNode))
+                    {
+                        // Update in place
+                        existingNode.XCoordinate = incoming.XCoordinate;
+                        existingNode.YCoordinate = incoming.YCoordinate;
+                        existingNode.Type = incoming.Type;
+                        existingNode.Radius = incoming.Radius;
+                        existingNode.Side = incoming.Side;
+                        nodeByCode[incoming.IdCode] = existingNode;
+                    }
+                    else
+                    {
+                        // Insert new
+                        incoming.WarehouseId = warehouseId;
+                        incoming.Id = 0;
+                        _context.NavNodes.Add(incoming);
+                        nodeByCode[incoming.IdCode] = incoming;
                     }
                 }
 
-                // Add new StorageZones (and nested shelves/levels/bins)
-                if (warehouseStructure.StorageZones != null)
+                // Save so new nodes get their IDs before edges reference them
+                await _context.SaveChangesAsync();
+
+                // Refresh nodeByCode with newly inserted nodes (they now have IDs)
+                foreach (var incoming in incomingNodes.Where(n => !string.IsNullOrWhiteSpace(n.IdCode)))
                 {
-                    foreach (var z in warehouseStructure.StorageZones)
+                    if (!nodeByCode.ContainsKey(incoming.IdCode!))
+                        nodeByCode[incoming.IdCode!] = incoming;
+                }
+
+                // ── NavEdges ──────────────────────────────────────────────────────────
+                var incomingEdges = warehouseStructure.NavEdges ?? new List<NavEdge>();
+                var incomingEdgeCodes = incomingEdges
+                    .Where(e => !string.IsNullOrWhiteSpace(e.IdCode))
+                    .Select(e => e.IdCode!)
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+                var edgesToRemove = existing.NavEdges
+                    .Where(e => string.IsNullOrWhiteSpace(e.IdCode) || !incomingEdgeCodes.Contains(e.IdCode))
+                    .ToList();
+                if (edgesToRemove.Any()) _context.NavEdges.RemoveRange(edgesToRemove);
+
+                var existingEdgeByCode = existing.NavEdges
+                    .Where(e => !string.IsNullOrWhiteSpace(e.IdCode))
+                    .ToDictionary(e => e.IdCode!, StringComparer.OrdinalIgnoreCase);
+
+                foreach (var incoming in incomingEdges)
+                {
+                    // Resolve node references by IdCode
+                    NavNode? fromNode = null;
+                    NavNode? toNode = null;
+
+                    if (incoming.NodeFromNavigation != null && !string.IsNullOrWhiteSpace(incoming.NodeFromNavigation.IdCode))
+                        nodeByCode.TryGetValue(incoming.NodeFromNavigation.IdCode, out fromNode);
+
+                    if (incoming.NodeToNavigation != null && !string.IsNullOrWhiteSpace(incoming.NodeToNavigation.IdCode))
+                        nodeByCode.TryGetValue(incoming.NodeToNavigation.IdCode, out toNode);
+
+                    if (string.IsNullOrWhiteSpace(incoming.IdCode))
                     {
-                        z.Warehouse = existing;
-                        z.Id = 0;
-                        z.CreatedAt = z.CreatedAt ?? now;
-                        _context.StorageZones.Add(z);
+                        incoming.WarehouseId = warehouseId;
+                        incoming.Id = 0;
+                        incoming.NodeFromNavigation = fromNode;
+                        incoming.NodeToNavigation = toNode;
+                        _context.NavEdges.Add(incoming);
+                        continue;
+                    }
 
-                        if (z.Shelves != null)
+                    if (existingEdgeByCode.TryGetValue(incoming.IdCode, out var existingEdge))
+                    {
+                        existingEdge.Distance = incoming.Distance;
+                        if (fromNode != null) { existingEdge.NodeFrom = fromNode.Id; existingEdge.NodeFromNavigation = fromNode; }
+                        if (toNode != null) { existingEdge.NodeTo = toNode.Id; existingEdge.NodeToNavigation = toNode; }
+                    }
+                    else
+                    {
+                        incoming.WarehouseId = warehouseId;
+                        incoming.Id = 0;
+                        incoming.NodeFromNavigation = fromNode;
+                        incoming.NodeToNavigation = toNode;
+                        _context.NavEdges.Add(incoming);
+                    }
+                }
+
+                // ── StorageZones ──────────────────────────────────────────────────────
+                var incomingZones = warehouseStructure.StorageZones ?? new List<StorageZone>();
+                var incomingZoneCodes = incomingZones
+                    .Where(z => !string.IsNullOrWhiteSpace(z.IdCode))
+                    .Select(z => z.IdCode!)
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+                // Remove zones (and cascade: shelves → levels → bins → shelfNodes) no longer present
+                var zonesToRemove = existing.StorageZones
+                    .Where(z => string.IsNullOrWhiteSpace(z.IdCode) || !incomingZoneCodes.Contains(z.IdCode))
+                    .ToList();
+
+                foreach (var zone in zonesToRemove)
+                {
+                    foreach (var shelf in zone.Shelves ?? Enumerable.Empty<Shelf>())
+                    {
+                        var binsToDelete = shelf.ShelfLevels?.SelectMany(l => l.ShelfLevelBins ?? Enumerable.Empty<ShelfLevelBin>()).ToList() ?? new List<ShelfLevelBin>();
+                        if (binsToDelete.Any()) _context.ShelfLevelBins.RemoveRange(binsToDelete);
+
+                        var levelsToDelete = shelf.ShelfLevels?.ToList() ?? new List<ShelfLevel>();
+                        if (levelsToDelete.Any()) _context.ShelfLevels.RemoveRange(levelsToDelete);
+
+                        var shelfNodesToDelete = shelf.ShelfNodes?.ToList() ?? new List<ShelfNode>();
+                        if (shelfNodesToDelete.Any()) _context.ShelfNodes.RemoveRange(shelfNodesToDelete);
+                    }
+
+                    var shelvesToDelete = zone.Shelves?.ToList() ?? new List<Shelf>();
+                    if (shelvesToDelete.Any()) _context.Shelves.RemoveRange(shelvesToDelete);
+                }
+                if (zonesToRemove.Any()) _context.StorageZones.RemoveRange(zonesToRemove);
+
+                var existingZoneByCode = existing.StorageZones
+                    .Where(z => !string.IsNullOrWhiteSpace(z.IdCode))
+                    .ToDictionary(z => z.IdCode!, StringComparer.OrdinalIgnoreCase);
+
+                foreach (var incomingZone in incomingZones)
+                {
+                    StorageZone targetZone;
+
+                    if (!string.IsNullOrWhiteSpace(incomingZone.IdCode) && existingZoneByCode.TryGetValue(incomingZone.IdCode, out var existingZone))
+                    {
+                        // Update zone fields
+                        existingZone.Code = incomingZone.Code;
+                        existingZone.XCoordinate = incomingZone.XCoordinate;
+                        existingZone.YCoordinate = incomingZone.YCoordinate;
+                        existingZone.Width = incomingZone.Width;
+                        existingZone.Height = incomingZone.Height;
+                        existingZone.Length = incomingZone.Length;
+                        existingZone.IsEsd = incomingZone.IsEsd;
+                        existingZone.IsMsd = incomingZone.IsMsd;
+                        existingZone.IsCold = incomingZone.IsCold;
+                        existingZone.IsVulnerable = incomingZone.IsVulnerable;
+                        existingZone.IsHighValue = incomingZone.IsHighValue;
+                        targetZone = existingZone;
+                    }
+                    else
+                    {
+                        // Insert new zone
+                        incomingZone.WarehouseId = warehouseId;
+                        incomingZone.Id = 0;
+                        incomingZone.CreatedAt = incomingZone.CreatedAt ?? now;
+                        _context.StorageZones.Add(incomingZone);
+                        targetZone = incomingZone;
+                    }
+
+                    // ── Shelves ───────────────────────────────────────────────────────
+                    var incomingShelves = incomingZone.Shelves ?? new List<Shelf>();
+                    var incomingShelfCodes = incomingShelves
+                        .Where(s => !string.IsNullOrWhiteSpace(s.IdCode))
+                        .Select(s => s.IdCode!)
+                        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+                    var existingShelves = targetZone.Shelves?.ToList() ?? new List<Shelf>();
+
+                    var shelvesToRemove = existingShelves
+                        .Where(s => string.IsNullOrWhiteSpace(s.IdCode) || !incomingShelfCodes.Contains(s.IdCode))
+                        .ToList();
+
+                    foreach (var shelf in shelvesToRemove)
+                    {
+                        var binsToDelete = shelf.ShelfLevels?.SelectMany(l => l.ShelfLevelBins ?? Enumerable.Empty<ShelfLevelBin>()).ToList() ?? new List<ShelfLevelBin>();
+                        if (binsToDelete.Any()) _context.ShelfLevelBins.RemoveRange(binsToDelete);
+
+                        var levelsToDelete = shelf.ShelfLevels?.ToList() ?? new List<ShelfLevel>();
+                        if (levelsToDelete.Any()) _context.ShelfLevels.RemoveRange(levelsToDelete);
+
+                        var shelfNodesToDelete = shelf.ShelfNodes?.ToList() ?? new List<ShelfNode>();
+                        if (shelfNodesToDelete.Any()) _context.ShelfNodes.RemoveRange(shelfNodesToDelete);
+                    }
+                    if (shelvesToRemove.Any()) _context.Shelves.RemoveRange(shelvesToRemove);
+
+                    var existingShelfByCode = existingShelves
+                        .Where(s => !string.IsNullOrWhiteSpace(s.IdCode))
+                        .ToDictionary(s => s.IdCode!, StringComparer.OrdinalIgnoreCase);
+
+                    foreach (var incomingShelf in incomingShelves)
+                    {
+                        Shelf targetShelf;
+
+                        if (!string.IsNullOrWhiteSpace(incomingShelf.IdCode) && existingShelfByCode.TryGetValue(incomingShelf.IdCode, out var existingShelf))
                         {
-                            foreach (var s in z.Shelves)
+                            // Update shelf fields
+                            existingShelf.Code = incomingShelf.Code;
+                            existingShelf.XCoordinate = incomingShelf.XCoordinate;
+                            existingShelf.YCoordinate = incomingShelf.YCoordinate;
+                            existingShelf.Width = incomingShelf.Width;
+                            existingShelf.Height = incomingShelf.Height;
+                            existingShelf.Length = incomingShelf.Length;
+                            existingShelf.Capacity = incomingShelf.Capacity;
+                            targetShelf = existingShelf;
+                        }
+                        else
+                        {
+                            // Insert new shelf
+                            incomingShelf.Zone = targetZone;
+                            incomingShelf.Id = 0;
+                            incomingShelf.CreatedAt = incomingShelf.CreatedAt ?? now;
+                            _context.Shelves.Add(incomingShelf);
+                            targetShelf = incomingShelf;
+                        }
+
+                        // ── ShelfLevels ───────────────────────────────────────────────
+                        var incomingLevels = incomingShelf.ShelfLevels ?? new List<ShelfLevel>();
+                        var incomingLevelCodes = incomingLevels
+                            .Where(l => !string.IsNullOrWhiteSpace(l.IdCode))
+                            .Select(l => l.IdCode!)
+                            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+                        var existingLevels = targetShelf.ShelfLevels?.ToList() ?? new List<ShelfLevel>();
+
+                        var levelsToRemove = existingLevels
+                            .Where(l => string.IsNullOrWhiteSpace(l.IdCode) || !incomingLevelCodes.Contains(l.IdCode))
+                            .ToList();
+
+                        foreach (var level in levelsToRemove)
+                        {
+                            var binsToDelete = level.ShelfLevelBins?.ToList() ?? new List<ShelfLevelBin>();
+                            if (binsToDelete.Any()) _context.ShelfLevelBins.RemoveRange(binsToDelete);
+                        }
+                        if (levelsToRemove.Any()) _context.ShelfLevels.RemoveRange(levelsToRemove);
+
+                        var existingLevelByCode = existingLevels
+                            .Where(l => !string.IsNullOrWhiteSpace(l.IdCode))
+                            .ToDictionary(l => l.IdCode!, StringComparer.OrdinalIgnoreCase);
+
+                        foreach (var incomingLevel in incomingLevels)
+                        {
+                            ShelfLevel targetLevel;
+
+                            if (!string.IsNullOrWhiteSpace(incomingLevel.IdCode) && existingLevelByCode.TryGetValue(incomingLevel.IdCode, out var existingLevel))
                             {
-                                s.Zone = z;
-                                s.Id = 0;
-                                s.CreatedAt = s.CreatedAt ?? now;
+                                existingLevel.Code = incomingLevel.Code;
+                                targetLevel = existingLevel;
+                            }
+                            else
+                            {
+                                incomingLevel.Shelf = targetShelf;
+                                incomingLevel.Id = 0;
+                                _context.ShelfLevels.Add(incomingLevel);
+                                targetLevel = incomingLevel;
+                            }
 
-                                if (s.ShelfLevels != null)
+                            // ── ShelfLevelBins ─────────────────────────────────────────
+                            var incomingBins = incomingLevel.ShelfLevelBins ?? new List<ShelfLevelBin>();
+                            var incomingBinCodes = incomingBins
+                                .Where(b => !string.IsNullOrWhiteSpace(b.IdCode))
+                                .Select(b => b.IdCode!)
+                                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+                            var existingBins = targetLevel.ShelfLevelBins?.ToList() ?? new List<ShelfLevelBin>();
+
+                            var binsToRemove = existingBins
+                                .Where(b => string.IsNullOrWhiteSpace(b.IdCode) || !incomingBinCodes.Contains(b.IdCode))
+                                .ToList();
+                            if (binsToRemove.Any()) _context.ShelfLevelBins.RemoveRange(binsToRemove);
+
+                            var existingBinByCode = existingBins
+                                .Where(b => !string.IsNullOrWhiteSpace(b.IdCode))
+                                .ToDictionary(b => b.IdCode!, StringComparer.OrdinalIgnoreCase);
+
+                            foreach (var incomingBin in incomingBins)
+                            {
+                                if (!string.IsNullOrWhiteSpace(incomingBin.IdCode) && existingBinByCode.TryGetValue(incomingBin.IdCode, out var existingBin))
                                 {
-                                    foreach (var lvl in s.ShelfLevels)
-                                    {
-                                        lvl.Shelf = s;
-                                        lvl.Id = 0;
-                                        if (lvl.ShelfLevelBins != null)
-                                        {
-                                            foreach (var b in lvl.ShelfLevelBins)
-                                            {
-                                                b.Level = lvl;
-                                                b.Id = 0;
-                                            }
-                                        }
-                                    }
+                                    // Update bin fields — preserve InventoryId and Percentage (managed by inbound flow)
+                                    existingBin.Code = incomingBin.Code;
+                                    existingBin.Width = incomingBin.Width;
+                                    existingBin.Height = incomingBin.Height;
+                                    existingBin.Length = incomingBin.Length;
+                                    existingBin.Status = incomingBin.Status;
                                 }
-
-                                if (s.ShelfNodes != null)
+                                else
                                 {
-                                    foreach (var sn in s.ShelfNodes)
-                                    {
-                                        sn.Shelf = s;
-                                        sn.Id = 0;
-
-                                        if (sn.Node != null)
-                                        {
-                                            // If the node was added previously in NavNodes collection, reuse it.
-                                            if (!string.IsNullOrWhiteSpace(sn.Node.IdCode) && addedNodesByIdCode.TryGetValue(sn.Node.IdCode, out var existingNode))
-                                            {
-                                                // reuse existing tracked node instance
-                                                sn.Node = existingNode;
-                                            }
-                                            else
-                                            {
-                                                // add node and register it
-                                                sn.Node.Warehouse = existing;
-                                                sn.Node.Id = 0;
-                                                _context.NavNodes.Add(sn.Node);
-                                                if (!string.IsNullOrWhiteSpace(sn.Node.IdCode))
-                                                    addedNodesByIdCode[sn.Node.IdCode] = sn.Node;
-                                            }
-                                        }
-                                    }
+                                    incomingBin.Level = targetLevel;
+                                    incomingBin.Id = 0;
+                                    _context.ShelfLevelBins.Add(incomingBin);
                                 }
                             }
                         }
-                    }
-                }
 
-                // Add new NavEdges (after nodes are added) and ensure they reference tracked node instances
-                if (warehouseStructure.NavEdges != null)
-                {
-                    foreach (var e in warehouseStructure.NavEdges)
-                    {
-                        // If edge object contains NodeFromNavigation/NodeToNavigation with IdCode, try to replace with tracked instance
-                        if (e.NodeFromNavigation != null && !string.IsNullOrWhiteSpace(e.NodeFromNavigation.IdCode) && addedNodesByIdCode.TryGetValue(e.NodeFromNavigation.IdCode, out var fromNode))
+                        // ── ShelfNodes ────────────────────────────────────────────────
+                        var incomingShelfNodes = incomingShelf.ShelfNodes ?? new List<ShelfNode>();
+                        var incomingShelfNodeCodes = incomingShelfNodes
+                            .Where(sn => !string.IsNullOrWhiteSpace(sn.IdCode))
+                            .Select(sn => sn.IdCode!)
+                            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+                        var existingShelfNodes = targetShelf.ShelfNodes?.ToList() ?? new List<ShelfNode>();
+
+                        var shelfNodesToRemove = existingShelfNodes
+                            .Where(sn => string.IsNullOrWhiteSpace(sn.IdCode) || !incomingShelfNodeCodes.Contains(sn.IdCode))
+                            .ToList();
+                        if (shelfNodesToRemove.Any()) _context.ShelfNodes.RemoveRange(shelfNodesToRemove);
+
+                        var existingShelfNodeByCode = existingShelfNodes
+                            .Where(sn => !string.IsNullOrWhiteSpace(sn.IdCode))
+                            .ToDictionary(sn => sn.IdCode!, StringComparer.OrdinalIgnoreCase);
+
+                        foreach (var incomingShelfNode in incomingShelfNodes)
                         {
-                            e.NodeFromNavigation = fromNode;
-                        }
+                            // Resolve the NavNode this ShelfNode points to
+                            NavNode? resolvedNode = null;
+                            if (incomingShelfNode.Node != null && !string.IsNullOrWhiteSpace(incomingShelfNode.Node.IdCode))
+                                nodeByCode.TryGetValue(incomingShelfNode.Node.IdCode, out resolvedNode);
 
-                        if (e.NodeToNavigation != null && !string.IsNullOrWhiteSpace(e.NodeToNavigation.IdCode) && addedNodesByIdCode.TryGetValue(e.NodeToNavigation.IdCode, out var toNode))
-                        {
-                            e.NodeToNavigation = toNode;
+                            if (!string.IsNullOrWhiteSpace(incomingShelfNode.IdCode) && existingShelfNodeByCode.TryGetValue(incomingShelfNode.IdCode, out var existingShelfNode))
+                            {
+                                if (resolvedNode != null)
+                                {
+                                    existingShelfNode.NodeId = resolvedNode.Id;
+                                    existingShelfNode.Node = resolvedNode;
+                                }
+                            }
+                            else
+                            {
+                                incomingShelfNode.Shelf = targetShelf;
+                                incomingShelfNode.Id = 0;
+                                if (resolvedNode != null)
+                                {
+                                    incomingShelfNode.Node = resolvedNode;
+                                    incomingShelfNode.NodeId = resolvedNode.Id;
+                                }
+                                _context.ShelfNodes.Add(incomingShelfNode);
+                            }
                         }
-
-                        e.Warehouse = existing;
-                        e.Id = 0;
-                        _context.NavEdges.Add(e);
                     }
                 }
 
