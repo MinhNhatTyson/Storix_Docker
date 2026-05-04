@@ -562,5 +562,42 @@ namespace Storix_BE.Service.Implementation
             var result = await _assignmentRepository.DisableWarehouseAsync(warehouseId).ConfigureAwait(false);
             return result;
         }
+        public async Task<Warehouse> GetWarehouseStructureWithoutBinAsync(int companyId, int warehouseId)
+        {
+            if (companyId <= 0) throw new ArgumentException("Invalid company id.", nameof(companyId));
+            if (warehouseId <= 0) throw new ArgumentException("Invalid warehouse id.", nameof(warehouseId));
+
+            var warehouse = await _assignmentRepository.GetWarehouseStructureWithoutBinAsync(warehouseId);
+            if (warehouse == null) throw new InvalidOperationException($"Warehouse with id {warehouseId} not found.");
+
+            if ((warehouse.CompanyId ?? 0) != companyId)
+                throw new InvalidOperationException("Warehouse does not belong to the specified company.");
+
+            return warehouse;
+        }
+
+        public async Task<List<ShelfLevel>> GetBinsByShelfIdAsync(int companyId, int shelfId)
+        {
+            if (companyId <= 0) throw new ArgumentException("Invalid company id.", nameof(companyId));
+            if (shelfId <= 0) throw new ArgumentException("Invalid shelf id.", nameof(shelfId));
+
+            var levels = await _assignmentRepository.GetLevelsAndBinsByShelfIdAsync(shelfId);
+
+            if (levels == null || !levels.Any())
+                return new List<ShelfLevel>();
+
+            // Validate ownership: navigate from level -> shelf -> zone -> warehouse
+            var firstShelf = levels.First().Shelf;
+            if (firstShelf == null || firstShelf.Zone == null || !firstShelf.Zone.WarehouseId.HasValue)
+                throw new InvalidOperationException("Unable to resolve shelf -> zone -> warehouse ownership for the provided shelf id.");
+
+            var warehouse = await _assignmentRepository.GetWarehouseByIdAsync(firstShelf.Zone.WarehouseId.Value);
+            if (warehouse == null) throw new InvalidOperationException("Warehouse owning the shelf not found.");
+
+            if ((warehouse.CompanyId ?? 0) != companyId)
+                throw new InvalidOperationException("Shelf does not belong to the specified company.");
+
+            return levels;
+        }
     }
 }

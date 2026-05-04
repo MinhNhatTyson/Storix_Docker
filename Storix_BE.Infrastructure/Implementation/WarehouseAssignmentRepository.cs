@@ -540,5 +540,36 @@ namespace Storix_BE.Repository.Implementation
             await _context.SaveChangesAsync().ConfigureAwait(false);
             return true;
         }
+        public async Task<Warehouse?> GetWarehouseStructureWithoutBinAsync(int warehouseId)
+        {
+            if (warehouseId <= 0) return null;
+
+            var warehouse = await _context.Warehouses
+                .AsNoTracking()
+                .Where(w => w.Id == warehouseId)
+                .Include(w => w.StorageZones)
+                    .ThenInclude(z => z.Shelves)
+                .FirstOrDefaultAsync()
+                .ConfigureAwait(false);
+
+            return warehouse;
+        }
+
+        // Returns all ShelfLevels for the shelf along with their ShelfLevelBins (levels + bins)
+        public async Task<List<ShelfLevel>> GetLevelsAndBinsByShelfIdAsync(int shelfId)
+        {
+            if (shelfId <= 0) return new List<ShelfLevel>();
+
+            var levels = await _context.ShelfLevels
+                .AsNoTracking()
+                .Where(l => l.ShelfId == shelfId)
+                .Include(l => l.Shelf)
+                    .ThenInclude(s => s.Zone)
+                .Include(l => l.ShelfLevelBins)
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            return levels;
+        }
     }
 }

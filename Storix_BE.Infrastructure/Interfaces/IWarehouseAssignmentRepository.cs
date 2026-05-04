@@ -27,5 +27,9 @@ namespace Storix_BE.Repository.Interfaces
         Task<bool> DeleteWarehouseAsync(int warehouseId);
         Task<List<ZoneResponse>> GetZoneIdsByWarehouseIdAsync(int warehouseId);
         Task<bool> DisableWarehouseAsync(int warehouseId);
+        Task<Warehouse?> GetWarehouseStructureWithoutBinAsync(int warehouseId);
+
+        // Added for: Get all levels (and their bins) for a given shelf id
+        Task<List<ShelfLevel>> GetLevelsAndBinsByShelfIdAsync(int shelfId);
     }
 }

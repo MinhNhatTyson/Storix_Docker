@@ -21,6 +21,8 @@ namespace Storix_BE.Service.Interfaces
         Task<bool> DeleteWarehouseAsync(int companyId, int warehouseId);
         Task<List<ZoneResponse>> GetZoneIdsByWarehouseAsync(int companyId, int warehouseId);
         Task<bool> DisableWarehouseAsync(int warehouseId);
+        Task<Warehouse> GetWarehouseStructureWithoutBinAsync(int companyId, int warehouseId);
+        Task<List<ShelfLevel>> GetBinsByShelfIdAsync(int companyId, int shelfId);
     }
 
     public sealed record AssignWarehouseRequest(int UserId, int WarehouseId);

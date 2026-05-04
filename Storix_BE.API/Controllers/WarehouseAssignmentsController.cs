@@ -766,5 +766,21 @@ namespace Storix_BE.API.Controllers
                 return BadRequest(new { message = ex.Message });
             }
         }
+        [HttpGet("~/api/get-warehouse-structure-without-bin/{companyId:int}/{warehouseId:int}")]
+        [Authorize(Roles = "2,3,4")]
+        public async Task<IActionResult> GetWarehouseStructureWithoutBin(int companyId, int warehouseId)
+        {
+            var result = await _assignmentService.GetWarehouseStructureWithoutBinAsync(companyId, warehouseId);
+            return Ok(result);
+        }
+
+        // GET: /api/get-bins-based-on-shelf/{companyId}/{shelfId}
+        [HttpGet("~/api/get-bins-based-on-shelf/{companyId:int}/{shelfId:int}")]
+        [Authorize(Roles = "2,3,4")]
+        public async Task<IActionResult> GetBinBasedOnShelfId(int companyId, int shelfId)
+        {
+            var result = await _assignmentService.GetBinsByShelfIdAsync(companyId, shelfId);
+            return Ok(result);
+        }
     }
 }
