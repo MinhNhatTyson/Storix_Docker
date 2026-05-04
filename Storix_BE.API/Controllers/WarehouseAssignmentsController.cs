@@ -5,6 +5,7 @@ using Storix_BE.Domain.Models;
 using Storix_BE.Repository.DTO;
 using Storix_BE.Service.Implementation;
 using Storix_BE.Service.Interfaces;
+using Microsoft.Extensions.Caching.Memory;
 using System.Linq;
 using AssignWarehouseRequest = Storix_BE.Service.Interfaces.AssignWarehouseRequest;
 using CreateWarehouseRequest = Storix_BE.Service.Interfaces.CreateWarehouseRequest;
@@ -19,15 +20,18 @@ namespace Storix_BE.API.Controllers
         private readonly IWarehouseAssignmentService _assignmentService;
         private readonly IUserService _userService;
         private readonly IInventoryOutboundService _inventoryOutboundService;
+        private readonly IMemoryCache _cache;
 
         public WarehouseAssignmentsController(
             IWarehouseAssignmentService assignmentService,
             IUserService userService,
-            IInventoryOutboundService inventoryOutboundService)
+            IInventoryOutboundService inventoryOutboundService,
+            IMemoryCache cache)
         {
             _assignmentService = assignmentService;
             _userService = userService;
             _inventoryOutboundService = inventoryOutboundService;
+            _cache = cache;
         }
 
         private int? GetRoleIdFromToken()
@@ -399,19 +403,21 @@ namespace Storix_BE.API.Controllers
             if (companyId <= 0) return BadRequest(new { message = "CompanyId is required." });
             if (warehouseId <= 0) return BadRequest(new { message = "WarehouseId is required." });
 
+            var cacheKey = $"warehouse_structure_{warehouseId}";
+
             try
             {
-                var warehouse = await _assignmentService.GetWarehouseStructureAsync(companyId, warehouseId);
+                if (!_cache.TryGetValue(cacheKey, out object? cachedResponse))
+                {
+                    var warehouse = await _assignmentService.GetWarehouseStructureAsync(companyId, warehouseId);
 
-                // Find the start node (type == "start")
-                var startNode = warehouse.NavNodes?.FirstOrDefault(n => n.Type == "start");
-                double? startX = startNode?.XCoordinate;
-                double? startY = startNode?.YCoordinate;
+                    var startNode = warehouse.NavNodes?.FirstOrDefault(n => n.Type == "start");
+                    double? startX = startNode?.XCoordinate;
+                    double? startY = startNode?.YCoordinate;
 
-                var nodes = warehouse.NavNodes == null
-                    ? new List<object>()
-                    : warehouse.NavNodes
-                        .Select(n => new
+                    var nodes = warehouse.NavNodes == null
+                        ? new List<object>()
+                        : warehouse.NavNodes.Select(n => (object)new
                         {
                             id = n.IdCode,
                             x = n.XCoordinate,
@@ -419,125 +425,112 @@ namespace Storix_BE.API.Controllers
                             radius = n.Radius,
                             side = n.Side,
                             type = n.Type
-                        })
-                        .Cast<object>()
-                        .ToList();
+                        }).ToList();
 
-                var edges = warehouse.NavEdges == null
-                    ? new List<object>()
-                    : warehouse.NavEdges
-                    .Select(e => new
-                    {
-                        id = e.IdCode,
-                        from = e.NodeFromNavigation?.IdCode,
-                        to = e.NodeToNavigation?.IdCode,
-                        distance = e.Distance
-                    })
-                    .Cast<object>()
-                        .ToList();
-
-                var zones = warehouse.StorageZones?
-                    .Select(z => (object)new
-                    {
-                        id = z.IdCode,
-                        code = z.Code,
-                        x = z.XCoordinate,
-                        y = z.YCoordinate,
-                        width = z.Width,
-                        height = z.Height,
-                        length = z.Length,
-                        IsEsd = z.IsEsd,
-                        IsMsd = z.IsMsd,
-                        IsCold = z.IsCold,
-                        IsVulnerable = z.IsVulnerable,
-                        IsHighValue = z.IsHighValue,
-                        shelves = z.Shelves?.Select(s =>
+                    var edges = warehouse.NavEdges == null
+                        ? new List<object>()
+                        : warehouse.NavEdges.Select(e => (object)new
                         {
-                            // compute actual shelf coordinate = shelf coordinate + zone coordinate
-                            var actualX = z.XCoordinate + s.XCoordinate;
-                            var actualY = z.YCoordinate + s.YCoordinate;
+                            id = e.IdCode,
+                            from = e.NodeFromNavigation?.IdCode,
+                            to = e.NodeToNavigation?.IdCode,
+                            distance = e.Distance
+                        }).ToList();
 
-                            // compute distance from start node if start exists
-                            double? distanceFromStart = null;
-                            if (startX.HasValue && startY.HasValue)
+                    var zones = warehouse.StorageZones?
+                        .Select(z => (object)new
+                        {
+                            id = z.IdCode,
+                            code = z.Code,
+                            x = z.XCoordinate,
+                            y = z.YCoordinate,
+                            width = z.Width,
+                            height = z.Height,
+                            length = z.Length,
+                            IsEsd = z.IsEsd,
+                            IsMsd = z.IsMsd,
+                            IsCold = z.IsCold,
+                            IsVulnerable = z.IsVulnerable,
+                            IsHighValue = z.IsHighValue,
+                            shelves = z.Shelves?.Select(s =>
                             {
-                                var dx = actualX - startX.Value;
-                                var dy = actualY - startY.Value;
-                                distanceFromStart = Math.Sqrt((double)(dx * dx + dy * dy));
-                            }
+                                var actualX = z.XCoordinate + s.XCoordinate;
+                                var actualY = z.YCoordinate + s.YCoordinate;
 
-                            return (object)new
-                            {
-                                id = s.IdCode,
-                                code = s.Code,
-                                x = s.XCoordinate,
-                                y = s.YCoordinate,
-                                width = s.Width,
-                                height = s.Height,
-                                length = s.Length,
-                                distanceFromStart = distanceFromStart,
-                                accessNodes = (s.ShelfNodes != null
-                                ? s.ShelfNodes.Select(sn => (object)new
+                                double? distanceFromStart = null;
+                                if (startX.HasValue && startY.HasValue)
                                 {
-                                    id = sn.IdCode ?? sn.Node?.IdCode,
-                                    side = sn.Node?.Side,
-                                    x = sn.Node?.XCoordinate,
-                                    y = sn.Node?.YCoordinate
-                                }).ToList()
-                                : new List<object>()),
+                                    var dx = actualX - startX.Value;
+                                    var dy = actualY - startY.Value;
+                                    distanceFromStart = Math.Sqrt((double)(dx * dx + dy * dy));
+                                }
 
-                                levels = s.ShelfLevels != null
-                                ? s.ShelfLevels.Select(l => (object)new
+                                return (object)new
                                 {
-                                    id = l.IdCode,
-                                    code = l.Code,
-                                    bins = l.ShelfLevelBins != null
-                                        ? l.ShelfLevelBins.Select(b => (object)new
+                                    id = s.IdCode,
+                                    code = s.Code,
+                                    x = s.XCoordinate,
+                                    y = s.YCoordinate,
+                                    width = s.Width,
+                                    height = s.Height,
+                                    length = s.Length,
+                                    distanceFromStart,
+                                    accessNodes = s.ShelfNodes != null
+                                        ? s.ShelfNodes.Select(sn => (object)new
                                         {
-                                            id = b.IdCode,
-                                            code = b.Code,
-                                            status = b.Status,
-                                            percentage = b.Percentage,
-                                            width = b.Width,
-                                            height = b.Height,
-                                            length = b.Length,
-                                            productId = b.Inventory?.ProductId
+                                            id = sn.IdCode ?? sn.Node?.IdCode,
+                                            side = sn.Node?.Side,
+                                            x = sn.Node?.XCoordinate,
+                                            y = sn.Node?.YCoordinate
+                                        }).ToList()
+                                        : new List<object>(),
+                                    levels = s.ShelfLevels != null
+                                        ? s.ShelfLevels.Select(l => (object)new
+                                        {
+                                            id = l.IdCode,
+                                            code = l.Code,
+                                            bins = l.ShelfLevelBins != null
+                                                ? l.ShelfLevelBins.Select(b => (object)new
+                                                {
+                                                    id = b.IdCode,
+                                                    code = b.Code,
+                                                    status = b.Status,
+                                                    percentage = b.Percentage,
+                                                    width = b.Width,
+                                                    height = b.Height,
+                                                    length = b.Length,
+                                                    productId = b.Inventory?.ProductId
+                                                }).ToList()
+                                                : new List<object>()
                                         }).ToList()
                                         : new List<object>()
-                                }).ToList()
-                                : new List<object>()
-                            };
-                        }).ToList() ?? new List<object>()
-                    }).ToList() ?? new List<object>();
+                                };
+                            }).ToList() ?? new List<object>()
+                        }).ToList() ?? new List<object>();
 
-                var response = new
-                {
-                    width = warehouse.Width,
-                    height = warehouse.Height,
-                    zones = zones,
-                    nodes = nodes,
-                    edges = edges
-                };
+                    cachedResponse = new
+                    {
+                        width = warehouse.Width,
+                        height = warehouse.Height,
+                        zones,
+                        nodes,
+                        edges
+                    };
 
-                return Ok(response);
-            }
-            catch (UnauthorizedAccessException)
-            {
-                return Forbid();
-            }
-            catch (InvalidOperationException ex)
-            {
-                return BadRequest(new { message = ex.Message });
-            }
-            catch (BusinessRuleException ex)
-            {
-                return BadRequest(new { code = ex.Code, message = ex.Message });
-            }
-            catch (Exception ex)
-            {
-                return BadRequest(new { message = ex.Message });
-            }
+                    // Cache for 5 minutes; invalidate on structure update
+                    _cache.Set(cacheKey, cachedResponse, new MemoryCacheEntryOptions
+                    {
+                        AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(5),
+                        SlidingExpiration = TimeSpan.FromMinutes(2)
+                    });
+                }
 
+                return Ok(cachedResponse);
+            }
+            catch (UnauthorizedAccessException) { return Forbid(); }
+            catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+            catch (BusinessRuleException ex) { return BadRequest(new { code = ex.Code, message = ex.Message }); }
+            catch (Exception ex) { return StatusCode(500, new { message = ex.Message }); }
         }
         [HttpGet("~/api/get-simple-structure/{companyId:int}/{warehouseId:int}")]
         [Authorize(Roles = "2,3,4")]

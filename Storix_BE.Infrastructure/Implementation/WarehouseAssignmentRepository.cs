@@ -603,24 +603,145 @@ namespace Storix_BE.Repository.Implementation
         {
             if (warehouseId <= 0) return null;
 
-            return await _context.Warehouses
-                .Include(w => w.Company)
-                .Include(w => w.StorageZones)
-                    .ThenInclude(z => z.Shelves)
-                        .ThenInclude(s => s.ShelfLevels)
-                            .ThenInclude(l => l.ShelfLevelBins)
-                                .ThenInclude(b => b.Inventory)
-                                    .ThenInclude(i => i.Product)
-                .Include(w => w.StorageZones)
-                    .ThenInclude(z => z.Shelves)
-                        .ThenInclude(s => s.ShelfNodes)
-                            .ThenInclude(sn => sn.Node)
-                .Include(w => w.NavNodes)
-                .Include(w => w.NavEdges)
-                    .ThenInclude(e => e.NodeFromNavigation)
-                .Include(w => w.NavEdges)
-                    .ThenInclude(e => e.NodeToNavigation)
+            // 1. Load the warehouse shell first (fast, no joins)
+            var warehouse = await _context.Warehouses
+                .AsNoTracking()
                 .FirstOrDefaultAsync(w => w.Id == warehouseId);
+
+            if (warehouse == null) return null;
+
+            // 2. Fire all heavy sub-queries in parallel — each is a flat, focused query
+            var nodesTask = _context.NavNodes
+                .AsNoTracking()
+                .Where(n => n.WarehouseId == warehouseId)
+                .ToListAsync();
+
+            var edgesTask = _context.NavEdges
+                .AsNoTracking()
+                .Where(e => e.WarehouseId == warehouseId)
+                .Select(e => new NavEdge
+                {
+                    Id = e.Id,
+                    IdCode = e.IdCode,
+                    NodeFrom = e.NodeFrom,
+                    NodeTo = e.NodeTo,
+                    Distance = e.Distance,
+                    WarehouseId = e.WarehouseId,
+                    NodeFromNavigation = new NavNode { Id = e.NodeFromNavigation!.Id, IdCode = e.NodeFromNavigation.IdCode },
+                    NodeToNavigation = new NavNode { Id = e.NodeToNavigation!.Id, IdCode = e.NodeToNavigation.IdCode }
+                })
+                .ToListAsync();
+
+            var zonesTask = _context.StorageZones
+                .AsNoTracking()
+                .Where(z => z.WarehouseId == warehouseId)
+                .ToListAsync();
+
+            var shelvesTask = _context.Shelves
+                .AsNoTracking()
+                .Where(s => s.Zone != null && s.Zone.WarehouseId == warehouseId)
+                .ToListAsync();
+
+            var levelsTask = _context.ShelfLevels
+                .AsNoTracking()
+                .Where(l => l.Shelf != null && l.Shelf.Zone != null && l.Shelf.Zone.WarehouseId == warehouseId)
+                .ToListAsync();
+
+            var binsTask = _context.ShelfLevelBins
+                .AsNoTracking()
+                .Where(b => b.Level != null && b.Level.Shelf != null
+                            && b.Level.Shelf.Zone != null
+                            && b.Level.Shelf.Zone.WarehouseId == warehouseId)
+                .Select(b => new ShelfLevelBin
+                {
+                    Id = b.Id,
+                    LevelId = b.LevelId,
+                    Code = b.Code,
+                    IdCode = b.IdCode,
+                    Width = b.Width,
+                    Height = b.Height,
+                    Length = b.Length,
+                    Status = b.Status,
+                    Percentage = b.Percentage,
+                    InventoryId = b.InventoryId,
+                    // Only pull the productId we need for the response, not the full Inventory graph
+                    Inventory = b.InventoryId == null ? null : new Inventory
+                    {
+                        Id = b.Inventory!.Id,
+                        ProductId = b.Inventory.ProductId
+                    }
+                })
+                .ToListAsync();
+
+            var shelfNodesTask = _context.ShelfNodes
+                .AsNoTracking()
+                .Where(sn => sn.Shelf != null && sn.Shelf.Zone != null
+                             && sn.Shelf.Zone.WarehouseId == warehouseId)
+                .Select(sn => new ShelfNode
+                {
+                    Id = sn.Id,
+                    ShelfId = sn.ShelfId,
+                    NodeId = sn.NodeId,
+                    IdCode = sn.IdCode,
+                    Node = new NavNode
+                    {
+                        Id = sn.Node!.Id,
+                        IdCode = sn.Node.IdCode,
+                        XCoordinate = sn.Node.XCoordinate,
+                        YCoordinate = sn.Node.YCoordinate,
+                        Side = sn.Node.Side,
+                        Type = sn.Node.Type,
+                        Radius = sn.Node.Radius
+                    }
+                })
+                .ToListAsync();
+
+            // Await all in parallel
+            await Task.WhenAll(nodesTask, edgesTask, zonesTask, shelvesTask,
+                               levelsTask, binsTask, shelfNodesTask);
+
+            var nodes = await nodesTask;
+            var edges = await edgesTask;
+            var zones = await zonesTask;
+            var shelves = await shelvesTask;
+            var levels = await levelsTask;
+            var bins = await binsTask;
+            var shelfNodes = await shelfNodesTask;
+
+            // 3. Stitch the object graph in memory (pure dictionary lookups — O(n))
+            var levelsByShelfId = levels.GroupBy(l => l.ShelfId ?? 0)
+                .ToDictionary(g => g.Key, g => g.ToList());
+
+            var binsByLevelId = bins.GroupBy(b => b.LevelId ?? 0)
+                .ToDictionary(g => g.Key, g => g.ToList());
+
+            var shelfNodesByShelfId = shelfNodes.GroupBy(sn => sn.ShelfId ?? 0)
+                .ToDictionary(g => g.Key, g => g.ToList());
+
+            var shelvesByZoneId = shelves.GroupBy(s => s.ZoneId ?? 0)
+                .ToDictionary(g => g.Key, g => g.ToList());
+
+            foreach (var level in levels)
+            {
+                level.ShelfLevelBins = binsByLevelId.TryGetValue(level.Id, out var b) ? b : new List<ShelfLevelBin>();
+            }
+
+            foreach (var shelf in shelves)
+            {
+                shelf.ShelfLevels = levelsByShelfId.TryGetValue(shelf.Id, out var l) ? l : new List<ShelfLevel>();
+                shelf.ShelfNodes = shelfNodesByShelfId.TryGetValue(shelf.Id, out var sn) ? sn : new List<ShelfNode>();
+            }
+
+            foreach (var zone in zones)
+            {
+                zone.Shelves = shelvesByZoneId.TryGetValue(zone.Id, out var s) ? s : new List<Shelf>();
+            }
+
+            warehouse.NavNodes = nodes;
+            warehouse.NavEdges = edges;
+            warehouse.StorageZones = zones;
+
+            return warehouse;
         }
         public async Task<bool> DeleteWarehouseAsync(int warehouseId)
         {
