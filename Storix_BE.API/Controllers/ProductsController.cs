@@ -144,7 +144,7 @@ namespace Storix_BE.API.Controllers
         }
 
 
-        [HttpPut("update{id:int}")]
+        [HttpPut("update/{id:int}")]
         [Consumes("multipart/form-data")]
         [Authorize(Roles = "2")]
         public async Task<IActionResult> Update(int id, [FromForm] Storix_BE.Service.Interfaces.UpdateProductRequest request)
