@@ -2796,7 +2796,7 @@ namespace Storix_BE.Repository.Implementation
 
         private static bool IsItemUpdateAllowedStatus(string status)
         {
-            return status is "QualityCheck" or "IssueReported";
+            return true;
         }
 
         private static string NormalizeStatus(string status)
