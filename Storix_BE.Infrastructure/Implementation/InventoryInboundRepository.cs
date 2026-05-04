@@ -157,7 +157,7 @@ namespace Storix_BE.Repository.Implementation
                 SupplierId = inboundRequest.SupplierId,
                 CreatedBy = createdBy,
                 StaffId = staffId,
-                Status = "Waiting for payment",
+                Status = InboundOrderStatuses.WaitingForPayment,
                 InboundRequestId = inboundRequest.Id,
                 CreatedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified),
                 ReferenceCode = $"INB-{DateTime.UtcNow:yyyyMMddHHmmss}-{Random.Shared.Next(1000, 9999)}"
@@ -226,6 +226,8 @@ namespace Storix_BE.Repository.Implementation
 
             if (order == null)
                 throw new InvalidOperationException($"InboundOrder with id {inboundOrderId} not found.");
+
+            await EnsureTransferInboundReadyForReceivingAsync(order.Id).ConfigureAwait(false);
 
             if (!order.WarehouseId.HasValue)
                 throw new InvalidOperationException("InboundOrder must specify WarehouseId to update inventory.");
@@ -499,9 +501,9 @@ namespace Storix_BE.Repository.Implementation
                     var allComplete = allItems.Any() && allItems.All(i => (i.ExpectedQuantity ?? 0) > 0 && (i.ReceivedQuantity ?? 0) == (i.ExpectedQuantity ?? 0));
 
                     if (allComplete)
-                        order.Status = "Completed";
+                        order.Status = InboundOrderStatuses.Completed;
                     else if (anyReceived)
-                        order.Status = "Partially Completed";
+                        order.Status = InboundOrderStatuses.PartiallyCompleted;
 
                     // ── FIFO Batch update ────────────────────────────────────────────────────
                     // Load existing batches for this inbound order
@@ -1202,6 +1204,8 @@ namespace Storix_BE.Repository.Implementation
             if (order == null)
                 throw new InvalidOperationException($"InboundOrder with id {inboundOrderId} not found.");
 
+            await EnsureTransferInboundReadyForAssignAsync(order.Id).ConfigureAwait(false);
+
             if (order.Warehouse == null || order.Warehouse.CompanyId != companyId)
                 throw new InvalidOperationException("InboundOrder does not belong to the specified company.");
 
@@ -1226,6 +1230,48 @@ namespace Storix_BE.Repository.Implementation
             await _context.Entry(order).Reference(o => o.Staff).LoadAsync().ConfigureAwait(false);
 
             return order;
+        }
+
+        private async Task EnsureTransferInboundReadyForAssignAsync(int inboundOrderId)
+        {
+            var transfer = await _context.TransferOrders
+                .AsNoTracking()
+                .FirstOrDefaultAsync(t => t.InboundTicketId == inboundOrderId)
+                .ConfigureAwait(false);
+
+            if (transfer == null)
+                return;
+
+            var outboundStatus = await _context.OutboundOrders
+                .AsNoTracking()
+                .Where(o => o.Id == transfer.OutboundTicketId)
+                .Select(o => o.Status)
+                .FirstOrDefaultAsync()
+                .ConfigureAwait(false);
+
+            if (!string.Equals(outboundStatus, "Completed", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("Inbound transfer can be assigned only after outbound is completed.");
+        }
+
+        private async Task EnsureTransferInboundReadyForReceivingAsync(int inboundOrderId)
+        {
+            var transfer = await _context.TransferOrders
+                .AsNoTracking()
+                .FirstOrDefaultAsync(t => t.InboundTicketId == inboundOrderId)
+                .ConfigureAwait(false);
+
+            if (transfer == null)
+                return;
+
+            var outboundStatus = await _context.OutboundOrders
+                .AsNoTracking()
+                .Where(o => o.Id == transfer.OutboundTicketId)
+                .Select(o => o.Status)
+                .FirstOrDefaultAsync()
+                .ConfigureAwait(false);
+
+            if (!string.Equals(outboundStatus, "Completed", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("Inbound transfer cannot receive items until outbound is completed.");
         }
     }
 }

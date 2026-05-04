@@ -198,7 +198,7 @@ namespace Storix_BE.Repository.Implementation
                     CreatedBy = actorUserId,
                     StaffId = originWarehouseStaffId,
                     Status = "READY",
-                    Note = $"AUTO_FROM_TRANSFER#{order.Id}",
+                    Note = $"Waiting Assign Staff#{order.Id}",
                     CreatedAt = now
                 };
 
@@ -220,8 +220,8 @@ namespace Storix_BE.Repository.Implementation
                     WarehouseId = order.DestinationWarehouseId,
                     CreatedBy = actorUserId,
                     StaffId = receiverStaffId,
-                    Status = "WAITING_RECEIPT",
-                    ReferenceCode = $"AUTO_FROM_TRANSFER#{order.Id}",
+                    Status = InboundOrderStatuses.WaitingToOutboundComplete,
+                    ReferenceCode = $"Waiting Assign Staff#{order.Id}",
                     CreatedAt = now
                 };
 

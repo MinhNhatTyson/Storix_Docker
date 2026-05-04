@@ -683,12 +683,14 @@ namespace Storix_BE.Repository.Implementation
                     if (!order.WarehouseId.HasValue || order.WarehouseId.Value <= 0)
                         throw new InvalidOperationException("OutboundOrder must specify WarehouseId to update inventory.");
 
-                    var productIdsForReconcile = order.OutboundOrderItems
+                    var productIdsForDeduct = order.OutboundOrderItems
                         .Where(i => i.ProductId.HasValue)
                         .Select(i => i.ProductId!.Value)
                         .Distinct()
                         .ToList();
-                    await ReconcileInventoryLocationsForProductsAsync(order.WarehouseId.Value, productIdsForReconcile, performedBy, "OutboundStatusComplete")
+
+                    await EnsureOutboundNotDeductedAsync(order.Id).ConfigureAwait(false);
+                    await EnsureInventoryLocationInvariantAsync(order.WarehouseId.Value, productIdsForDeduct, "OutboundStatusComplete.BeforeDeduct")
                         .ConfigureAwait(false);
 
                     await DeductOutboundByFifoAsync(order, order.OutboundOrderItems.Where(i => i.Id > 0 && i.ProductId.HasValue), performedBy, now)
@@ -1516,7 +1518,8 @@ namespace Storix_BE.Repository.Implementation
             var oldStatusForHistory = order.Status;
             try
             {
-                await ReconcileInventoryLocationsForProductsAsync(order.WarehouseId!.Value, orderProductIds, performedBy, "OutboundConfirmComplete")
+                await EnsureOutboundNotDeductedAsync(order.Id).ConfigureAwait(false);
+                await EnsureInventoryLocationInvariantAsync(order.WarehouseId!.Value, orderProductIds, "OutboundConfirmComplete.BeforeDeduct")
                     .ConfigureAwait(false);
 
                 await DeductOutboundByFifoAsync(order, orderItems, performedBy, now).ConfigureAwait(false);
@@ -2102,6 +2105,8 @@ namespace Storix_BE.Repository.Implementation
             if (!order.WarehouseId.HasValue || order.WarehouseId.Value <= 0)
                 throw new InvalidOperationException("OutboundOrder must specify WarehouseId to update inventory.");
 
+            await EnsureOutboundNotDeductedAsync(order.Id).ConfigureAwait(false);
+
             var fifoItems = items
                 .Where(i => i.ProductId.HasValue)
                 .GroupBy(i => i.ProductId!.Value)
@@ -2117,6 +2122,16 @@ namespace Storix_BE.Repository.Implementation
                 throw new InvalidOperationException("Outbound order has no valid items to deduct inventory.");
 
             var productIds = fifoItems.Select(x => x.ProductId).Distinct().ToList();
+
+            _context.ActivityLogs.Add(new ActivityLog
+            {
+                UserId = performedBy,
+                Entity = "OutboundOrder",
+                EntityId = order.Id,
+                Action = $"OUTBOUND_DEDUCT_START:ORDER={order.Id};PRODUCTS={string.Join(",", productIds.OrderBy(x => x))}",
+                Timestamp = now
+            });
+
             var inventories = await _context.Inventories
                 .Where(i => i.WarehouseId == order.WarehouseId && i.ProductId.HasValue && productIds.Contains(i.ProductId.Value))
                 .ToListAsync()
@@ -2383,6 +2398,34 @@ namespace Storix_BE.Repository.Implementation
                     });
                 }
             }
+
+            await EnsureInventoryLocationInvariantAsync(order.WarehouseId.Value, productIds, "OutboundDeduct.AfterDeduct")
+                .ConfigureAwait(false);
+
+            _context.ActivityLogs.Add(new ActivityLog
+            {
+                UserId = performedBy,
+                Entity = "OutboundOrder",
+                EntityId = order.Id,
+                Action = $"OUTBOUND_DEDUCT_DONE:ORDER={order.Id};PRODUCTS={string.Join(",", productIds.OrderBy(x => x))}",
+                Timestamp = now
+            });
+        }
+
+        private async Task EnsureOutboundNotDeductedAsync(int outboundOrderId)
+        {
+            if (outboundOrderId <= 0)
+                throw new ArgumentException("Invalid outboundOrderId.", nameof(outboundOrderId));
+
+            var hasOutboundTx = await _context.InventoryTransactions
+                .AsNoTracking()
+                .AnyAsync(t => t.ReferenceId == outboundOrderId
+                               && t.TransactionType != null
+                               && t.TransactionType.ToLower() == "outbound")
+                .ConfigureAwait(false);
+
+            if (hasOutboundTx)
+                throw new InvalidOperationException($"Outbound inventory has already been deducted for order {outboundOrderId}.");
         }
 
         private async Task EnsureWarehouseActiveAsync(int warehouseId)
