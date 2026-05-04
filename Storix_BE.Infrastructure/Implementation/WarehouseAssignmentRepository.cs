@@ -611,12 +611,12 @@ namespace Storix_BE.Repository.Implementation
             if (warehouse == null) return null;
 
             // 2. Fire all heavy sub-queries in parallel — each is a flat, focused query
-            var nodesTask = _context.NavNodes
-                .AsNoTracking()
-                .Where(n => n.WarehouseId == warehouseId)
-                .ToListAsync();
+            var nodes = await _context.NavNodes
+    .AsNoTracking()
+    .Where(n => n.WarehouseId == warehouseId)
+    .ToListAsync();
 
-            var edgesTask = _context.NavEdges
+            var edges = await _context.NavEdges
                 .AsNoTracking()
                 .Where(e => e.WarehouseId == warehouseId)
                 .Select(e => new NavEdge
@@ -632,22 +632,22 @@ namespace Storix_BE.Repository.Implementation
                 })
                 .ToListAsync();
 
-            var zonesTask = _context.StorageZones
+            var zones = await _context.StorageZones
                 .AsNoTracking()
                 .Where(z => z.WarehouseId == warehouseId)
                 .ToListAsync();
 
-            var shelvesTask = _context.Shelves
+            var shelves = await _context.Shelves
                 .AsNoTracking()
                 .Where(s => s.Zone != null && s.Zone.WarehouseId == warehouseId)
                 .ToListAsync();
 
-            var levelsTask = _context.ShelfLevels
+            var levels = await _context.ShelfLevels
                 .AsNoTracking()
                 .Where(l => l.Shelf != null && l.Shelf.Zone != null && l.Shelf.Zone.WarehouseId == warehouseId)
                 .ToListAsync();
 
-            var binsTask = _context.ShelfLevelBins
+            var bins = await _context.ShelfLevelBins
                 .AsNoTracking()
                 .Where(b => b.Level != null && b.Level.Shelf != null
                             && b.Level.Shelf.Zone != null
@@ -664,7 +664,6 @@ namespace Storix_BE.Repository.Implementation
                     Status = b.Status,
                     Percentage = b.Percentage,
                     InventoryId = b.InventoryId,
-                    // Only pull the productId we need for the response, not the full Inventory graph
                     Inventory = b.InventoryId == null ? null : new Inventory
                     {
                         Id = b.Inventory!.Id,
@@ -673,7 +672,7 @@ namespace Storix_BE.Repository.Implementation
                 })
                 .ToListAsync();
 
-            var shelfNodesTask = _context.ShelfNodes
+            var shelfNodes = await _context.ShelfNodes
                 .AsNoTracking()
                 .Where(sn => sn.Shelf != null && sn.Shelf.Zone != null
                              && sn.Shelf.Zone.WarehouseId == warehouseId)
@@ -695,18 +694,6 @@ namespace Storix_BE.Repository.Implementation
                     }
                 })
                 .ToListAsync();
-
-            // Await all in parallel
-            await Task.WhenAll(nodesTask, edgesTask, zonesTask, shelvesTask,
-                               levelsTask, binsTask, shelfNodesTask);
-
-            var nodes = await nodesTask;
-            var edges = await edgesTask;
-            var zones = await zonesTask;
-            var shelves = await shelvesTask;
-            var levels = await levelsTask;
-            var bins = await binsTask;
-            var shelfNodes = await shelfNodesTask;
 
             // 3. Stitch the object graph in memory (pure dictionary lookups — O(n))
             var levelsByShelfId = levels.GroupBy(l => l.ShelfId ?? 0)
