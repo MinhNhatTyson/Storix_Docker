@@ -692,6 +692,7 @@ namespace Storix_BE.Repository.Implementation
                     await EnsureOutboundNotDeductedAsync(order.Id).ConfigureAwait(false);
                     await ReconcileInventoryLocationsForProductsAsync(order.WarehouseId.Value, productIdsForDeduct, performedBy, "OutboundStatusComplete.BeforeDeduct")
                         .ConfigureAwait(false);
+                    await _context.SaveChangesAsync().ConfigureAwait(false);
                     await EnsureInventoryLocationInvariantAsync(order.WarehouseId.Value, productIdsForDeduct, "OutboundStatusComplete.BeforeDeduct")
                         .ConfigureAwait(false);
 
@@ -720,6 +721,7 @@ namespace Storix_BE.Repository.Implementation
                         .ToList();
                     await ReconcileInventoryLocationsForProductsAsync(order.WarehouseId.Value, productIds, performedBy, "OutboundStatusComplete")
                         .ConfigureAwait(false);
+                    await _context.SaveChangesAsync().ConfigureAwait(false);
                     await EnsureInventoryLocationInvariantAsync(order.WarehouseId.Value, productIds, "OutboundStatusComplete")
                         .ConfigureAwait(false);
                 }
@@ -1525,6 +1527,7 @@ namespace Storix_BE.Repository.Implementation
                 await EnsureOutboundNotDeductedAsync(order.Id).ConfigureAwait(false);
                 await ReconcileInventoryLocationsForProductsAsync(order.WarehouseId!.Value, orderProductIds, performedBy, "OutboundConfirmComplete.BeforeDeduct")
                     .ConfigureAwait(false);
+                await _context.SaveChangesAsync().ConfigureAwait(false);
                 await EnsureInventoryLocationInvariantAsync(order.WarehouseId!.Value, orderProductIds, "OutboundConfirmComplete.BeforeDeduct")
                     .ConfigureAwait(false);
 
@@ -1590,6 +1593,7 @@ namespace Storix_BE.Repository.Implementation
                 {
                     await ReconcileInventoryLocationsForProductsAsync(order.WarehouseId.Value, orderProductIds, performedBy, "OutboundConfirmComplete")
                         .ConfigureAwait(false);
+                    await _context.SaveChangesAsync().ConfigureAwait(false);
                     await EnsureInventoryLocationInvariantAsync(order.WarehouseId.Value, orderProductIds, "OutboundConfirmComplete")
                         .ConfigureAwait(false);
                 }
@@ -2410,6 +2414,7 @@ namespace Storix_BE.Repository.Implementation
 
             await ReconcileInventoryLocationsForProductsAsync(order.WarehouseId.Value, productIds, performedBy, "OutboundDeduct.AfterDeduct")
                 .ConfigureAwait(false);
+            await _context.SaveChangesAsync().ConfigureAwait(false);
             await EnsureInventoryLocationInvariantAsync(order.WarehouseId.Value, productIds, "OutboundDeduct.AfterDeduct")
                 .ConfigureAwait(false);
 
