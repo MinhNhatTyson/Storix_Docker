@@ -389,7 +389,7 @@ namespace Storix_BE.Repository.Implementation
                         CreatedAt = now
                     };
                     _context.InventoryTransactions.Add(transaction);
-
+                    await _context.SaveChangesAsync().ConfigureAwait(false);
                     // If placements provided for this inbound item, update InventoryLocation and ShelfLevelBin
                     if (placementList.Any())
                     {
