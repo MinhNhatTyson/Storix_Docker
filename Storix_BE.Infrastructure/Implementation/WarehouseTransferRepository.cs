@@ -168,6 +168,7 @@ namespace Storix_BE.Repository.Implementation
             int? receiverStaffId)
         {
             var now = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
+            var priceByProduct = await ResolveLatestEffectivePricesAsync(items).ConfigureAwait(false);
 
             await using var tx = await _context.Database.BeginTransactionAsync().ConfigureAwait(false);
             try
@@ -208,7 +209,10 @@ namespace Storix_BE.Repository.Implementation
                     {
                         ProductId = line.ProductId,
                         Quantity = line.Quantity,
-                        PricingMethod = "LastPurchasePrice"
+                        PricingMethod = "LastPurchasePrice",
+                        Price = line.ProductId.HasValue && priceByProduct.TryGetValue(line.ProductId.Value, out var outboundPrice)
+                            ? outboundPrice
+                            : null
                     });
                 }
 
@@ -231,7 +235,10 @@ namespace Storix_BE.Repository.Implementation
                     {
                         ProductId = line.ProductId,
                         ExpectedQuantity = line.Quantity,
-                        ReceivedQuantity = 0
+                        ReceivedQuantity = 0,
+                        Price = line.ProductId.HasValue && priceByProduct.TryGetValue(line.ProductId.Value, out var inboundPrice)
+                            ? inboundPrice
+                            : null
                     });
                 }
 
@@ -461,6 +468,49 @@ namespace Storix_BE.Repository.Implementation
             }
 
             return changed;
+        }
+
+        private async Task<Dictionary<int, double>> ResolveLatestEffectivePricesAsync(IReadOnlyCollection<TransferOrderItem> items)
+        {
+            var productIds = items
+                .Where(i => i.ProductId.HasValue && i.ProductId.Value > 0)
+                .Select(i => i.ProductId!.Value)
+                .Distinct()
+                .ToList();
+
+            if (!productIds.Any())
+                return new Dictionary<int, double>();
+
+            var latestByProduct = await _context.ProductPrices
+                .AsNoTracking()
+                .Where(p => p.ProductId.HasValue && productIds.Contains(p.ProductId.Value))
+                .GroupBy(p => p.ProductId!.Value)
+                .Select(g => g
+                    .OrderByDescending(x => x.Date)
+                    .ThenByDescending(x => x.Id)
+                    .FirstOrDefault())
+                .Where(x => x != null && x.Price.HasValue)
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            var result = new Dictionary<int, double>();
+            foreach (var priceRow in latestByProduct)
+            {
+                if (priceRow == null || !priceRow.ProductId.HasValue || !priceRow.Price.HasValue)
+                    continue;
+
+                var discount = priceRow.LineDiscount ?? 0;
+                if (discount < 0) discount = 0;
+                if (discount > 100) discount = 100;
+
+                var basePrice = priceRow.Price.Value;
+                var effectivePrice = basePrice - (basePrice * (discount / 100.0));
+                if (effectivePrice < 0) effectivePrice = 0;
+
+                result[priceRow.ProductId.Value] = effectivePrice;
+            }
+
+            return result;
         }
     }
 }
