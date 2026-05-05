@@ -199,7 +199,7 @@ namespace Storix_BE.Repository.Implementation
                     CreatedBy = actorUserId,
                     StaffId = originWarehouseStaffId,
                     Status = "READY",
-                    Note = $"Waiting Assign Staff#{order.Id}",
+                    Note = $"AUTO_FROM_TRANSFER#{order.Id}",
                     CreatedAt = now
                 };
 
@@ -224,8 +224,8 @@ namespace Storix_BE.Repository.Implementation
                     WarehouseId = order.DestinationWarehouseId,
                     CreatedBy = actorUserId,
                     StaffId = receiverStaffId,
-                    Status = InboundOrderStatuses.WaitingToOutboundComplete,
-                    ReferenceCode = $"Waiting Assign Staff#{order.Id}",
+                    Status = InboundOrderStatuses.WaitingAssignStaff,
+                    ReferenceCode = $"AUTO_FROM_TRANSFER#{order.Id}",
                     CreatedAt = now
                 };
 
@@ -481,17 +481,20 @@ namespace Storix_BE.Repository.Implementation
             if (!productIds.Any())
                 return new Dictionary<int, double>();
 
-            var latestByProduct = await _context.ProductPrices
+            var priceRows = await _context.ProductPrices
                 .AsNoTracking()
                 .Where(p => p.ProductId.HasValue && productIds.Contains(p.ProductId.Value))
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            var latestByProduct = priceRows
                 .GroupBy(p => p.ProductId!.Value)
                 .Select(g => g
                     .OrderByDescending(x => x.Date)
                     .ThenByDescending(x => x.Id)
-                    .FirstOrDefault())
-                .Where(x => x != null && x.Price.HasValue)
-                .ToListAsync()
-                .ConfigureAwait(false);
+                    .First())
+                .Where(x => x.Price.HasValue)
+                .ToList();
 
             var result = new Dictionary<int, double>();
             foreach (var priceRow in latestByProduct)
