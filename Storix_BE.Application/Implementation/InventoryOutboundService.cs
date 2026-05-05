@@ -279,13 +279,14 @@ namespace Storix_BE.Service.Implementation
             return await _repo.UpdateOutboundOrderItemsAsync(outboundOrderId, domainItems, placements).ConfigureAwait(false);
         }
 
-        public async Task<OutboundOrder> UpdateOutboundOrderStatusAsync(int outboundOrderId, int performedBy, string status)
+        public async Task<OutboundOrderDto> UpdateOutboundOrderStatusAsync(int outboundOrderId, int performedBy, string status)
         {
             if (outboundOrderId <= 0) throw new ArgumentException("Invalid outboundOrderId.", nameof(outboundOrderId));
             if (performedBy <= 0) throw new ArgumentException("Invalid performedBy.", nameof(performedBy));
             if (string.IsNullOrWhiteSpace(status)) throw new ArgumentException("Status is required.", nameof(status));
 
-            return await _repo.UpdateOutboundOrderStatusAsync(outboundOrderId, performedBy, status);
+            var updatedOrder = await _repo.UpdateOutboundOrderStatusAsync(outboundOrderId, performedBy, status).ConfigureAwait(false);
+            return MapOutboundOrderToDto(updatedOrder);
         }
 
         public async Task<List<FifoBatchAllocationDto>> GetFifoBatchAllocationsByItemAsync(int companyId, int outboundOrderId, int outboundOrderItemId)

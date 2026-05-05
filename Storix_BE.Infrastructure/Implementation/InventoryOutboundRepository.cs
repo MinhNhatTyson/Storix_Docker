@@ -2376,19 +2376,45 @@ namespace Storix_BE.Repository.Implementation
                 foreach (var deduction in shelfDeductions)
                 {
                     var inventory = inventories.First(i => i.ProductId == deduction.ProductId);
-                    var invLoc = await _context.InventoryLocations
-                        .FirstOrDefaultAsync(x => x.InventoryId == inventory.Id && x.ShelfId == deduction.ShelfId)
+                    var invLocs = await _context.InventoryLocations
+                        .Where(x => x.InventoryId == inventory.Id && x.ShelfId == deduction.ShelfId)
+                        .OrderByDescending(x => x.Quantity ?? 0)
+                        .ThenBy(x => x.Id)
+                        .ToListAsync()
                         .ConfigureAwait(false);
 
-                    if (invLoc == null)
+                    if (!invLocs.Any())
                         throw new InvalidOperationException($"No stock placement found at ShelfId {deduction.ShelfId} for ProductId {deduction.ProductId}.");
 
-                    var currentQty = invLoc.Quantity ?? 0;
-                    if (currentQty < deduction.Quantity)
-                        throw new InvalidOperationException($"Insufficient shelf stock for ProductId {deduction.ProductId} at ShelfId {deduction.ShelfId}. Available: {currentQty}, Requested: {deduction.Quantity}.");
+                    if (invLocs.Count > 1)
+                    {
+                        _context.ActivityLogs.Add(new ActivityLog
+                        {
+                            UserId = performedBy,
+                            Entity = "OutboundOrder",
+                            EntityId = order.Id,
+                            Action = $"OUTBOUND_DUP_LOC_DETECTED:CTX=DeductShelf;WAREHOUSE={order.WarehouseId};INVENTORY={inventory.Id};SHELF={deduction.ShelfId};ROW_COUNT={invLocs.Count}",
+                            Timestamp = now
+                        });
+                    }
 
-                    invLoc.Quantity = currentQty - deduction.Quantity;
-                    invLoc.UpdatedAt = now;
+                    var shelfTotal = invLocs.Sum(x => x.Quantity ?? 0);
+                    if (shelfTotal < deduction.Quantity)
+                        throw new InvalidOperationException($"Insufficient shelf stock for ProductId {deduction.ProductId} at ShelfId {deduction.ShelfId}. Available: {shelfTotal}, Requested: {deduction.Quantity}.");
+
+                    var remainingToDeductOnShelf = deduction.Quantity;
+                    foreach (var invLoc in invLocs)
+                    {
+                        if (remainingToDeductOnShelf <= 0) break;
+
+                        var currentQty = invLoc.Quantity ?? 0;
+                        if (currentQty <= 0) continue;
+
+                        var deductQty = Math.Min(currentQty, remainingToDeductOnShelf);
+                        invLoc.Quantity = currentQty - deductQty;
+                        invLoc.UpdatedAt = now;
+                        remainingToDeductOnShelf -= deductQty;
+                    }
                 }
 
                 foreach (var assignment in binAllocations)
@@ -3029,6 +3055,24 @@ namespace Storix_BE.Repository.Implementation
                     .ToList();
                 var currentTotal = currentLocs.Sum(x => x.Quantity ?? 0);
 
+                var duplicateShelfGroups = currentLocs
+                    .Where(x => x.ShelfId.HasValue)
+                    .GroupBy(x => x.ShelfId!.Value)
+                    .Where(g => g.Count() > 1)
+                    .ToList();
+
+                foreach (var dupGroup in duplicateShelfGroups)
+                {
+                    _context.ActivityLogs.Add(new ActivityLog
+                    {
+                        UserId = performedBy,
+                        Entity = "OutboundOrder",
+                        EntityId = 0,
+                        Action = $"OUTBOUND_DUP_LOC_DETECTED:CTX=Reconcile;WAREHOUSE={warehouseId};INVENTORY={inv.Id};SHELF={dupGroup.Key};ROW_COUNT={dupGroup.Count()}",
+                        Timestamp = now
+                    });
+                }
+
                 if (!targets.Any() && targetTotal > 0)
                 {
                     var fallback = currentLocs.OrderByDescending(x => x.Quantity ?? 0).FirstOrDefault();
@@ -3044,8 +3088,25 @@ namespace Storix_BE.Repository.Implementation
                     var delta = targetTotal - rollupTotal;
                     if (delta != 0)
                     {
-                        var first = targets[0];
-                        targets[0] = new { first.ShelfId, Quantity = Math.Max(0, first.Quantity + delta) };
+                        if (delta > 0)
+                        {
+                            var first = targets[0];
+                            targets[0] = new { first.ShelfId, Quantity = Math.Max(0, first.Quantity + delta) };
+                        }
+                        else
+                        {
+                            // When delta is negative, reduce from shelves that currently hold positive quantity.
+                            var remaining = -delta;
+                            for (var idx = 0; idx < targets.Count && remaining > 0; idx++)
+                            {
+                                var cur = targets[idx];
+                                if (cur.Quantity <= 0) continue;
+
+                                var reduce = Math.Min(cur.Quantity, remaining);
+                                targets[idx] = new { cur.ShelfId, Quantity = cur.Quantity - reduce };
+                                remaining -= reduce;
+                            }
+                        }
                     }
                 }
 
@@ -3053,9 +3114,37 @@ namespace Storix_BE.Repository.Implementation
                     .Where(x => x.ShelfId > 0)
                     .ToDictionary(x => x.ShelfId, x => Math.Max(0, x.Quantity));
 
+                // Normalize duplicate rows per shelf by choosing one canonical row per shelf.
+                var canonicalByShelf = currentLocs
+                    .Where(x => x.ShelfId.HasValue)
+                    .GroupBy(x => x.ShelfId!.Value)
+                    .ToDictionary(
+                        g => g.Key,
+                        g => g.OrderByDescending(x => x.Quantity ?? 0).ThenBy(x => x.Id).First());
+
                 foreach (var loc in currentLocs)
                 {
-                    if (!loc.ShelfId.HasValue || !targetByShelf.TryGetValue(loc.ShelfId.Value, out var targetQty))
+                    if (!loc.ShelfId.HasValue)
+                    {
+                        if ((loc.Quantity ?? 0) != 0)
+                        {
+                            loc.Quantity = 0;
+                            loc.UpdatedAt = now;
+                        }
+                        continue;
+                    }
+
+                    if (!canonicalByShelf.TryGetValue(loc.ShelfId.Value, out var canonical) || canonical.Id != loc.Id)
+                    {
+                        if ((loc.Quantity ?? 0) != 0)
+                        {
+                            loc.Quantity = 0;
+                            loc.UpdatedAt = now;
+                        }
+                        continue;
+                    }
+
+                    if (!targetByShelf.TryGetValue(loc.ShelfId.Value, out var targetQty))
                     {
                         if ((loc.Quantity ?? 0) != 0)
                         {
@@ -3072,7 +3161,7 @@ namespace Storix_BE.Repository.Implementation
                     }
                 }
 
-                var existingShelfIds = currentLocs.Where(x => x.ShelfId.HasValue).Select(x => x.ShelfId!.Value).ToHashSet();
+                var existingShelfIds = canonicalByShelf.Keys.ToHashSet();
                 foreach (var kv in targetByShelf.Where(kv => !existingShelfIds.Contains(kv.Key)))
                 {
                     _context.InventoryLocations.Add(new InventoryLocation

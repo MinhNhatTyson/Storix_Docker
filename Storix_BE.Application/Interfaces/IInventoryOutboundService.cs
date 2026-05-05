@@ -20,7 +20,7 @@ namespace Storix_BE.Service.Interfaces
 
         Task<OutboundOrder> UpdateOutboundOrderItemsAsync(int outboundOrderId, IEnumerable<UpdateOutboundOrderItemRequest> items);
 
-        Task<OutboundOrder> UpdateOutboundOrderStatusAsync(int outboundOrderId, int performedBy, string status);
+        Task<OutboundOrderDto> UpdateOutboundOrderStatusAsync(int outboundOrderId, int performedBy, string status);
 
         Task<List<OutboundRequestDto>> GetAllOutboundRequestsAsync(int companyId, int? warehouseId);
         Task<List<OutboundRequestDto>> GetOutboundRequestsByWarehouseIdAsync(int warehouseId);

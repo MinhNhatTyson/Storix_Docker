@@ -22,7 +22,6 @@ namespace Storix_BE.Service.Implementation
     public class ReportingService : IReportingService
     {
         private const int ReplenishmentForecastHorizonDaysDefault = 14;
-        private const int ReplenishmentLeadTimeDaysDefault = 7;
         private const double ReplenishmentServiceLevelDefault = 0.95;
         private const string AiRecommendationSchemaVersion = "ai-recommendation-v1";
         private const string AiRecommendationFeSchemaVersion = "ai-recommendation-fe-v1";
@@ -219,7 +218,8 @@ namespace Storix_BE.Service.Implementation
                 else if (string.Equals(normalizedReportType, ReportTypes.ReplenishmentRecommendation, StringComparison.Ordinal))
                 {
                     var forecastHorizonDays = payload.ForecastHorizonDays.GetValueOrDefault(ReplenishmentForecastHorizonDaysDefault);
-                    var defaultLeadTimeDays = ReplenishmentLeadTimeDaysDefault;
+                    // Align lead time with selected horizon to avoid fixed magic number.
+                    var defaultLeadTimeDays = forecastHorizonDays;
                     var serviceLevel = ReplenishmentServiceLevelDefault;
                     var useAiExplanation = payload.UseAiExplanation.GetValueOrDefault(true);
 
@@ -1480,7 +1480,7 @@ namespace Storix_BE.Service.Implementation
             if (string.Equals(reportType, ReportTypes.ReplenishmentRecommendation, StringComparison.Ordinal))
             {
                 var horizon = payload.ForecastHorizonDays.GetValueOrDefault(ReplenishmentForecastHorizonDaysDefault);
-                var leadTime = ReplenishmentLeadTimeDaysDefault;
+                var leadTime = horizon;
                 var serviceLevel = ReplenishmentServiceLevelDefault;
                 if (horizon <= 0)
                     throw new ArgumentException("ForecastHorizonDays must be greater than 0.", nameof(payload.ForecastHorizonDays));
