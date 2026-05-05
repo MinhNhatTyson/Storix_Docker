@@ -450,9 +450,9 @@ namespace Storix_BE.Repository.Implementation
                         {
                             var prod = products.FirstOrDefault(p => p.Id == a.ProductId);
                             if (prod == null) continue;
-                            var pw = prod.Width ?? 0.0;
-                            var ph = prod.Height ?? 0.0;
-                            var plength = prod.Length ?? 0.0;
+                            var pw = (prod.Width ?? 0.0) / 10.0;
+                            var ph = (prod.Height ?? 0.0) / 10.0;
+                            var plength = (prod.Length ?? 0.0) / 10.0;
                             double productUnitVolume = 0;
                             if (pw <= 0)
                             {

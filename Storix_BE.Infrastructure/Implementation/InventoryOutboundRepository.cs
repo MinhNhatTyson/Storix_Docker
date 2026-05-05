@@ -2054,9 +2054,9 @@ namespace Storix_BE.Repository.Implementation
 
         private static double CalculateProductUnitVolume(Product product)
         {
-            var width = product.Width ?? 0.0;
-            var height = product.Height ?? 0.0;
-            var length = product.Length ?? 0.0;
+            var width = (product.Width ?? 0.0) / 10.0;
+            var height = (product.Height ?? 0.0) / 10.0;
+            var length = (product.Length ?? 0.0) / 10.0;
 
             if (width <= 0 && height <= 0 && length <= 0)
                 return 0.0;
