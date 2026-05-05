@@ -208,16 +208,7 @@ namespace Storix_BE.Service.Implementation
 
             var inbound = await _repo.UpdateInventoryInboundTicketRequestStatus(ticketRequestId, approverId, status);
             var now = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
-            // log approval/change (status may be "Approved", "Rejected", etc.)
-            await _activityLogRepo.AddAsync(new ActivityLog
-            {
-                UserId = approverId,
-                Action = $"{status} Inbound Request",
-                Entity = "InboundRequest",
-                EntityId = inbound.Id,
-                Timestamp = now
-            }).ConfigureAwait(false);
-            // Send notification to managers when approved
+            
             if (string.Equals(status, "Approved", StringComparison.OrdinalIgnoreCase))
             {
                 var companyId = inbound.RequestedByNavigation?.CompanyId ?? inbound.RequestedByNavigation?.CompanyId;
@@ -225,26 +216,6 @@ namespace Storix_BE.Service.Implementation
                 {
                     var title = "Inbound request approved";
                     var message = $"Inbound request '{inbound.Code}' has been approved.";
-                    await _notificationService.SendNotificationToManagersAsync(
-                        companyId.Value,
-                        title,
-                        message,
-                        type: "InboundRequest",
-                        category: "Inbound",
-                        referenceType: "InboundRequest",
-                        referenceId: inbound.Id,
-                        createdByUserId: approverId
-                    ).ConfigureAwait(false);
-                }
-            }
-            // Send notification to managers when approved
-            if (string.Equals(status, "Rejected", StringComparison.OrdinalIgnoreCase))
-            {
-                var companyId = inbound.RequestedByNavigation?.CompanyId ?? inbound.RequestedByNavigation?.CompanyId;
-                if (companyId.HasValue && companyId.Value > 0)
-                {
-                    var title = "Inbound request rejected";
-                    var message = $"Inbound request '{inbound.Code}' has been rejected.";
                     await _notificationService.SendNotificationToManagersAsync(
                         companyId.Value,
                         title,
