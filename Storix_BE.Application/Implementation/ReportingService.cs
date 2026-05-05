@@ -21,6 +21,9 @@ namespace Storix_BE.Service.Implementation
 {
     public class ReportingService : IReportingService
     {
+        private const int ReplenishmentForecastHorizonDaysDefault = 14;
+        private const int ReplenishmentLeadTimeDaysDefault = 7;
+        private const double ReplenishmentServiceLevelDefault = 0.95;
         private const string AiRecommendationSchemaVersion = "ai-recommendation-v1";
         private const string AiRecommendationFeSchemaVersion = "ai-recommendation-fe-v1";
         private const string AiRecommendationBasicSource = "AI_RECOMMENDATION_BASIC";
@@ -102,8 +105,6 @@ namespace Storix_BE.Service.Implementation
                     timeFrom = payload.TimeFrom,
                     timeTo = payload.TimeTo,
                     forecastHorizonDays = payload.ForecastHorizonDays,
-                    defaultLeadTimeDays = payload.DefaultLeadTimeDays,
-                    serviceLevel = payload.ServiceLevel,
                     useAiExplanation = payload.UseAiExplanation
                 }, paramsOptions)
             };
@@ -217,9 +218,9 @@ namespace Storix_BE.Service.Implementation
                 }
                 else if (string.Equals(normalizedReportType, ReportTypes.ReplenishmentRecommendation, StringComparison.Ordinal))
                 {
-                    var forecastHorizonDays = payload.ForecastHorizonDays.GetValueOrDefault(14);
-                    var defaultLeadTimeDays = payload.DefaultLeadTimeDays.GetValueOrDefault(7);
-                    var serviceLevel = payload.ServiceLevel.GetValueOrDefault(0.95);
+                    var forecastHorizonDays = payload.ForecastHorizonDays.GetValueOrDefault(ReplenishmentForecastHorizonDaysDefault);
+                    var defaultLeadTimeDays = ReplenishmentLeadTimeDaysDefault;
+                    var serviceLevel = ReplenishmentServiceLevelDefault;
                     var useAiExplanation = payload.UseAiExplanation.GetValueOrDefault(true);
 
                     var recommendation = await _repo.GetReplenishmentRecommendationDataAsync(
@@ -1478,15 +1479,15 @@ namespace Storix_BE.Service.Implementation
 
             if (string.Equals(reportType, ReportTypes.ReplenishmentRecommendation, StringComparison.Ordinal))
             {
-                var horizon = payload.ForecastHorizonDays.GetValueOrDefault(14);
-                var leadTime = payload.DefaultLeadTimeDays.GetValueOrDefault(7);
-                var serviceLevel = payload.ServiceLevel.GetValueOrDefault(0.95);
+                var horizon = payload.ForecastHorizonDays.GetValueOrDefault(ReplenishmentForecastHorizonDaysDefault);
+                var leadTime = ReplenishmentLeadTimeDaysDefault;
+                var serviceLevel = ReplenishmentServiceLevelDefault;
                 if (horizon <= 0)
                     throw new ArgumentException("ForecastHorizonDays must be greater than 0.", nameof(payload.ForecastHorizonDays));
                 if (leadTime <= 0)
-                    throw new ArgumentException("DefaultLeadTimeDays must be greater than 0.", nameof(payload.DefaultLeadTimeDays));
+                    throw new InvalidOperationException("DefaultLeadTimeDays default must be greater than 0.");
                 if (serviceLevel <= 0 || serviceLevel >= 1)
-                    throw new ArgumentException("ServiceLevel must be between 0 and 1.", nameof(payload.ServiceLevel));
+                    throw new InvalidOperationException("ServiceLevel default must be between 0 and 1.");
             }
 
             if (payload.WarehouseId.HasValue)

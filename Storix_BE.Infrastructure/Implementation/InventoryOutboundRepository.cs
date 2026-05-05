@@ -389,9 +389,29 @@ namespace Storix_BE.Repository.Implementation
 
             await EnsureWarehouseActiveAsync(outboundRequest.WarehouseId.Value).ConfigureAwait(false);
 
-            var productIds = outboundRequest.OutboundOrderItems
-                .Where(i => i.ProductId.HasValue)
-                .Select(i => i.ProductId!.Value)
+            var requestSourceItems = (outboundRequest.OutboundOrderItems ?? new List<OutboundOrderItem>())
+                .Where(i => !i.OutboundOrderId.HasValue)
+                .ToList();
+
+            if (!requestSourceItems.Any())
+                throw new InvalidOperationException("OutboundRequest does not contain source items for order creation.");
+
+            var normalizedRequestItems = requestSourceItems
+                .Where(i => i.ProductId.HasValue && i.Quantity.HasValue && i.Quantity.Value > 0)
+                .GroupBy(i => i.ProductId!.Value)
+                .Select(g => new
+                {
+                    ProductId = g.Key,
+                    Quantity = g.Sum(x => x.Quantity ?? 0),
+                    Price = g.Select(x => x.Price).FirstOrDefault()
+                })
+                .ToList();
+
+            if (!normalizedRequestItems.Any())
+                throw new InvalidOperationException("OutboundRequest source items must specify ProductId and Quantity.");
+
+            var productIds = normalizedRequestItems
+                .Select(i => i.ProductId)
                 .Distinct()
                 .ToList();
 
@@ -400,11 +420,8 @@ namespace Storix_BE.Repository.Implementation
                 .ToListAsync()
                 .ConfigureAwait(false);
 
-            foreach (var reqItem in outboundRequest.OutboundOrderItems)
+            foreach (var reqItem in normalizedRequestItems)
             {
-                if (!reqItem.ProductId.HasValue || !reqItem.Quantity.HasValue)
-                    throw new InvalidOperationException("OutboundRequest items must specify ProductId and Quantity.");
-
                 var inventory = inventories.FirstOrDefault(i => i.ProductId == reqItem.ProductId);
                 if (inventory == null || (inventory.Quantity ?? 0) < reqItem.Quantity)
                 {
@@ -432,7 +449,7 @@ namespace Storix_BE.Repository.Implementation
 
             var method = string.IsNullOrWhiteSpace(pricingMethod) ? "LastPurchasePrice" : pricingMethod.Trim();
 
-            foreach (var reqItem in outboundRequest.OutboundOrderItems)
+            foreach (var reqItem in normalizedRequestItems)
             {
                 var costPrice = await ResolveCostPriceAsync(reqItem.ProductId, method, outboundRequest.CreatedAt)
                     .ConfigureAwait(false);
@@ -2516,17 +2533,26 @@ namespace Storix_BE.Repository.Implementation
                 query = query.Where(r => r.WarehouseId == warehouseId.Value);
             }
 
-            return await query
+            var requests = await query
                 .OrderByDescending(r => r.CreatedAt)
                 .ToListAsync()
                 .ConfigureAwait(false);
+
+            foreach (var request in requests)
+            {
+                request.OutboundOrderItems = (request.OutboundOrderItems ?? new List<OutboundOrderItem>())
+                    .Where(i => !i.OutboundOrderId.HasValue)
+                    .ToList();
+            }
+
+            return requests;
         }
 
         public async Task<List<OutboundRequest>> GetOutboundRequestsByWarehouseIdAsync(int warehouseId)
         {
             if (warehouseId <= 0) throw new ArgumentException("Invalid warehouse id.", nameof(warehouseId));
 
-            return await _context.OutboundRequests
+            var requests = await _context.OutboundRequests
                 .Include(r => r.OutboundOrderItems)
                     .ThenInclude(i => i.Product)
                 .Include(r => r.Warehouse)
@@ -2536,6 +2562,15 @@ namespace Storix_BE.Repository.Implementation
                 .OrderByDescending(r => r.CreatedAt)
                 .ToListAsync()
                 .ConfigureAwait(false);
+
+            foreach (var request in requests)
+            {
+                request.OutboundOrderItems = (request.OutboundOrderItems ?? new List<OutboundOrderItem>())
+                    .Where(i => !i.OutboundOrderId.HasValue)
+                    .ToList();
+            }
+
+            return requests;
         }
 
         public async Task<OutboundRequest> GetOutboundRequestByIdAsync(int companyId, int id)
@@ -2554,6 +2589,10 @@ namespace Storix_BE.Repository.Implementation
 
             if (request == null)
                 throw new InvalidOperationException($"OutboundRequest with id {id} not found.");
+
+            request.OutboundOrderItems = (request.OutboundOrderItems ?? new List<OutboundOrderItem>())
+                .Where(i => !i.OutboundOrderId.HasValue)
+                .ToList();
 
             return request;
         }
@@ -2908,6 +2947,20 @@ namespace Storix_BE.Repository.Implementation
                 var locationQty = locationQtyByInventory.TryGetValue(inv.Id, out var qty) ? qty : 0;
                 if (inv.Quantity != locationQty)
                 {
+                    if (!string.IsNullOrWhiteSpace(context)
+                        && context.IndexOf("BeforeDeduct", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        _context.ActivityLogs.Add(new ActivityLog
+                        {
+                            UserId = null,
+                            Entity = "OutboundOrder",
+                            EntityId = 0,
+                            Action = $"OUTBOUND_INVARIANT_WARN:{context};WAREHOUSE={warehouseId};PRODUCT={inv.ProductId};INV_QTY={inv.Quantity};LOC_QTY={locationQty}",
+                            Timestamp = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified)
+                        });
+                        continue;
+                    }
+
                     throw new InvalidOperationException(
                         $"Inventory-location mismatch in {context}: WarehouseId={warehouseId}, ProductId={inv.ProductId}, InventoryQty={inv.Quantity}, LocationQty={locationQty}.");
                 }

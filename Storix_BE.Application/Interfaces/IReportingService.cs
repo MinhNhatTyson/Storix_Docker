@@ -61,8 +61,6 @@ namespace Storix_BE.Service.Interfaces
         DateTime TimeFrom,
         DateTime TimeTo,
         int? ForecastHorizonDays = null,
-        int? DefaultLeadTimeDays = null,
-        double? ServiceLevel = null,
         bool? UseAiExplanation = null);
 
     public sealed record ReportRequestListItemDto(
