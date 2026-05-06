@@ -337,27 +337,18 @@ namespace Storix_BE.API.Controllers
                 return BadRequest(new { message = "WarehouseId is required." });
             if (request == null)
                 return BadRequest(new { message = "Request body is required." });
+
             try
             {
+                _cache.Remove($"warehouse_structure_{warehouseId}");
+
                 var warehouse = await _assignmentService.UpdateWarehouseStructureAsync(companyId, warehouseId, request);
                 return Ok(new { Id = warehouse.Id });
             }
-            catch (UnauthorizedAccessException)
-            {
-                return Forbid();
-            }
-            catch (InvalidOperationException ex)
-            {
-                return BadRequest(new { message = ex.Message });
-            }
-            catch (BusinessRuleException ex)
-            {
-                return BadRequest(new { code = ex.Code, message = ex.Message });
-            }
-            catch (Exception ex)
-            {
-                return BadRequest(new { message = ex.Message });
-            }
+            catch (UnauthorizedAccessException) { return Forbid(); }
+            catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+            catch (BusinessRuleException ex) { return BadRequest(new { code = ex.Code, message = ex.Message }); }
+            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
         }
 
         /// <summary>
