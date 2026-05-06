@@ -198,7 +198,7 @@ namespace Storix_BE.Repository.Implementation
                     Destination = order.DestinationWarehouse?.Name,
                     CreatedBy = actorUserId,
                     StaffId = originWarehouseStaffId,
-                    Status = "READY",
+                    Status = "Created",
                     Note = $"AUTO_FROM_TRANSFER#{order.Id}",
                     CreatedAt = now
                 };
