@@ -568,30 +568,11 @@ namespace Storix_BE.Repository.Implementation
                 }
             }
 
-            var outboundRequestIds = order.OutboundOrderItems
-                .Where(x => x.OutboundRequestId.HasValue)
-                .Select(x => x.OutboundRequestId!.Value)
-                .Distinct()
-                .ToList();
+            var hasRequestBackedItems = order.OutboundOrderItems.Any(x => x.OutboundRequestId.HasValue);
+            var hasTransferBackedItems = order.OutboundOrderItems.Any(x => !x.OutboundRequestId.HasValue);
 
-            if (outboundRequestIds.Count != 1)
-                throw new InvalidOperationException("OutboundOrder must map to exactly one OutboundRequest for item verification.");
-
-            var outboundRequestId = outboundRequestIds[0];
-
-            var requestedItems = await _context.OutboundOrderItems
-                .AsNoTracking()
-                .Where(x => x.OutboundRequestId == outboundRequestId && x.OutboundOrderId == null)
-                .ToListAsync()
-                .ConfigureAwait(false);
-
-            if (!requestedItems.Any())
-                throw new InvalidOperationException($"No source request items found for OutboundRequestId {outboundRequestId}.");
-
-            var requestByProduct = requestedItems
-                .Where(x => x.ProductId.HasValue)
-                .GroupBy(x => x.ProductId!.Value)
-                .ToDictionary(g => g.Key, g => g.Sum(x => x.Quantity ?? 0));
+            if (hasRequestBackedItems && hasTransferBackedItems)
+                throw new InvalidOperationException("OutboundOrder contains mixed request-backed and transfer-backed items, which is not allowed.");
 
             foreach (var incoming in incomingList)
             {
@@ -611,9 +592,6 @@ namespace Storix_BE.Repository.Implementation
                 if (existing == null)
                     throw new InvalidOperationException("Cannot add new items that are not in the original outbound ticket.");
 
-                if (existing.OutboundRequestId != outboundRequestId)
-                    throw new InvalidOperationException("Item is not linked to the original outbound request.");
-
                 if (existing.ProductId != incoming.ProductId)
                     throw new InvalidOperationException("Changing ProductId is not allowed when updating outbound ticket items.");
 
@@ -622,24 +600,13 @@ namespace Storix_BE.Repository.Implementation
                 existing.Quantity = incoming.Quantity;
             }
 
-            var currentByProduct = order.OutboundOrderItems
-                .Where(x => x.ProductId.HasValue)
-                .GroupBy(x => x.ProductId!.Value)
-                .ToDictionary(g => g.Key, g => g.Sum(x => x.Quantity ?? 0));
-
-            var requestProductIds = requestByProduct.Keys.OrderBy(x => x).ToList();
-            var currentProductIds = currentByProduct.Keys.OrderBy(x => x).ToList();
-            if (!requestProductIds.SequenceEqual(currentProductIds))
-                throw new InvalidOperationException("Outbound ticket items must keep the same product set as the original outbound request.");
-
-            foreach (var kv in requestByProduct)
+            if (hasRequestBackedItems)
             {
-                var productId = kv.Key;
-                var requestedQty = kv.Value;
-                var actualQty = currentByProduct.TryGetValue(productId, out var qty) ? qty : 0;
-
-                if (actualQty != requestedQty)
-                    throw new InvalidOperationException($"ProductId {productId} must keep total quantity {requestedQty} as requested. Current: {actualQty}.");
+                await ValidateAgainstOutboundRequestAsync(order).ConfigureAwait(false);
+            }
+            else
+            {
+                await ValidateAgainstTransferOrderAsync(order).ConfigureAwait(false);
             }
 
             await _context.SaveChangesAsync().ConfigureAwait(false);
@@ -2127,6 +2094,99 @@ namespace Storix_BE.Repository.Implementation
         private static bool IsInactiveStatus(string? status)
         {
             return string.Equals(status, "inactive", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private async Task ValidateAgainstOutboundRequestAsync(OutboundOrder order)
+        {
+            var outboundRequestIds = order.OutboundOrderItems
+                .Where(x => x.OutboundRequestId.HasValue)
+                .Select(x => x.OutboundRequestId!.Value)
+                .Distinct()
+                .ToList();
+
+            if (outboundRequestIds.Count != 1)
+                throw new InvalidOperationException("OutboundOrder must map to exactly one OutboundRequest for item verification.");
+
+            var outboundRequestId = outboundRequestIds[0];
+            if (order.OutboundOrderItems.Any(x => x.OutboundRequestId != outboundRequestId))
+                throw new InvalidOperationException("Item is not linked to the original outbound request.");
+
+            var requestedItems = await _context.OutboundOrderItems
+                .AsNoTracking()
+                .Where(x => x.OutboundRequestId == outboundRequestId && x.OutboundOrderId == null)
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            if (!requestedItems.Any())
+                throw new InvalidOperationException($"No source request items found for OutboundRequestId {outboundRequestId}.");
+
+            var requestByProduct = AggregateQuantityByProduct(requestedItems);
+            var currentByProduct = AggregateQuantityByProduct(order.OutboundOrderItems);
+
+            ValidateLockedProductSetAndQuantity(currentByProduct, requestByProduct,
+                "Outbound ticket items must keep the same product set as the original outbound request.",
+                "as requested");
+        }
+
+        private async Task ValidateAgainstTransferOrderAsync(OutboundOrder order)
+        {
+            var transferOrder = await _context.TransferOrders
+                .AsNoTracking()
+                .FirstOrDefaultAsync(t => t.OutboundTicketId == order.Id)
+                .ConfigureAwait(false);
+
+            if (transferOrder == null)
+                throw new InvalidOperationException("OutboundOrder is not linked to any OutboundRequest or TransferOrder (orphan outbound ticket).");
+
+            var transferItems = await _context.TransferOrderItems
+                .AsNoTracking()
+                .Where(i => i.TransferOrderId == transferOrder.Id)
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            if (!transferItems.Any())
+                throw new InvalidOperationException($"No transfer items found for TransferOrderId {transferOrder.Id}.");
+
+            var transferByProduct = AggregateQuantityByProduct(transferItems);
+            var currentByProduct = AggregateQuantityByProduct(order.OutboundOrderItems);
+
+            ValidateLockedProductSetAndQuantity(currentByProduct, transferByProduct,
+                "Outbound ticket items must keep the same product set as the linked transfer order.",
+                "as defined in transfer order");
+        }
+
+        private static Dictionary<int, int> AggregateQuantityByProduct(IEnumerable<OutboundOrderItem> items)
+            => items
+                .Where(x => x.ProductId.HasValue)
+                .GroupBy(x => x.ProductId!.Value)
+                .ToDictionary(g => g.Key, g => g.Sum(x => x.Quantity ?? 0));
+
+        private static Dictionary<int, int> AggregateQuantityByProduct(IEnumerable<TransferOrderItem> items)
+            => items
+                .Where(x => x.ProductId.HasValue)
+                .GroupBy(x => x.ProductId!.Value)
+                .ToDictionary(g => g.Key, g => g.Sum(x => x.Quantity ?? 0));
+
+        private static void ValidateLockedProductSetAndQuantity(
+            IReadOnlyDictionary<int, int> currentByProduct,
+            IReadOnlyDictionary<int, int> baselineByProduct,
+            string productSetErrorMessage,
+            string quantityContext)
+        {
+            var baselineProductIds = baselineByProduct.Keys.OrderBy(x => x).ToList();
+            var currentProductIds = currentByProduct.Keys.OrderBy(x => x).ToList();
+            if (!baselineProductIds.SequenceEqual(currentProductIds))
+                throw new InvalidOperationException(productSetErrorMessage);
+
+            foreach (var kv in baselineByProduct)
+            {
+                var productId = kv.Key;
+                var baselineQty = kv.Value;
+                var actualQty = currentByProduct.TryGetValue(productId, out var qty) ? qty : 0;
+
+                if (actualQty != baselineQty)
+                    throw new InvalidOperationException($"ProductId {productId} must keep total quantity {baselineQty} {quantityContext}. Current: {actualQty}.");
+            }
         }
 
         private async Task DeductOutboundByFifoAsync(OutboundOrder order, IEnumerable<OutboundOrderItem> items, int performedBy, DateTime now)
