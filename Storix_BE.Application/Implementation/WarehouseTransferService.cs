@@ -253,7 +253,7 @@ namespace Storix_BE.Service.Implementation
         private static TransferOrderDetailDto MapDetail(TransferOrder t, IEnumerable<TransferOrderTimelineDto> timeline)
         {
             var items = (t.TransferOrderItems ?? new List<TransferOrderItem>())
-                .Select(i => new TransferOrderItemDto(i.Id, i.ProductId, i.Product?.Name, i.Product?.Image, i.Quantity, i.OutboundOrderItemId, i.InboundOrderItemId))
+                .Select(i => new TransferOrderItemDto(i.Id, i.ProductId, i.Product?.Sku, i.Product?.Name, i.Product?.Image, i.Quantity, i.OutboundOrderItemId, i.InboundOrderItemId))
                 .ToList();
 
             return new TransferOrderDetailDto(t.Id, t.SourceWarehouseId, t.SourceWarehouse?.Name, t.DestinationWarehouseId, t.DestinationWarehouse?.Name, t.CreatedBy, t.CreatedByNavigation?.FullName, t.Status, t.CreatedAt, t.OutboundTicketId, t.InboundTicketId, items, timeline);

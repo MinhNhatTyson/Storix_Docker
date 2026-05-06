@@ -46,6 +46,7 @@ namespace Storix_BE.Service.Interfaces
     public sealed record TransferOrderItemDto(
         int Id,
         int? ProductId,
+        string? Sku,
         string? ProductName,
         string? ProductImage,
         int? Quantity,
