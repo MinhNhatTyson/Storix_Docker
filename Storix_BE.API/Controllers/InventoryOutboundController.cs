@@ -120,7 +120,9 @@ namespace Storix_BE.API.Controllers
                 if (authError != null) return authError;
 
                 var outboundRequest = await _service.UpdateOutboundRequestStatusAsync(id, request.ApproverId, request.Status);
-                return Ok(outboundRequest);
+                if(outboundRequest == null)
+                    return NotFound(new { message = "Outbound request not found." });
+                return Ok();
             }
             catch (InvalidOperationException ex)
             {

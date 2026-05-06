@@ -45,7 +45,9 @@ namespace Storix_BE.API.Controllers
             try
             {
                 var inboundRequest = await _service.UpdateInboundRequestStatusAsync(id, request.ApproverId, request.Status);
-                return Ok(inboundRequest);
+                if (inboundRequest == null)
+                    return NotFound();
+                return Ok();
             }
             catch (InvalidOperationException ex)
             {
