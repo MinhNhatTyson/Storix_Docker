@@ -117,8 +117,6 @@ namespace Storix_BE.Repository.Implementation
 
         public async Task<InboundRequest> UpdateInventoryInboundTicketRequestStatus(int ticketRequestId, int approverId, string status)
         {
-            if (string.IsNullOrWhiteSpace(status)) throw new ArgumentException("Status is required.", nameof(status));
-
             var inbound = await _context.InboundRequests
                 .Include(r => r.RequestedByNavigation) // <- ensure company info available via RequestedByNavigation.CompanyId
                 .FirstOrDefaultAsync(r => r.Id == ticketRequestId)

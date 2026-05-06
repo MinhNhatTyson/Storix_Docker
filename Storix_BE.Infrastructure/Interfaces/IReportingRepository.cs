@@ -266,7 +266,6 @@ namespace Storix_BE.Repository.Interfaces
         string? ProductName,
         string? Sku,
         int OnHandQty,
-        int InboundPlannedQty,
         int ForecastDemandQty,
         double AvgDailyDemand,
         double DemandStdDev,

@@ -48,6 +48,7 @@ namespace Storix_BE.API.Controllers
                     request.TimeFrom,
                     request.TimeTo,
                     request.ForecastHorizonDays,
+                    request.LeadTimeDays,
                     request.UseAiExplanation);
                 var result = await _reportingService.CreateReportAsync(effectiveCompanyId, caller!.Id, payload);
                 return Ok(result);
@@ -398,6 +399,7 @@ namespace Storix_BE.API.Controllers
         int? InventoryCountTicketId,
         int? CompanyId,
         int? ForecastHorizonDays = null,
+        int? LeadTimeDays = null,
         bool? UseAiExplanation = null);
 
     public sealed record UpdateAiRecommendationApiRequest(

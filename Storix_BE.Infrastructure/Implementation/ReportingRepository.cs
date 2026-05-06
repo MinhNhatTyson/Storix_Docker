@@ -1153,13 +1153,11 @@ namespace Storix_BE.Repository.Implementation
                 var avgDailyDemand = dailySeries.Any() ? dailySeries.Average() : 0.0;
                 var demandStdDev = ComputeStdDev(dailySeries);
 
-                int? forecastDaysToStockout = null;
                 double forecastDailyDemand = avgDailyDemand;
                 double forecastConfidence = 0.5;
                 string? forecastRiskLevel = null;
                 if (latestForecastByProduct.TryGetValue(productId, out var forecast))
                 {
-                    forecastDaysToStockout = forecast.DaysToStockout;
                     forecastRiskLevel = forecast.RiskLevel;
                     if (forecast.Confidence.HasValue)
                         forecastConfidence = Math.Clamp(forecast.Confidence.Value, 0.0, 1.0);
@@ -1175,13 +1173,12 @@ namespace Storix_BE.Repository.Implementation
                 var leadTimeDays = defaultLeadTimeDays;
                 var forecastDemandQty = (int)Math.Ceiling(Math.Max(0, forecastDailyDemand * forecastHorizonDays));
                 var safetyStock = (int)Math.Ceiling(Math.Max(0, zScore * demandStdDev * Math.Sqrt(Math.Max(1, leadTimeDays))));
-                var reorderPoint = (int)Math.Ceiling(Math.Max(0, (forecastDailyDemand * leadTimeDays) + safetyStock));
-                var netAvailable = onHand + inboundPlanned;
-                var recommendedQty = Math.Max(0, forecastDemandQty + safetyStock - netAvailable);
+                var reorderPoint = Math.Max(0, forecastDemandQty + safetyStock);
+                var recommendedQty = Math.Max(0, reorderPoint - onHand);
 
-                var daysToStockout = forecastDaysToStockout;
-                if (!daysToStockout.HasValue && forecastDailyDemand > 0)
-                    daysToStockout = (int)Math.Floor(onHand / forecastDailyDemand);
+                var daysToStockout = forecastDailyDemand > 0
+                    ? (int?)Math.Floor(onHand / forecastDailyDemand)
+                    : null;
 
                 var riskLevel = NormalizeRiskLevel(forecastRiskLevel, daysToStockout, forecastHorizonDays, recommendedQty, onHand);
                 var reasonCodes = BuildReasonCodes(onHand, reorderPoint, recommendedQty, daysToStockout, forecastDailyDemand, avgDailyDemand);
@@ -1194,7 +1191,6 @@ namespace Storix_BE.Repository.Implementation
                     meta?.ProductName,
                     meta?.Sku,
                     onHand,
-                    inboundPlanned,
                     forecastDemandQty,
                     Math.Round(avgDailyDemand, 2),
                     Math.Round(demandStdDev, 2),
