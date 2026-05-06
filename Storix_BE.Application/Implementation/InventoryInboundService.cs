@@ -207,25 +207,68 @@ namespace Storix_BE.Service.Implementation
             if (string.IsNullOrWhiteSpace(status)) throw new ArgumentException("Status is required.", nameof(status));
 
             var inbound = await _repo.UpdateInventoryInboundTicketRequestStatus(ticketRequestId, approverId, status);
+
             var now = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
-            
+            await _activityLogRepo.AddAsync(new ActivityLog
+            {
+                UserId = approverId,
+                Action = $"{status} Inbound Request",
+                Entity = "InboundRequest",
+                EntityId = inbound.Id,
+                Timestamp = now
+            }).ConfigureAwait(false);
+
             if (string.Equals(status, "Approved", StringComparison.OrdinalIgnoreCase))
             {
-                var companyId = inbound.RequestedByNavigation?.CompanyId ?? inbound.RequestedByNavigation?.CompanyId;
-                if (companyId.HasValue && companyId.Value > 0)
+                try
                 {
-                    var title = "Inbound request approved";
-                    var message = $"Inbound request '{inbound.Code}' has been approved.";
-                    await _notificationService.SendNotificationToManagersAsync(
-                        companyId.Value,
-                        title,
-                        message,
-                        type: "InboundRequest",
-                        category: "Inbound",
-                        referenceType: "InboundRequest",
-                        referenceId: inbound.Id,
-                        createdByUserId: approverId
-                    ).ConfigureAwait(false);
+                    var companyId = inbound.RequestedByNavigation?.CompanyId;
+                    if (companyId.HasValue && companyId.Value > 0)
+                    {
+                        var title = "Inbound request approved";
+                        var message = $"Inbound request '{inbound.Code}' has been approved.";
+                        await _notificationService.SendNotificationToManagersAsync(
+                            companyId.Value,
+                            title,
+                            message,
+                            type: "InboundRequest",
+                            category: "Inbound",
+                            referenceType: "InboundRequest",
+                            referenceId: inbound.Id,
+                            createdByUserId: approverId
+                        ).ConfigureAwait(false);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Failed to send approval notification for inbound request {inbound.Id}: {ex.Message}");
+                }
+            }
+
+            if (string.Equals(status, "Rejected", StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    var companyId = inbound.RequestedByNavigation?.CompanyId;
+                    if (companyId.HasValue && companyId.Value > 0)
+                    {
+                        var title = "Inbound request rejected";
+                        var message = $"Inbound request '{inbound.Code}' has been rejected.";
+                        await _notificationService.SendNotificationToManagersAsync(
+                            companyId.Value,
+                            title,
+                            message,
+                            type: "InboundRequest",
+                            category: "Inbound",
+                            referenceType: "InboundRequest",
+                            referenceId: inbound.Id,
+                            createdByUserId: approverId
+                        ).ConfigureAwait(false);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Failed to send rejection notification for inbound request {inbound.Id}: {ex.Message}");
                 }
             }
 
