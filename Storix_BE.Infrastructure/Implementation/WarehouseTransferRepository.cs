@@ -244,7 +244,28 @@ namespace Storix_BE.Repository.Implementation
 
                 _context.InboundOrders.Add(inbound);
                 await _context.SaveChangesAsync().ConfigureAwait(false);
+                foreach (var orderItem in inbound.InboundOrderItems)
+                {
+                    if (!orderItem.ProductId.HasValue) continue;
 
+                    var batch = new InventoryBatch
+                    {
+                        InboundOrderItemId = orderItem.Id,       
+                        InboundOrderId = inbound.Id,
+                        ProductId = orderItem.ProductId.Value,
+                        WarehouseId = order.DestinationWarehouseId!.Value,
+                        ReceivedQuantity = 0,
+                        RemainingQuantity = 0,
+                        UnitCost = (decimal)(orderItem.Price ?? 0),                             
+                        LineDiscount = 0,
+                        InboundDate = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified),
+                        IsExhausted = false,
+                        CreatedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified)
+                    };
+                    _context.InventoryBatches.Add(batch);
+                }
+
+                await _context.SaveChangesAsync().ConfigureAwait(false);
                 var outboundByProduct = outbound.OutboundOrderItems
                     .Where(x => x.ProductId.HasValue)
                     .ToDictionary(x => x.ProductId!.Value, x => x.Id);

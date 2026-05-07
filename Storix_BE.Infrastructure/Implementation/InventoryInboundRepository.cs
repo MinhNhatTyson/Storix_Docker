@@ -325,9 +325,10 @@ namespace Storix_BE.Repository.Implementation
                         };
                         order.InboundOrderItems.Add(newItem);
                     }
+                    var resolvedItemId = (existing != null && existing.Id > 0) ? existing.Id : incoming.Id;
 
                     if (delta != 0)
-                        deltas.Add((incoming.Id, incoming.ProductId!.Value, delta));
+                        deltas.Add((resolvedItemId, incoming.ProductId!.Value, delta));
                 }
 
                 // Validate placements sums match positive deltas (if placements provided)
