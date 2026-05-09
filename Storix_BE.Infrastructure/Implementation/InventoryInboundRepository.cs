@@ -117,6 +117,8 @@ namespace Storix_BE.Repository.Implementation
 
         public async Task<InboundRequest> UpdateInventoryInboundTicketRequestStatus(int ticketRequestId, int approverId, string status)
         {
+            if (string.IsNullOrWhiteSpace(status)) throw new ArgumentException("Status is required.", nameof(status));
+
             var inbound = await _context.InboundRequests
                 .Include(r => r.RequestedByNavigation) // <- ensure company info available via RequestedByNavigation.CompanyId
                 .FirstOrDefaultAsync(r => r.Id == ticketRequestId)
@@ -224,7 +226,16 @@ namespace Storix_BE.Repository.Implementation
 
             if (order == null)
                 throw new InvalidOperationException($"InboundOrder with id {inboundOrderId} not found.");
-
+            // Must be in quality check status to update received quantities and place into bins (which triggers inventory updates and batch allocations)
+            if (!string.Equals(order.Status, "QUALITY_CHECK",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    $"Products can only be placed into bins when the order is in " +
+                    $"'QUALITY_CHECK' status. Current status: '{order.Status}'. " +
+                    $"Please submit the quality check first via " +
+                    $"POST /api/InventoryInbound/tickets/{inboundOrderId}/quality-check.");
+            }
             await EnsureTransferInboundReadyForReceivingAsync(order.Id).ConfigureAwait(false);
 
             if (!order.WarehouseId.HasValue)
@@ -1185,6 +1196,142 @@ namespace Storix_BE.Repository.Implementation
                 .ConfigureAwait(false);
 
             return items;
+        }
+        public async Task<InboundOrder> SaveQualityCheckAsync(
+                                        int inboundOrderId,
+                                        IEnumerable<QualityCheckSaveDto> items,
+                                        int inspectedBy)
+        {
+            if (inboundOrderId <= 0)
+                throw new ArgumentException("Invalid inboundOrderId.", nameof(inboundOrderId));
+            if (items == null)
+                throw new ArgumentNullException(nameof(items));
+            if (inspectedBy <= 0)
+                throw new ArgumentException("Invalid inspectedBy.", nameof(inspectedBy));
+
+            var order = await _context.InboundOrders
+                .Include(o => o.InboundOrderItems)
+                .FirstOrDefaultAsync(o => o.Id == inboundOrderId)
+                .ConfigureAwait(false);
+
+            if (order == null)
+                throw new InvalidOperationException(
+                    $"InboundOrder with id {inboundOrderId} not found.");
+
+            if (!string.Equals(order.Status, "Waiting for payment",
+                    StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(order.Status, "WAITING_RECEIPT",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    $"Quality check can only be submitted when the order is in " +
+                    $"'Waiting for payment' / 'WAITING_RECEIPT' status. " +
+                    $"Current status: '{order.Status}'.");
+            }
+
+            var itemList = items.ToList();
+            if (!itemList.Any())
+                throw new InvalidOperationException(
+                    "Quality check must contain at least one item.");
+
+            var now = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Utc);
+
+            await using var tx = await _context.Database
+                .BeginTransactionAsync().ConfigureAwait(false);
+            try
+            {
+                // Remove any pre-existing QC records for this order (allow re-submission)
+                var existingQc = await _context.InboundQualityChecks
+                    .Where(q => q.InboundOrderId == inboundOrderId)
+                    .ToListAsync()
+                    .ConfigureAwait(false);
+
+                if (existingQc.Any())
+                    _context.InboundQualityChecks.RemoveRange(existingQc);
+
+                foreach (var dto in itemList)
+                {
+                    // Validate item belongs to the order
+                    var orderItem = order.InboundOrderItems
+                        .FirstOrDefault(i => i.Id == dto.InboundOrderItemId);
+
+                    if (orderItem == null)
+                        throw new InvalidOperationException(
+                            $"InboundOrderItem {dto.InboundOrderItemId} does not belong " +
+                            $"to InboundOrder {inboundOrderId}.");
+
+                    // Basic sanity checks
+                    if (dto.ReceivedQuantity < 0)
+                        throw new InvalidOperationException(
+                            $"ReceivedQuantity cannot be negative for item {dto.InboundOrderItemId}.");
+
+                    if (dto.PassedQuantity < 0)
+                        throw new InvalidOperationException(
+                            $"PassedQuantity cannot be negative for item {dto.InboundOrderItemId}.");
+
+                    if (dto.PassedQuantity > dto.ReceivedQuantity)
+                        throw new InvalidOperationException(
+                            $"PassedQuantity ({dto.PassedQuantity}) cannot exceed " +
+                            $"ReceivedQuantity ({dto.ReceivedQuantity}) " +
+                            $"for item {dto.InboundOrderItemId}.");
+
+                    var failedQty = dto.ReceivedQuantity - dto.PassedQuantity;
+
+                    if (failedQty > 0 && string.IsNullOrWhiteSpace(dto.FailureReason))
+                        throw new InvalidOperationException(
+                            $"FailureReason is required when units fail QC " +
+                            $"(item {dto.InboundOrderItemId} has {failedQty} failed units).");
+
+                    // Persist QC record
+                    _context.InboundQualityChecks.Add(new InboundQualityCheck
+                    {
+                        InboundOrderId = inboundOrderId,
+                        InboundOrderItemId = dto.InboundOrderItemId,
+                        ProductId = dto.ProductId > 0 ? dto.ProductId : orderItem.ProductId,
+                        ReceivedQuantity = dto.ReceivedQuantity,
+                        PassedQuantity = dto.PassedQuantity,
+                        FailedQuantity = failedQty,
+                        FailureReason = dto.FailureReason?.Trim(),
+                        Notes = dto.Notes?.Trim(),
+                        InspectedBy = inspectedBy,
+                        InspectedAt = now
+                    });
+
+                    // KEY STEP: update ReceivedQuantity on the order item to PassedQuantity
+                    // so UpdateInboundOrderItemsAsync only places qualified units into bins.
+                    orderItem.ReceivedQuantity = dto.PassedQuantity;
+                }
+
+                // Transition order to QUALITY_CHECK
+                order.Status = "QUALITY_CHECK";
+
+                await _context.SaveChangesAsync().ConfigureAwait(false);
+                await tx.CommitAsync().ConfigureAwait(false);
+            }
+            catch
+            {
+                await tx.RollbackAsync().ConfigureAwait(false);
+                throw;
+            }
+
+            return order;
+        }
+
+        public async Task<List<InboundQualityCheck>> GetQualityChecksByOrderIdAsync(
+            int inboundOrderId)
+        {
+            if (inboundOrderId <= 0)
+                throw new ArgumentException("Invalid inboundOrderId.", nameof(inboundOrderId));
+
+            return await _context.InboundQualityChecks
+                .AsNoTracking()
+                .Include(q => q.InboundOrderItem)
+                    .ThenInclude(i => i.Product)
+                .Include(q => q.Inspector)
+                .Where(q => q.InboundOrderId == inboundOrderId)
+                .OrderBy(q => q.InboundOrderItemId)
+                .ToListAsync()
+                .ConfigureAwait(false);
         }
         public async Task<InboundOrder> AssignStaffToInboundOrderAsync(int companyId, int inboundOrderId, int managerUserId, int staffUserId)
         {

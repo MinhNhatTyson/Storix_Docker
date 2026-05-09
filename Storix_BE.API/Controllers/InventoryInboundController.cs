@@ -510,7 +510,83 @@ namespace Storix_BE.API.Controllers
                 return StatusCode(500, new { message = ex.Message });
             }
         }
+        /// <summary>
+        /// Staff submits quality check results for all items in an InboundOrder.
+        ///
+        /// PRE-CONDITIONS
+        ///   • Order must be in status "Waiting for payment" / "WAITING_RECEIPT".
+        ///   • The calling user must be the staff assigned to the order (enforced
+        ///     inside the service/repository layer via InspectedBy validation).
+        ///
+        /// POST-CONDITIONS
+        ///   • An InboundQualityCheck record is created per item.
+        ///   • Each InboundOrderItem.ReceivedQuantity is set to PassedQuantity
+        ///     so that UpdateInboundOrderItems only places qualified units.
+        ///   • Order status transitions to "QUALITY_CHECK".
+        ///   • Managers are notified (best-effort).
+        /// </summary>
+        [HttpPost("tickets/{orderId:int}/quality-check")]
+        [Authorize(Roles = "2,3,4")]
+        public async Task<IActionResult> SubmitQualityCheck(
+            int orderId,
+            [FromBody] SubmitQualityCheckRequest request)
+        {
+            if (orderId <= 0)
+                return BadRequest(new { message = "Invalid orderId." });
+            if (request == null)
+                return BadRequest(new { message = "Request body is required." });
 
+            try
+            {
+                var result = await _service.SubmitQualityCheckAsync(orderId, request);
+                return Ok(result);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Retrieves quality check results that have already been submitted
+        /// for a given InboundOrder. Returns an empty Items list if QC has
+        /// not been submitted yet.
+        /// </summary>
+        [HttpGet("tickets/{companyId:int}/{orderId:int}/quality-check")]
+        [Authorize(Roles = "2,3,4")]
+        public async Task<IActionResult> GetQualityCheckResult(int companyId, int orderId)
+        {
+            if (companyId <= 0)
+                return BadRequest(new { message = "Invalid companyId." });
+            if (orderId <= 0)
+                return BadRequest(new { message = "Invalid orderId." });
+
+            try
+            {
+                var result = await _service.GetQualityCheckResultAsync(companyId, orderId);
+                return Ok(result);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = ex.Message });
+            }
+        }
     }
     public sealed record AssignStaffRequest(int CompanyId, int ManagerId, int StaffId);
     public sealed record CreateTicketFromRequestRequest(int CreatedBy, int StaffId);

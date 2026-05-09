@@ -718,10 +718,172 @@ namespace Storix_BE.Service.Implementation
             }
             catch
             {
-                // best-effort notify; swallow exceptions
+                throw new InvalidOperationException($"Failed to send notification to staff user {staffUserId} for assignment to inbound order {inboundOrderId}.");
             }
 
             return updated;
+        }
+        public async Task<InboundQualityCheckResultDto> SubmitQualityCheckAsync(
+                        int inboundOrderId,
+                        SubmitQualityCheckRequest request)
+        {
+            if (inboundOrderId <= 0)
+                throw new ArgumentException("Invalid inboundOrderId.", nameof(inboundOrderId));
+            if (request == null)
+                throw new ArgumentNullException(nameof(request));
+            if (request.InspectedBy <= 0)
+                throw new ArgumentException("Invalid InspectedBy.", nameof(request.InspectedBy));
+
+            var itemList = request.Items?.ToList()
+                ?? throw new InvalidOperationException("Items payload cannot be empty.");
+
+            if (!itemList.Any())
+                throw new InvalidOperationException("Items payload cannot be empty.");
+
+            // Validate per-item fields at the service layer before hitting the repo
+            foreach (var item in itemList)
+            {
+                if (item.InboundOrderItemId <= 0)
+                    throw new ArgumentException(
+                        "Each item must have a valid InboundOrderItemId.");
+
+                if (item.ReceivedQuantity < 0)
+                    throw new ArgumentException(
+                        $"ReceivedQuantity cannot be negative " +
+                        $"(item {item.InboundOrderItemId}).");
+
+                if (item.PassedQuantity < 0)
+                    throw new ArgumentException(
+                        $"PassedQuantity cannot be negative " +
+                        $"(item {item.InboundOrderItemId}).");
+
+                if (item.PassedQuantity > item.ReceivedQuantity)
+                    throw new ArgumentException(
+                        $"PassedQuantity ({item.PassedQuantity}) cannot exceed " +
+                        $"ReceivedQuantity ({item.ReceivedQuantity}) " +
+                        $"for item {item.InboundOrderItemId}.");
+            }
+
+            // Map to repo DTOs
+            var repoDtos = itemList.Select(i => new QualityCheckSaveDto(
+                InboundOrderItemId: i.InboundOrderItemId,
+                ProductId: 0,   // repo will resolve from the order item
+                ReceivedQuantity: i.ReceivedQuantity,
+                PassedQuantity: i.PassedQuantity,
+                FailedQuantity: i.ReceivedQuantity - i.PassedQuantity,
+                FailureReason: i.FailureReason,
+                Notes: i.Notes)).ToList();
+
+            var updatedOrder = await _repo
+                .SaveQualityCheckAsync(inboundOrderId, repoDtos, request.InspectedBy)
+                .ConfigureAwait(false);
+
+            // Log activity
+            var now = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
+            await _activityLogRepo.AddAsync(new ActivityLog
+            {
+                UserId = request.InspectedBy,
+                Action = "Submit Quality Check",
+                Entity = "InboundOrder",
+                EntityId = inboundOrderId,
+                Timestamp = now
+            }).ConfigureAwait(false);
+
+            // Notify managers (best-effort)
+            try
+            {
+                var companyId = updatedOrder.Warehouse?.CompanyId
+                    ?? updatedOrder.InboundRequest?.Warehouse?.CompanyId;
+
+                if (companyId.HasValue && companyId.Value > 0)
+                {
+                    var totalFailed = repoDtos.Sum(d => d.FailedQuantity);
+                    var title = totalFailed > 0
+                        ? "Inbound quality check completed — defects found"
+                        : "Inbound quality check completed — all passed";
+                    var message = totalFailed > 0
+                        ? $"Inbound order #{inboundOrderId} quality check done. " +
+                          $"{totalFailed} unit(s) rejected. Ready for bin placement."
+                        : $"Inbound order #{inboundOrderId} quality check done. " +
+                          $"All units passed. Ready for bin placement.";
+
+                    await _notificationService.SendNotificationToManagersAsync(
+                        companyId.Value,
+                        title,
+                        message,
+                        type: "InboundOrder",
+                        category: "Inbound",
+                        referenceType: "InboundOrder",
+                        referenceId: inboundOrderId,
+                        createdByUserId: request.InspectedBy
+                    ).ConfigureAwait(false);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(
+                    $"Failed to notify managers for QC submission on " +
+                    $"InboundOrder {inboundOrderId}: {ex.Message}");
+            }
+
+            // Build response DTO
+            var qcRecords = await _repo
+                .GetQualityChecksByOrderIdAsync(inboundOrderId)
+                .ConfigureAwait(false);
+
+            return MapQualityCheckResultToDto(updatedOrder, qcRecords);
+        }
+
+        public async Task<InboundQualityCheckResultDto> GetQualityCheckResultAsync(
+            int companyId, int inboundOrderId)
+        {
+            if (companyId <= 0)
+                throw new ArgumentException("Invalid company id.", nameof(companyId));
+            if (inboundOrderId <= 0)
+                throw new ArgumentException("Invalid inboundOrderId.", nameof(inboundOrderId));
+
+            // Reuse existing method to scope by company
+            var order = await _repo.GetInboundOrderByIdAsync(companyId, inboundOrderId)
+                .ConfigureAwait(false);   // throws if not found
+
+            var qcRecords = await _repo
+                .GetQualityChecksByOrderIdAsync(inboundOrderId)
+                .ConfigureAwait(false);
+
+            // Convert InboundOrderDto back to a lightweight representation
+            // We only need Id + Status here so we construct the result directly
+            var fakeOrder = new InboundOrder
+            {
+                Id = order.Id,
+                Status = order.Status
+            };
+
+            return MapQualityCheckResultToDto(fakeOrder, qcRecords);
+        }
+
+
+        private static InboundQualityCheckResultDto MapQualityCheckResultToDto(
+            InboundOrder order,
+            IEnumerable<InboundQualityCheck> qcRecords)
+        {
+            var items = qcRecords.Select(q => new QualityCheckItemDto(
+                QualityCheckId: q.Id,
+                InboundOrderItemId: q.InboundOrderItemId,
+                ProductId: q.ProductId,
+                ProductName: q.InboundOrderItem?.Product?.Name,
+                ProductSku: q.InboundOrderItem?.Product?.Sku,
+                ReceivedQuantity: q.ReceivedQuantity,
+                PassedQuantity: q.PassedQuantity,
+                FailedQuantity: q.FailedQuantity,
+                FailureReason: q.FailureReason,
+                Notes: q.Notes,
+                InspectedBy: q.InspectedBy,
+                InspectedAt: q.InspectedAt)).ToList();
+
+            return new InboundQualityCheckResultDto(
+                InboundOrderId: order.Id,
+                OrderStatus: order.Status ?? string.Empty,
+                Items: items);
         }
     }
 }

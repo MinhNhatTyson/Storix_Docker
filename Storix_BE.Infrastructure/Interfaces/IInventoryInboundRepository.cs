@@ -40,5 +40,20 @@ namespace Storix_BE.Repository.Interfaces
         Task AddStorageRecommendationsAsync(IEnumerable<StorageRecommendationCreateDto> requests);
         Task<List<InboundOrderItem>> GetInboundOrderItemsWithRecommendationsAsync(int inboundOrderId);
         Task<InboundOrder> AssignStaffToInboundOrderAsync(int companyId, int inboundOrderId, int managerUserId, int staffUserId);
+
+        Task<InboundOrder> SaveQualityCheckAsync(
+            int inboundOrderId,
+            IEnumerable<QualityCheckSaveDto> items,
+            int inspectedBy);
+
+        Task<List<InboundQualityCheck>> GetQualityChecksByOrderIdAsync(int inboundOrderId);
     }
+    public sealed record QualityCheckSaveDto(
+        int InboundOrderItemId,
+        int ProductId,
+        int ReceivedQuantity,
+        int PassedQuantity,
+        int FailedQuantity,
+        string? FailureReason,
+        string? Notes);
 }

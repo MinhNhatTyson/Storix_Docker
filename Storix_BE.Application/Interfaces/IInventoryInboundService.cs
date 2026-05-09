@@ -41,7 +41,41 @@ namespace Storix_BE.Service.Interfaces
         Task<InboundOrder> AssignStaffToInboundOrderAsync(int companyId, int inboundOrderId, int managerUserId, int staffUserId);
         Task<List<InboundRequestDto>> GetInboundRequestsByWarehouseAsync(int companyId, int warehouseId);
         Task<List<InboundOrderDto>> GetInboundOrdersByWarehouseAsync(int companyId, int warehouseId);
+        Task<InboundQualityCheckResultDto> SubmitQualityCheckAsync(
+        int inboundOrderId, SubmitQualityCheckRequest request);
+        Task<InboundQualityCheckResultDto> GetQualityCheckResultAsync(
+        int companyId, int inboundOrderId);
     }
+    public sealed record QualityCheckItemRequest(
+        int InboundOrderItemId,
+        int ReceivedQuantity,
+        int PassedQuantity,
+        string? FailureReason,
+        string? Notes);
+    public sealed record SubmitQualityCheckRequest(
+        int InspectedBy,
+        IEnumerable<QualityCheckItemRequest> Items);
+
+    // ── DTOs returned to the client ──────────────────────────────────────────────
+
+    public sealed record QualityCheckItemDto(
+        int QualityCheckId,
+        int InboundOrderItemId,
+        int? ProductId,
+        string? ProductName,
+        string? ProductSku,
+        int ReceivedQuantity,
+        int PassedQuantity,
+        int FailedQuantity,
+        string? FailureReason,
+        string? Notes,
+        int InspectedBy,
+        DateTime InspectedAt);
+
+    public sealed record InboundQualityCheckResultDto(
+        int InboundOrderId,
+        string OrderStatus,
+        IEnumerable<QualityCheckItemDto> Items);
     public sealed record SupplierDto(int Id, string? Name, string? Phone, string? Email);
 
     public sealed record WarehouseDto(int Id, string? Name, string? Address, string? Description, int? Width, int? Height, int? Length);

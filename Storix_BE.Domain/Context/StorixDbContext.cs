@@ -99,9 +99,83 @@ public partial class StorixDbContext : DbContext
     public virtual DbSet<InventoryBatch> InventoryBatches { get; set; }
     public virtual DbSet<InventoryBatchLocation> InventoryBatchLocations { get; set; }
     public virtual DbSet<CompanySkuSequence> CompanySkuSequences { get; set; }
+    public virtual DbSet<InboundQualityCheck> InboundQualityChecks { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<InboundQualityCheck>(entity =>
+        {
+            entity.ToTable("inbound_quality_checks");
+
+            entity.HasKey(e => e.Id);
+
+            entity.Property(e => e.Id)
+                .HasColumnName("id")
+                .ValueGeneratedOnAdd();
+
+            entity.Property(e => e.InboundOrderId)
+                .HasColumnName("inbound_order_id")
+                .IsRequired();
+
+            entity.Property(e => e.InboundOrderItemId)
+                .HasColumnName("inbound_order_item_id")
+                .IsRequired();
+
+            entity.Property(e => e.ProductId)
+                .HasColumnName("product_id");
+
+            entity.Property(e => e.ReceivedQuantity)
+                .HasColumnName("received_quantity")
+                .IsRequired();
+
+            entity.Property(e => e.PassedQuantity)
+                .HasColumnName("passed_quantity")
+                .IsRequired();
+
+            entity.Property(e => e.FailedQuantity)
+                .HasColumnName("failed_quantity")
+                .IsRequired();
+
+            entity.Property(e => e.FailureReason)
+                .HasColumnName("failure_reason");
+
+            entity.Property(e => e.Notes)
+                .HasColumnName("notes");
+
+            entity.Property(e => e.InspectedBy)
+                .HasColumnName("inspected_by")
+                .IsRequired();
+
+            entity.Property(e => e.InspectedAt)
+                .HasColumnName("inspected_at")
+                .IsRequired();
+
+            // Unique constraint: one QC record per item per order
+            entity.HasIndex(e => new { e.InboundOrderId, e.InboundOrderItemId })
+                .IsUnique()
+                .HasDatabaseName("uq_qc_order_item");
+
+            // Relationships
+            entity.HasOne(e => e.InboundOrder)
+                .WithMany()
+                .HasForeignKey(e => e.InboundOrderId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(e => e.InboundOrderItem)
+                .WithMany()
+                .HasForeignKey(e => e.InboundOrderItemId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(e => e.Product)
+                .WithMany()
+                .HasForeignKey(e => e.ProductId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(e => e.Inspector)
+                .WithMany()
+                .HasForeignKey(e => e.InspectedBy)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
         modelBuilder.Entity<CompanySkuSequence>(entity =>
         {
             entity.ToTable("company_sku_sequences");
@@ -1600,3 +1674,4 @@ public partial class StorixDbContext : DbContext
 
     partial void OnModelCreatingPartial(ModelBuilder modelBuilder);
 }
+
