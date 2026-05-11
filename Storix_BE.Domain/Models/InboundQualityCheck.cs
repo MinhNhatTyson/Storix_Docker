@@ -41,6 +41,15 @@ namespace Storix_BE.Domain.Models
 
         public DateTime InspectedAt { get; set; }
 
+        /// <summary>
+        /// Tracks whether the failed units from this QC record have been actioned for return.
+        /// NULL     = no failed units, or not yet actioned
+        /// PENDING  = staff has flagged for return, awaiting manager approval
+        /// APPROVED = manager approved the return
+        /// SENT     = staff has physically shipped the goods back to the supplier
+        /// </summary>
+        public string? ReturnStatus { get; set; }
+
         // ── Navigation properties ────────────────────────────────────────────────
 
         public virtual InboundOrder InboundOrder { get; set; } = null!;

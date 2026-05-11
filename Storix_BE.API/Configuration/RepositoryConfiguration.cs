@@ -21,6 +21,7 @@ namespace Storix_BE.API.Configuration
             services.AddScoped<IWarehouseTransferRepository, WarehouseTransferRepository>();
             services.AddScoped<INotificationRepository, NotificationRepository>();
             services.AddScoped<IActivityLogRepository, ActivityLogRepository>();
+            services.AddScoped<IInboundReturnRepository, InboundReturnRepository>();
             // services.AddScoped<ISubscriptionRepository, SubscriptionRepository>(); // tạm tắt subscription
             return services;
         }

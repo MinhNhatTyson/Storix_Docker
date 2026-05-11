@@ -100,9 +100,144 @@ public partial class StorixDbContext : DbContext
     public virtual DbSet<InventoryBatchLocation> InventoryBatchLocations { get; set; }
     public virtual DbSet<CompanySkuSequence> CompanySkuSequences { get; set; }
     public virtual DbSet<InboundQualityCheck> InboundQualityChecks { get; set; }
+    public virtual DbSet<InboundReturnOrder> InboundReturnOrders { get; set; }
+    public virtual DbSet<InboundReturnOrderItem> InboundReturnOrderItems { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<InboundReturnOrder>(entity =>
+        {
+            entity.ToTable("inbound_return_orders");
+
+            entity.HasKey(e => e.Id);
+
+            entity.Property(e => e.Id)
+                .HasColumnName("id")
+                .ValueGeneratedOnAdd();
+
+            entity.Property(e => e.InboundOrderId)
+                .HasColumnName("inbound_order_id")
+                .IsRequired();
+
+            entity.Property(e => e.SupplierId)
+                .HasColumnName("supplier_id");
+
+            entity.Property(e => e.WarehouseId)
+                .HasColumnName("warehouse_id");
+
+            entity.Property(e => e.Status)
+                .HasColumnName("status")
+                .HasMaxLength(20)
+                .IsRequired();
+
+            entity.Property(e => e.Reason)
+                .HasColumnName("reason");
+
+            entity.Property(e => e.CreatedBy)
+                .HasColumnName("created_by")
+                .IsRequired();
+
+            entity.Property(e => e.ApprovedBy)
+                .HasColumnName("approved_by");
+
+            entity.Property(e => e.CreatedAt)
+                .HasColumnName("created_at")
+                .IsRequired();
+
+            entity.Property(e => e.ApprovedAt)
+                .HasColumnName("approved_at");
+
+            entity.Property(e => e.SentAt)
+                .HasColumnName("sent_at");
+
+            entity.HasOne(e => e.InboundOrder)
+                .WithMany(o => o.ReturnOrders)
+                .HasForeignKey(e => e.InboundOrderId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(e => e.Supplier)
+                .WithMany()
+                .HasForeignKey(e => e.SupplierId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(e => e.Warehouse)
+                .WithMany()
+                .HasForeignKey(e => e.WarehouseId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(e => e.CreatedByNavigation)
+                .WithMany()
+                .HasForeignKey(e => e.CreatedBy)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(e => e.ApprovedByNavigation)
+                .WithMany()
+                .HasForeignKey(e => e.ApprovedBy)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasMany(e => e.ReturnOrderItems)
+                .WithOne(i => i.ReturnOrder)
+                .HasForeignKey(i => i.ReturnOrderId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<InboundReturnOrderItem>(entity =>
+        {
+            entity.ToTable("inbound_return_order_items");
+
+            entity.HasKey(e => e.Id);
+
+            entity.Property(e => e.Id)
+                .HasColumnName("id")
+                .ValueGeneratedOnAdd();
+
+            entity.Property(e => e.ReturnOrderId)
+                .HasColumnName("return_order_id")
+                .IsRequired();
+
+            entity.Property(e => e.InboundOrderItemId)
+                .HasColumnName("inbound_order_item_id")
+                .IsRequired();
+
+            entity.Property(e => e.QualityCheckId)
+                .HasColumnName("quality_check_id")
+                .IsRequired();
+
+            entity.Property(e => e.ProductId)
+                .HasColumnName("product_id");
+
+            entity.Property(e => e.ReturnQuantity)
+                .HasColumnName("return_quantity")
+                .IsRequired();
+
+            entity.Property(e => e.FailureReason)
+                .HasColumnName("failure_reason");
+
+            // Unique: one return line per QC record per return order
+            entity.HasIndex(e => new { e.ReturnOrderId, e.QualityCheckId })
+                .IsUnique()
+                .HasDatabaseName("uq_return_item_qc");
+
+            entity.HasOne(e => e.ReturnOrder)
+                .WithMany(r => r.ReturnOrderItems)
+                .HasForeignKey(e => e.ReturnOrderId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(e => e.InboundOrderItem)
+                .WithMany()
+                .HasForeignKey(e => e.InboundOrderItemId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(e => e.QualityCheck)
+                .WithMany()
+                .HasForeignKey(e => e.QualityCheckId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(e => e.Product)
+                .WithMany()
+                .HasForeignKey(e => e.ProductId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
         modelBuilder.Entity<InboundQualityCheck>(entity =>
         {
             entity.ToTable("inbound_quality_checks");
@@ -149,6 +284,10 @@ public partial class StorixDbContext : DbContext
             entity.Property(e => e.InspectedAt)
                 .HasColumnName("inspected_at")
                 .IsRequired();
+
+            entity.Property(e => e.ReturnStatus)
+            .HasColumnName("return_status")
+            .HasMaxLength(20);
 
             // Unique constraint: one QC record per item per order
             entity.HasIndex(e => new { e.InboundOrderId, e.InboundOrderItemId })

@@ -227,14 +227,22 @@ namespace Storix_BE.Repository.Implementation
             if (order == null)
                 throw new InvalidOperationException($"InboundOrder with id {inboundOrderId} not found.");
             // Must be in quality check status to update received quantities and place into bins (which triggers inventory updates and batch allocations)
-            if (!string.Equals(order.Status, "QUALITY_CHECK",
-                    StringComparison.OrdinalIgnoreCase))
+            var binPlacementAllowedStatuses = new[]
+    {
+        "QUALITY_CHECK",    // QC done, no return needed — place all passed units
+        "RETURN_PENDING",   // Return flagged but not yet approved — still allow placement
+        "RETURN_APPROVED",  // Return approved, staff can place passed units in parallel
+        "RETURNED"          // Goods shipped back, finalise placement of passed units
+    };
+
+            if (!binPlacementAllowedStatuses.Contains(
+                    order.Status ?? string.Empty,
+                    StringComparer.OrdinalIgnoreCase))
             {
                 throw new InvalidOperationException(
-                    $"Products can only be placed into bins when the order is in " +
-                    $"'QUALITY_CHECK' status. Current status: '{order.Status}'. " +
-                    $"Please submit the quality check first via " +
-                    $"POST /api/InventoryInbound/tickets/{inboundOrderId}/quality-check.");
+                    $"Products can only be placed into bins when the order is in one of: " +
+                    $"{string.Join(", ", binPlacementAllowedStatuses)}. " +
+                    $"Current status: '{order.Status}'.");
             }
             await EnsureTransferInboundReadyForReceivingAsync(order.Id).ConfigureAwait(false);
 
@@ -294,12 +302,13 @@ namespace Storix_BE.Repository.Implementation
                     throw new InvalidOperationException($"One or more provided bins do not belong to the order warehouse.");
             }
 
-            await using var tx = await _context.Database.BeginTransactionAsync().ConfigureAwait(false);
+            await using var tx = await _context.Database
+            .BeginTransactionAsync().ConfigureAwait(false);
             try
             {
                 var deltas = new List<(int InboundOrderItemId, int ProductId, int Delta)>();
 
-                // compute deltas per inbound order item and ensure placements totals match deltas when provided
+                // ── Step 1: Apply item quantity changes and compute deltas ────────
                 foreach (var incoming in incomingList)
                 {
                     InboundOrderItem? existing = null;
@@ -308,11 +317,14 @@ namespace Storix_BE.Repository.Implementation
                     {
                         existing = order.InboundOrderItems.FirstOrDefault(x => x.Id == incoming.Id);
                         if (existing == null)
-                            throw new InvalidOperationException($"InboundOrderItem with id {incoming.Id} not found in order {inboundOrderId}.");
+                            throw new InvalidOperationException(
+                                $"InboundOrderItem with id {incoming.Id} not found " +
+                                $"in order {inboundOrderId}.");
                     }
                     else
                     {
-                        existing = order.InboundOrderItems.FirstOrDefault(x => x.ProductId == incoming.ProductId);
+                        existing = order.InboundOrderItems
+                            .FirstOrDefault(x => x.ProductId == incoming.ProductId);
                     }
 
                     var previousReceived = existing?.ReceivedQuantity ?? 0;
@@ -336,25 +348,31 @@ namespace Storix_BE.Repository.Implementation
                         };
                         order.InboundOrderItems.Add(newItem);
                     }
-                    var resolvedItemId = (existing != null && existing.Id > 0) ? existing.Id : incoming.Id;
 
                     if (delta != 0)
-                        deltas.Add((resolvedItemId, incoming.ProductId!.Value, delta));
+                        deltas.Add((incoming.Id, incoming.ProductId!.Value, delta));
                 }
 
-                // Validate placements sums match positive deltas (if placements provided)
-                var placementsByInbound = placementList.GroupBy(p => p.InboundOrderItemId).ToDictionary(g => g.Key, g => g.ToList());
+                // ── Step 2: Validate placement sums match positive deltas ─────────
+                var placementsByInbound = placementList
+                    .GroupBy(p => p.InboundOrderItemId)
+                    .ToDictionary(g => g.Key, g => g.ToList());
+
                 foreach (var (inboundItemId, _, delta) in deltas)
                 {
                     if (delta > 0 && placementsByInbound.TryGetValue(inboundItemId, out var plist))
                     {
                         var sumAssigned = plist.Sum(p => p.Quantity);
                         if (sumAssigned != delta)
-                            throw new InvalidOperationException($"Sum of placement quantities ({sumAssigned}) does not match received delta ({delta}) for inbound item {inboundItemId}.");
+                            throw new InvalidOperationException(
+                                $"Sum of placement quantities ({sumAssigned}) does not match " +
+                                $"received delta ({delta}) for inbound item {inboundItemId}.");
                     }
                 }
 
-                // apply inventory quantity changes and create transactions; also process placements -> inventory locations and bins occupancy
+                // ── Step 3: ALWAYS — apply inventory changes + create transactions ─
+                //   This block runs whether or not placements were provided.
+                //   This is the fix: previously this was inside `if (placementList.Any())`.
                 foreach (var (inboundItemId, productId, delta) in deltas)
                 {
                     var inventory = inventories.FirstOrDefault(i => i.ProductId == productId);
@@ -362,7 +380,9 @@ namespace Storix_BE.Repository.Implementation
                     if (inventory == null)
                     {
                         if (delta < 0)
-                            throw new InvalidOperationException($"Insufficient stock for ProductId {productId}. Available: 0, Required reduction: {-delta}");
+                            throw new InvalidOperationException(
+                                $"Insufficient stock for ProductId {productId}. " +
+                                $"Available: 0, Required reduction: {-delta}");
 
                         inventory = new Inventory
                         {
@@ -378,17 +398,16 @@ namespace Storix_BE.Repository.Implementation
                     {
                         var newQty = (inventory.Quantity ?? 0) + delta;
                         if (newQty < 0)
-                        {
-                            var available = inventory.Quantity ?? 0;
-                            throw new InvalidOperationException($"Insufficient stock for ProductId {productId}. Available: {available}, Required reduction: {-delta}");
-                        }
+                            throw new InvalidOperationException(
+                                $"Insufficient stock for ProductId {productId}. " +
+                                $"Available: {inventory.Quantity ?? 0}, " +
+                                $"Required reduction: {-delta}");
 
                         inventory.Quantity = newQty;
                         inventory.LastUpdated = now;
                     }
 
-                    // create inventory transaction
-                    var transaction = new InventoryTransaction
+                    _context.InventoryTransactions.Add(new InventoryTransaction
                     {
                         WarehouseId = order.WarehouseId,
                         ProductId = productId,
@@ -397,33 +416,53 @@ namespace Storix_BE.Repository.Implementation
                         ReferenceId = order.Id,
                         PerformedBy = order.StaffId ?? order.CreatedBy,
                         CreatedAt = now
-                    };
-                    _context.InventoryTransactions.Add(transaction);
-                    await _context.SaveChangesAsync().ConfigureAwait(false);
-                    // If placements provided for this inbound item, update InventoryLocation and ShelfLevelBin
-                    if (placementList.Any())
+                    });
+                }
+
+                // ── Step 4: ALWAYS — update order status ──────────────────────────
+                //   Runs whether or not placements were provided.
+                //   Previously this was inside `if (placementList.Any())` — the bug.
+                var allItems = order.InboundOrderItems;
+                var anyReceived = allItems.Any(i => (i.ReceivedQuantity ?? 0) > 0);
+                var allComplete = allItems.Any() && allItems.All(i =>
+                    (i.ExpectedQuantity ?? 0) > 0 &&
+                    (i.ReceivedQuantity ?? 0) == (i.ExpectedQuantity ?? 0));
+
+                if (allComplete)
+                    order.Status = "Completed";
+                else if (anyReceived)
+                    order.Status = "Partially Completed";
+
+                // ── Step 5: ONLY WHEN placements provided — bin occupancy + FIFO ──
+                if (placementList.Any())
+                {
+                    foreach (var (inboundItemId, productId, delta) in deltas)
                     {
-                        var itemPlacements = placementList.Where(p => p.ProductId == productId && p.InboundOrderItemId == inboundItemId).ToList();
+                        if (delta <= 0) continue;
+
+                        var itemPlacements = placementList
+                            .Where(p => p.ProductId == productId &&
+                                        p.InboundOrderItemId == inboundItemId)
+                            .ToList();
+
                         foreach (var p in itemPlacements)
                         {
                             var bin = bins.FirstOrDefault(b => b.IdCode == p.BinIdCode);
                             if (bin == null)
-                                throw new InvalidOperationException($"ShelfLevelBin with IdCode {p.BinIdCode} not found.");
+                                throw new InvalidOperationException(
+                                    $"ShelfLevelBin with IdCode {p.BinIdCode} not found.");
 
-                            // Ensure inventory exists (it should after the update above)
                             var inv = inventories.First(i => i.ProductId == productId);
-
-                            // Link bin to inventory (assign bin to this product inventory)
                             bin.InventoryId = inv.Id;
 
-                            // Find shelf id (bin -> level -> shelf)
                             var shelf = bin.Level?.Shelf;
                             if (shelf == null)
-                                throw new InvalidOperationException($"Shelf for bin {bin.IdCode} not found.");
+                                throw new InvalidOperationException(
+                                    $"Shelf for bin {bin.IdCode} not found.");
 
-                            // Update or create InventoryLocation for this inventory/shelf
                             var invLoc = await _context.InventoryLocations
-                                .FirstOrDefaultAsync(il => il.InventoryId == inv.Id && il.ShelfId == shelf.Id)
+                                .FirstOrDefaultAsync(il =>
+                                    il.InventoryId == inv.Id && il.ShelfId == shelf.Id)
                                 .ConfigureAwait(false);
 
                             if (invLoc == null)
@@ -444,79 +483,50 @@ namespace Storix_BE.Repository.Implementation
                             }
                         }
                     }
-                }
 
-                // Recompute bin percentage occupancy for affected bins
-                if (placementList.Any())
-                {
-                    var affectedBinCodes = placementList.Select(p => p.BinIdCode).Distinct().ToList();
+                    // Bin percentage occupancy
+                    var affectedBinCodes = placementList
+                        .Select(p => p.BinIdCode).Distinct().ToList();
+
                     foreach (var code in affectedBinCodes)
                     {
                         var bin = bins.First(b => b.IdCode == code);
-                        // calculate total occupied volume in this bin across all placements (may include different products)
                         double totalOccupiedVolume = 0.0;
-                        var assignmentsForBin = placementList.Where(pl => pl.BinIdCode == code).ToList();
+                        var assignmentsForBin = placementList
+                            .Where(pl => pl.BinIdCode == code).ToList();
+
                         foreach (var a in assignmentsForBin)
                         {
                             var prod = products.FirstOrDefault(p => p.Id == a.ProductId);
                             if (prod == null) continue;
-                            var pw = (prod.Width ?? 0.0) / 10.0;
-                            var ph = (prod.Height ?? 0.0) / 10.0;
-                            var plength = (prod.Length ?? 0.0) / 10.0;
-                            double productUnitVolume = 0;
-                            if (pw <= 0)
-                            {
-                                productUnitVolume = ph * plength;
-                            }
-                            else if (ph <= 0)
-                            {
-                                productUnitVolume = pw * plength;
-                            }
-                            else if (plength <= 0)
-                            {
-                                productUnitVolume = pw * ph;
-                            }
-                            else
-                            {
-                                productUnitVolume = pw * ph * plength;
-                            }
+
+                            var pw = prod.Width ?? 0.0;
+                            var ph = prod.Height ?? 0.0;
+                            var plength = prod.Length ?? 0.0;
+
+                            double productUnitVolume =
+                                (pw <= 0) ? ph * plength :
+                                (ph <= 0) ? pw * plength :
+                                (plength <= 0) ? pw * ph :
+                                pw * ph * plength;
+
                             totalOccupiedVolume += productUnitVolume * a.Quantity;
                         }
 
-                        var binWidth = bin.Width ?? 0.0;
-                        var binHeight = bin.Height ?? 0.0;
-                        var binLength = bin.Length ?? 0.0;
-                        var binVolume = binWidth * binHeight * binLength;
+                        var binVolume = (bin.Width ?? 0.0) *
+                                       (bin.Height ?? 0.0) *
+                                       (bin.Length ?? 0.0);
 
-                        if (binVolume > 0.0 && totalOccupiedVolume > 0.0)
-                        {
-                            var percentDouble = (totalOccupiedVolume / binVolume) * 100.0;
-                            var percentInt = (int)Math.Min(100, Math.Floor(percentDouble));
-                            bin.Percentage = percentInt;
-                        }
-                        else
-                        {
-                            // If cannot compute (missing dims), set null or zero - choose null to indicate unknown
-                            bin.Percentage = null;
-                        }
+                        bin.Percentage = (binVolume > 0.0 && totalOccupiedVolume > 0.0)
+                            ? (int)Math.Min(100, Math.Floor(
+                                  (totalOccupiedVolume / binVolume) * 100.0))
+                            : (int?)null;
 
                         if (bin.Percentage == 100)
-                        {
                             bin.Status = true;
-                        }
                     }
 
-                    var allItems = order.InboundOrderItems;
-                    var anyReceived = allItems.Any(i => (i.ReceivedQuantity ?? 0) > 0);
-                    var allComplete = allItems.Any() && allItems.All(i => (i.ExpectedQuantity ?? 0) > 0 && (i.ReceivedQuantity ?? 0) == (i.ExpectedQuantity ?? 0));
-
-                    if (allComplete)
-                        order.Status = InboundOrderStatuses.Completed;
-                    else if (anyReceived)
-                        order.Status = InboundOrderStatuses.PartiallyCompleted;
-
-                    // ── FIFO Batch update ────────────────────────────────────────────────────
-                    // Load existing batches for this inbound order
+                    // ── FIFO Batch update (placements only) ───────────────────────
                     var existingBatches = await _context.InventoryBatches
                         .Include(b => b.BatchLocations)
                         .Where(b => b.InboundOrderId == inboundOrderId)
@@ -525,13 +535,11 @@ namespace Storix_BE.Repository.Implementation
 
                     foreach (var (inboundItemId, productId, delta) in deltas)
                     {
-                        if (delta <= 0) continue; // only process positive received quantities
+                        if (delta <= 0) continue;
 
                         var batch = existingBatches.FirstOrDefault(b => b.ProductId == productId);
                         if (batch == null)
                         {
-                            // Fallback: create batch if skeleton was not created at order creation
-                            var incomingItem = incomingList.First(i => i.ProductId == productId);
                             batch = new InventoryBatch
                             {
                                 InboundOrderId = inboundOrderId,
@@ -540,60 +548,63 @@ namespace Storix_BE.Repository.Implementation
                                 ReceivedQuantity = 0,
                                 RemainingQuantity = 0,
                                 UnitCost = (decimal)(order.InboundOrderItems
-                                    .FirstOrDefault(i => i.ProductId == productId)?.Price ?? 0),
+                                    .FirstOrDefault(i => i.ProductId == productId)
+                                    ?.Price ?? 0),
                                 LineDiscount = (decimal)(order.InboundOrderItems
-                                    .FirstOrDefault(i => i.ProductId == productId)?.Discount ?? 0),
+                                    .FirstOrDefault(i => i.ProductId == productId)
+                                    ?.Discount ?? 0),
                                 InboundDate = order.CreatedAt ??
                                     DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified),
                                 IsExhausted = false,
-                                CreatedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified)
+                                CreatedAt = DateTime.SpecifyKind(
+                                    DateTime.UtcNow, DateTimeKind.Unspecified)
                             };
                             _context.InventoryBatches.Add(batch);
                             existingBatches.Add(batch);
                         }
 
-                        // Update received/remaining quantities
                         batch.ReceivedQuantity += delta;
                         batch.RemainingQuantity += delta;
                         batch.UpdatedAt = now;
 
-                        // Update BatchLocations from placements
-                        if (placementList.Any())
+                        var itemPlacements = placementList
+                            .Where(p => p.ProductId == productId &&
+                                        p.InboundOrderItemId == inboundItemId)
+                            .ToList();
+
+                        foreach (var placement in itemPlacements)
                         {
-                            var itemPlacements = placementList
-                                .Where(p => p.ProductId == productId && p.InboundOrderItemId == inboundItemId)
-                                .ToList();
+                            var bin = bins.FirstOrDefault(b => b.IdCode == placement.BinIdCode);
+                            if (bin == null) continue;
 
-                            foreach (var placement in itemPlacements)
+                            var existingLocation = batch.BatchLocations
+                                .FirstOrDefault(bl => bl.BinId == bin.Id);
+
+                            if (existingLocation == null)
                             {
-                                var bin = bins.FirstOrDefault(b => b.IdCode == placement.BinIdCode);
-                                if (bin == null) continue;
-
-                                var existingLocation = batch.BatchLocations
-                                    .FirstOrDefault(bl => bl.BinId == bin.Id);
-
-                                if (existingLocation == null)
+                                batch.BatchLocations.Add(new InventoryBatchLocation
                                 {
-                                    batch.BatchLocations.Add(new InventoryBatchLocation
-                                    {
-                                        BinId = bin.Id,
-                                        Quantity = placement.Quantity,
-                                        UpdatedAt = now
-                                    });
-                                }
-                                else
-                                {
-                                    existingLocation.Quantity += placement.Quantity;
-                                    existingLocation.UpdatedAt = now;
-                                }
+                                    BinId = bin.Id,
+                                    Quantity = placement.Quantity,
+                                    UpdatedAt = now
+                                });
+                            }
+                            else
+                            {
+                                existingLocation.Quantity += placement.Quantity;
+                                existingLocation.UpdatedAt = now;
                             }
                         }
                     }
-                    // ── End FIFO Batch update ─────────────────────────────────────────────────
+                } // end if (placementList.Any())
 
-                    await _context.SaveChangesAsync().ConfigureAwait(false);
-                    await tx.CommitAsync().ConfigureAwait(false);
-                }
+                // ── Step 6: ALWAYS — single save + commit ─────────────────────────
+                //   One SaveChangesAsync covers both the always-block (Steps 3–4)
+                //   and the placement block (Step 5). Previously the save only
+                //   happened inside the placement block, so partial completions
+                //   with no placements were never persisted.
+                await _context.SaveChangesAsync().ConfigureAwait(false);
+                await tx.CommitAsync().ConfigureAwait(false);
             }
             catch
             {
