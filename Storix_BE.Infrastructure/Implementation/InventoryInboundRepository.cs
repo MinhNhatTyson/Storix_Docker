@@ -232,7 +232,8 @@ namespace Storix_BE.Repository.Implementation
         "QUALITY_CHECK",    // QC done, no return needed — place all passed units
         "RETURN_PENDING",   // Return flagged but not yet approved — still allow placement
         "RETURN_APPROVED",  // Return approved, staff can place passed units in parallel
-        "RETURNED"          // Goods shipped back, finalise placement of passed units
+        "RETURNED",         // Goods shipped back, finalise placement of passed units
+        "Partially Completed"
     };
 
             if (!binPlacementAllowedStatuses.Contains(
