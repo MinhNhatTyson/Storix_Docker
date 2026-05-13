@@ -215,7 +215,10 @@ namespace Storix_BE.Repository.Implementation
             return inboundOrder;
         }
 
-        public async Task<InboundOrder> UpdateInboundOrderItemsAsync(int inboundOrderId, IEnumerable<InboundOrderItem> items, IEnumerable<InventoryPlacementDto>? placements = null)
+        public async Task<InboundOrder> UpdateInboundOrderItemsAsync(
+                                        int inboundOrderId,
+                                        IEnumerable<InboundOrderItem> items,
+                                        IEnumerable<InventoryPlacementDto>? placements = null)
         {
             if (items == null) throw new ArgumentNullException(nameof(items));
 
@@ -226,15 +229,16 @@ namespace Storix_BE.Repository.Implementation
 
             if (order == null)
                 throw new InvalidOperationException($"InboundOrder with id {inboundOrderId} not found.");
-            // Must be in quality check status to update received quantities and place into bins (which triggers inventory updates and batch allocations)
+
+            // Status guard: allow bin placement only for QC-completed statuses
             var binPlacementAllowedStatuses = new[]
-    {
-        "QUALITY_CHECK",    // QC done, no return needed — place all passed units
-        "RETURN_PENDING",   // Return flagged but not yet approved — still allow placement
-        "RETURN_APPROVED",  // Return approved, staff can place passed units in parallel
-        "RETURNED",         // Goods shipped back, finalise placement of passed units
-        "Partially Completed"
-    };
+            {
+                "QUALITY_CHECK",
+                "RETURN_PENDING",
+                "RETURN_APPROVED",
+                "RETURNED",
+                "Partially Completed"
+            };
 
             if (!binPlacementAllowedStatuses.Contains(
                     order.Status ?? string.Empty,
@@ -245,6 +249,7 @@ namespace Storix_BE.Repository.Implementation
                     $"{string.Join(", ", binPlacementAllowedStatuses)}. " +
                     $"Current status: '{order.Status}'.");
             }
+
             await EnsureTransferInboundReadyForReceivingAsync(order.Id).ConfigureAwait(false);
 
             if (!order.WarehouseId.HasValue)
@@ -263,13 +268,15 @@ namespace Storix_BE.Repository.Implementation
             var incomingList = items.ToList();
             var productIds = incomingList.Select(i => i.ProductId!.Value).Distinct().ToList();
 
-            // load existing inventories for warehouse/product combination
+            // Load existing inventories for warehouse/product combination
             var inventories = await _context.Inventories
-                .Where(inv => inv.WarehouseId == order.WarehouseId && inv.ProductId.HasValue && productIds.Contains(inv.ProductId.Value))
+                .Where(inv => inv.WarehouseId == order.WarehouseId
+                              && inv.ProductId.HasValue
+                              && productIds.Contains(inv.ProductId.Value))
                 .ToListAsync()
                 .ConfigureAwait(false);
 
-            // load product metadata needed for bin occupancy calculation
+            // Load product metadata needed for bin occupancy calculation
             var products = await _context.Products
                 .Where(p => productIds.Contains(p.Id))
                 .ToListAsync()
@@ -278,7 +285,11 @@ namespace Storix_BE.Repository.Implementation
             var now = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
 
             var placementList = (placements ?? Enumerable.Empty<InventoryPlacementDto>()).ToList();
-            var binIdCodes = placementList.Select(p => p.BinIdCode).Where(s => !string.IsNullOrWhiteSpace(s)).Distinct().ToList();
+            var binIdCodes = placementList
+                .Select(p => p.BinIdCode)
+                .Where(s => !string.IsNullOrWhiteSpace(s))
+                .Distinct()
+                .ToList();
 
             // Preload bins (with level -> shelf -> zone to validate warehouse)
             var bins = new List<ShelfLevelBin>();
@@ -294,22 +305,41 @@ namespace Storix_BE.Repository.Implementation
 
                 var missingBins = binIdCodes.Except(bins.Select(b => b.IdCode)).ToList();
                 if (missingBins.Any())
-                    throw new InvalidOperationException($"ShelfLevelBins not found for IdCodes: {string.Join(',', missingBins)}");
+                    throw new InvalidOperationException(
+                        $"ShelfLevelBins not found for IdCodes: {string.Join(',', missingBins)}");
 
                 // Validate bins belong to the same warehouse as the order
-                var invalidBins = bins.Where(b =>
-                    (b.Level?.Shelf?.Zone?.WarehouseId ?? null) != order.WarehouseId).ToList();
+                var invalidBins = bins
+                    .Where(b => (b.Level?.Shelf?.Zone?.WarehouseId ?? null) != order.WarehouseId)
+                    .ToList();
                 if (invalidBins.Any())
-                    throw new InvalidOperationException($"One or more provided bins do not belong to the order warehouse.");
+                    throw new InvalidOperationException(
+                        "One or more provided bins do not belong to the order warehouse.");
             }
 
+            // ─────────────────────────────────────────────────────────────────────────
+            // THE FIX: load how much has ALREADY been committed to inventory for this
+            // inbound order (via InventoryTransactions).  This is the true "previous"
+            // baseline, not ReceivedQuantity which was overwritten by SaveQualityCheckAsync.
+            // ─────────────────────────────────────────────────────────────────────────
+            var alreadyCommittedByProduct = await _context.InventoryTransactions
+                .AsNoTracking()
+                .Where(t => t.ReferenceId == inboundOrderId
+                            && t.TransactionType == "Inbound"
+                            && t.ProductId.HasValue
+                            && productIds.Contains(t.ProductId.Value))
+                .GroupBy(t => t.ProductId!.Value)
+                .Select(g => new { ProductId = g.Key, TotalCommitted = g.Sum(t => t.QuantityChange ?? 0) })
+                .ToDictionaryAsync(x => x.ProductId, x => x.TotalCommitted)
+                .ConfigureAwait(false);
+
             await using var tx = await _context.Database
-            .BeginTransactionAsync().ConfigureAwait(false);
+                .BeginTransactionAsync().ConfigureAwait(false);
             try
             {
                 var deltas = new List<(int InboundOrderItemId, int ProductId, int Delta)>();
 
-                // ── Step 1: Apply item quantity changes and compute deltas ────────
+                // ── Step 1: Apply item quantity changes and compute deltas ────────────
                 foreach (var incoming in incomingList)
                 {
                     InboundOrderItem? existing = null;
@@ -328,9 +358,18 @@ namespace Storix_BE.Repository.Implementation
                             .FirstOrDefault(x => x.ProductId == incoming.ProductId);
                     }
 
-                    var previousReceived = existing?.ReceivedQuantity ?? 0;
                     var newReceived = incoming.ReceivedQuantity ?? 0;
-                    var delta = newReceived - previousReceived;
+
+                    // THE KEY CHANGE: use already-committed inventory quantity as the
+                    // baseline instead of the item's ReceivedQuantity (which was set
+                    // to PassedQuantity by SaveQualityCheckAsync and does NOT reflect
+                    // what has actually been placed into inventory yet).
+                    var productId = incoming.ProductId!.Value;
+                    var alreadyCommitted = alreadyCommittedByProduct.TryGetValue(productId, out var committed)
+                        ? committed
+                        : 0;
+
+                    var delta = newReceived - alreadyCommitted;
 
                     if (existing != null)
                     {
@@ -351,10 +390,10 @@ namespace Storix_BE.Repository.Implementation
                     }
 
                     if (delta != 0)
-                        deltas.Add((incoming.Id, incoming.ProductId!.Value, delta));
+                        deltas.Add((incoming.Id, productId, delta));
                 }
 
-                // ── Step 2: Validate placement sums match positive deltas ─────────
+                // ── Step 2: Validate placement sums match positive deltas ─────────────
                 var placementsByInbound = placementList
                     .GroupBy(p => p.InboundOrderItemId)
                     .ToDictionary(g => g.Key, g => g.ToList());
@@ -371,9 +410,7 @@ namespace Storix_BE.Repository.Implementation
                     }
                 }
 
-                // ── Step 3: ALWAYS — apply inventory changes + create transactions ─
-                //   This block runs whether or not placements were provided.
-                //   This is the fix: previously this was inside `if (placementList.Any())`.
+                // ── Step 3: Apply inventory changes + create transactions ─────────────
                 foreach (var (inboundItemId, productId, delta) in deltas)
                 {
                     var inventory = inventories.FirstOrDefault(i => i.ProductId == productId);
@@ -420,9 +457,7 @@ namespace Storix_BE.Repository.Implementation
                     });
                 }
 
-                // ── Step 4: ALWAYS — update order status ──────────────────────────
-                //   Runs whether or not placements were provided.
-                //   Previously this was inside `if (placementList.Any())` — the bug.
+                // ── Step 4: Update order status ───────────────────────────────────────
                 var allItems = order.InboundOrderItems;
                 var anyReceived = allItems.Any(i => (i.ReceivedQuantity ?? 0) > 0);
                 var allComplete = allItems.Any() && allItems.All(i =>
@@ -434,7 +469,7 @@ namespace Storix_BE.Repository.Implementation
                 else if (anyReceived)
                     order.Status = "Partially Completed";
 
-                // ── Step 5: ONLY WHEN placements provided — bin occupancy + FIFO ──
+                // ── Step 5: Bin occupancy + FIFO (only when placements provided) ──────
                 if (placementList.Any())
                 {
                     foreach (var (inboundItemId, productId, delta) in deltas)
@@ -486,8 +521,7 @@ namespace Storix_BE.Repository.Implementation
                     }
 
                     // Bin percentage occupancy
-                    var affectedBinCodes = placementList
-                        .Select(p => p.BinIdCode).Distinct().ToList();
+                    var affectedBinCodes = placementList.Select(p => p.BinIdCode).Distinct().ToList();
 
                     foreach (var code in affectedBinCodes)
                     {
@@ -527,7 +561,7 @@ namespace Storix_BE.Repository.Implementation
                             bin.Status = true;
                     }
 
-                    // ── FIFO Batch update (placements only) ───────────────────────
+                    // ── FIFO Batch update ─────────────────────────────────────────────
                     var existingBatches = await _context.InventoryBatches
                         .Include(b => b.BatchLocations)
                         .Where(b => b.InboundOrderId == inboundOrderId)
@@ -599,11 +633,7 @@ namespace Storix_BE.Repository.Implementation
                     }
                 } // end if (placementList.Any())
 
-                // ── Step 6: ALWAYS — single save + commit ─────────────────────────
-                //   One SaveChangesAsync covers both the always-block (Steps 3–4)
-                //   and the placement block (Step 5). Previously the save only
-                //   happened inside the placement block, so partial completions
-                //   with no placements were never persisted.
+                // ── Step 6: Single save + commit ──────────────────────────────────────
                 await _context.SaveChangesAsync().ConfigureAwait(false);
                 await tx.CommitAsync().ConfigureAwait(false);
             }
