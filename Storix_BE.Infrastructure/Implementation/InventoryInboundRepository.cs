@@ -467,7 +467,7 @@ namespace Storix_BE.Repository.Implementation
                 if (allComplete)
                     order.Status = "Completed";
                 else if (anyReceived)
-                    order.Status = "Partially Completed";
+                    order.Status = "Completed";
 
                 // ── Step 5: Bin occupancy + FIFO (only when placements provided) ──────
                 if (placementList.Any())
