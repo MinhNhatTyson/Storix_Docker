@@ -1517,51 +1517,6 @@ namespace Storix_BE.Repository.Implementation
 
                 await DeductOutboundByFifoAsync(order, orderItems, performedBy, now).ConfigureAwait(false);
 
-                if (locationList.Any())
-                {
-                    var shelfIds = locationList.Select(x => x.ShelfId).Distinct().ToList();
-                    var shelfSet = await _context.Shelves
-                        .AsNoTracking()
-                        .Where(s => shelfIds.Contains(s.Id)
-                                    && s.Zone != null
-                                    && s.Zone.WarehouseId == order.WarehouseId)
-                        .Select(s => s.Id)
-                        .ToListAsync()
-                        .ConfigureAwait(false);
-
-                    var validShelfIds = shelfSet.ToHashSet();
-                    var invalidShelfId = locationList.Select(x => x.ShelfId).FirstOrDefault(sid => !validShelfIds.Contains(sid));
-                    if (invalidShelfId > 0)
-                        throw new InvalidOperationException($"Shelf {invalidShelfId} is invalid or does not belong to outbound warehouse.");
-
-                    foreach (var loc in locationList)
-                    {
-                        var inventory = await _context.Inventories.FirstAsync(i => i.WarehouseId == order.WarehouseId && i.ProductId == loc.ProductId).ConfigureAwait(false);
-                        var invLoc = await _context.InventoryLocations
-                            .FirstOrDefaultAsync(x => x.InventoryId == inventory.Id && x.ShelfId == loc.ShelfId)
-                            .ConfigureAwait(false);
-
-                        if (invLoc == null)
-                            throw new InvalidOperationException($"No stock placement found at ShelfId {loc.ShelfId} for ProductId {loc.ProductId}.");
-
-                        var currentQty = invLoc.Quantity ?? 0;
-                        if (currentQty < loc.Quantity)
-                            throw new InvalidOperationException($"Insufficient shelf stock for ProductId {loc.ProductId} at ShelfId {loc.ShelfId}. Available: {currentQty}, Requested: {loc.Quantity}.");
-
-                        invLoc.Quantity = currentQty - loc.Quantity;
-                        invLoc.UpdatedAt = now;
-
-                        _context.ActivityLogs.Add(new ActivityLog
-                        {
-                            UserId = performedBy,
-                            Entity = "OutboundOrder",
-                            EntityId = order.Id,
-                            Action = $"OUTBOUND_LOCATION_TRANSITION:PRODUCT={loc.ProductId};SHELF={loc.ShelfId};QTY={loc.Quantity};NOTE={note}",
-                            Timestamp = now
-                        });
-                    }
-                }
-
                 order.Status = "Completed";
 
                 _context.OutboundOrderStatusHistories.Add(new OutboundOrderStatusHistory
@@ -2221,6 +2176,32 @@ namespace Storix_BE.Repository.Implementation
                 Timestamp = now
             });
 
+            var requiredByProduct = fifoItems.ToDictionary(x => x.ProductId, x => x.Quantity);
+            var batchAvailability = await _context.InventoryBatches
+                .AsNoTracking()
+                .Where(b =>
+                    b.WarehouseId == order.WarehouseId &&
+                    requiredByProduct.Keys.Contains(b.ProductId) &&
+                    !b.IsExhausted &&
+                    b.RemainingQuantity > 0)
+                .GroupBy(b => b.ProductId)
+                .Select(g => new
+                {
+                    ProductId = g.Key,
+                    AvailableQuantity = g.Sum(x => x.RemainingQuantity)
+                })
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            var batchAvailabilityByProduct = batchAvailability.ToDictionary(x => x.ProductId, x => x.AvailableQuantity);
+            foreach (var item in fifoItems)
+            {
+                var available = batchAvailabilityByProduct.TryGetValue(item.ProductId, out var qty) ? qty : 0;
+                if (available < item.Quantity)
+                    throw new InvalidOperationException(
+                        $"Insufficient batch stock for ProductId {item.ProductId} in WarehouseId {order.WarehouseId.Value}. Available: {available}, Requested: {item.Quantity}.");
+            }
+
             var inventories = await _context.Inventories
                 .Where(i => i.WarehouseId == order.WarehouseId && i.ProductId.HasValue && productIds.Contains(i.ProductId.Value))
                 .ToListAsync()
@@ -2228,27 +2209,14 @@ namespace Storix_BE.Repository.Implementation
 
             var selectedBins = await LoadOutboundBinAssignmentsAsync(order.Id, items.Select(i => i.Id))
                 .ConfigureAwait(false);
+            var preferredBinCodesByProduct = selectedBins
+                .Where(x => x.ProductId > 0 && !string.IsNullOrWhiteSpace(x.BinIdCode))
+                .GroupBy(x => x.ProductId)
+                .ToDictionary(
+                    g => g.Key,
+                    g => g.Select(x => x.BinIdCode!).ToHashSet(StringComparer.OrdinalIgnoreCase));
+
             var deductedByProductBin = new Dictionary<(int ProductId, int BinId), int>();
-
-            if (selectedBins.Any())
-            {
-                var itemMap = items.Where(i => i.Id > 0).ToDictionary(i => i.Id);
-                var assignedItemIds = selectedBins.Select(x => x.OutboundOrderItemId).Distinct().ToHashSet();
-                var missingAssignments = itemMap.Keys.Where(id => !assignedItemIds.Contains(id)).ToList();
-                _ = missingAssignments;
-
-                foreach (var item in itemMap.Values)
-                {
-                    var assigned = selectedBins.Where(x => x.OutboundOrderItemId == item.Id).ToList();
-                    if (assigned.Any(x => x.ProductId != item.ProductId))
-                        continue;
-
-                    var required = item.Quantity ?? item.ReceivedQuantity ?? item.ExpectedQuantity ?? 0;
-                    var allocated = assigned.Sum(x => x.Quantity);
-                    _ = required;
-                    _ = allocated;
-                }
-            }
 
             foreach (var item in fifoItems)
             {
@@ -2274,6 +2242,9 @@ namespace Storix_BE.Repository.Implementation
                 var batchesToDeduct = await _context.InventoryBatches
                     .Include(b => b.BatchLocations)
                         .ThenInclude(bl => bl.Bin)
+                            .ThenInclude(bin => bin.Level)
+                                .ThenInclude(level => level!.Shelf)
+                                    .ThenInclude(shelf => shelf!.Zone)
                     .Where(b =>
                         b.WarehouseId == order.WarehouseId &&
                         b.ProductId == item.ProductId &&
@@ -2288,99 +2259,85 @@ namespace Storix_BE.Repository.Implementation
                 var productAssignments = selectedBins
                     .Where(x => x.ProductId == item.ProductId)
                     .ToList();
+                var exactAssignments = productAssignments
+                    .Where(x => x.BatchId.HasValue && x.BatchId.Value > 0 && x.BinId.HasValue && x.BinId.Value > 0)
+                    .ToList();
 
-                var hasExactBatchAssignments = productAssignments.Any()
-                    && productAssignments.All(x => x.BatchId.HasValue && x.BatchId.Value > 0 && x.BinId.HasValue && x.BinId.Value > 0);
+                var candidateLocations = batchesToDeduct
+                    .SelectMany(batch => batch.BatchLocations
+                        .Where(bl =>
+                            bl.Quantity > 0 &&
+                            bl.Bin != null &&
+                            bl.Bin.Level != null &&
+                            bl.Bin.Level.Shelf != null &&
+                            bl.Bin.Level.Shelf.Zone != null &&
+                            bl.Bin.Level.Shelf.Zone.WarehouseId == order.WarehouseId.Value)
+                        .Select(bl =>
+                        {
+                            var binIdCode = bl.Bin?.IdCode ?? string.Empty;
+                            var shelfId = bl.Bin?.Level?.ShelfId;
+                            var preferredRank = 2;
 
-                if (hasExactBatchAssignments)
+                            if (exactAssignments.Any(a => a.BatchId == batch.Id && a.BinId == bl.BinId))
+                                preferredRank = 0;
+                            else if (preferredBinCodesByProduct.TryGetValue(item.ProductId, out var preferredBinCodes) && preferredBinCodes.Contains(binIdCode))
+                                preferredRank = 1;
+
+                            return new
+                            {
+                                Batch = batch,
+                                Location = bl,
+                                BinIdCode = binIdCode,
+                                ShelfId = shelfId,
+                                PreferredRank = preferredRank
+                            };
+                        }))
+                    .OrderBy(x => x.PreferredRank)
+                    .ThenBy(x => x.Batch.InboundDate)
+                    .ThenBy(x => x.Batch.Id)
+                    .ThenByDescending(x => x.Location.Quantity)
+                    .ThenBy(x => x.BinIdCode, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                foreach (var candidate in candidateLocations)
                 {
-                    foreach (var assignment in productAssignments
-                        .OrderBy(x => x.InboundDate ?? DateTime.MaxValue)
-                        .ThenBy(x => x.BatchId)
-                        .ThenBy(x => x.BinIdCode))
+                    if (remainingToDeduct <= 0)
+                        break;
+
+                    var deductQty = Math.Min(candidate.Location.Quantity, remainingToDeduct);
+                    if (deductQty <= 0)
+                        continue;
+
+                    candidate.Location.Quantity -= deductQty;
+                    candidate.Location.UpdatedAt = now;
+                    candidate.Batch.RemainingQuantity -= deductQty;
+                    candidate.Batch.UpdatedAt = now;
+                    remainingToDeduct -= deductQty;
+
+                    var deductionKey = (item.ProductId, candidate.Location.BinId);
+                    deductedByProductBin[deductionKey] = deductedByProductBin.TryGetValue(deductionKey, out var deductedQty)
+                        ? deductedQty + deductQty
+                        : deductQty;
+
+                    _context.ActivityLogs.Add(new ActivityLog
                     {
-                        if (remainingToDeduct <= 0) break;
+                        UserId = performedBy,
+                        Entity = "OutboundBatch",
+                        EntityId = order.Id,
+                        Action = $"OUTBOUND_FIFO_BATCH_DEDUCT:ORDER={order.Id};PRODUCT={item.ProductId};BATCH={candidate.Batch.Id};BIN={candidate.Location.BinId};QTY={deductQty};INBOUND_DATE={candidate.Batch.InboundDate:O}",
+                        Timestamp = now
+                    });
 
-                        var batch = batchesToDeduct.FirstOrDefault(b => b.Id == assignment.BatchId!.Value);
-                        if (batch == null)
-                            continue;
-
-                        var location = batch.BatchLocations.FirstOrDefault(bl => bl.BinId == assignment.BinId!.Value);
-                        if (location == null)
-                            continue;
-
-                        if (location.Quantity < assignment.Quantity)
-                            continue;
-
-                        location.Quantity -= assignment.Quantity;
-                        location.UpdatedAt = now;
-                        batch.RemainingQuantity -= assignment.Quantity;
-                        batch.UpdatedAt = now;
-                        remainingToDeduct -= assignment.Quantity;
-                        var assignmentKey = (item.ProductId, location.BinId);
-                        deductedByProductBin[assignmentKey] = deductedByProductBin.TryGetValue(assignmentKey, out var deductedAssignedQty)
-                            ? deductedAssignedQty + assignment.Quantity
-                            : assignment.Quantity;
-
-                        _context.ActivityLogs.Add(new ActivityLog
-                        {
-                            UserId = performedBy,
-                            Entity = "OutboundBatch",
-                            EntityId = order.Id,
-                            Action = $"OUTBOUND_FIFO_BATCH_DEDUCT:ORDER={order.Id};PRODUCT={item.ProductId};BATCH={batch.Id};BIN={location.BinId};QTY={assignment.Quantity};INBOUND_DATE={batch.InboundDate:O}",
-                            Timestamp = now
-                        });
-
-                        if (batch.RemainingQuantity <= 0)
-                        {
-                            batch.RemainingQuantity = 0;
-                            batch.IsExhausted = true;
-                        }
-                    }
-                }
-                else
-                {
-                    var assignedBinCodes = productAssignments
-                        .Select(x => x.BinIdCode)
-                        .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-                    foreach (var batch in batchesToDeduct)
+                    if (candidate.Batch.RemainingQuantity <= 0)
                     {
-                        if (remainingToDeduct <= 0) break;
-
-                        var locationsToDeduct = batch.BatchLocations
-                            .Where(bl => bl.Quantity > 0)
-                            .OrderByDescending(bl => assignedBinCodes.Contains(bl.Bin?.IdCode ?? string.Empty) ? 1 : 0)
-                            .ThenByDescending(bl => bl.Quantity)
-                            .ToList();
-
-                        foreach (var location in locationsToDeduct)
-                        {
-                            if (remainingToDeduct <= 0) break;
-
-                            var deductFromLocation = Math.Min(location.Quantity, remainingToDeduct);
-                            location.Quantity -= deductFromLocation;
-                            location.UpdatedAt = now;
-                            remainingToDeduct -= deductFromLocation;
-                            batch.RemainingQuantity -= deductFromLocation;
-                            var deductionKey = (item.ProductId, location.BinId);
-                            deductedByProductBin[deductionKey] = deductedByProductBin.TryGetValue(deductionKey, out var deductedQty)
-                                ? deductedQty + deductFromLocation
-                                : deductFromLocation;
-                        }
-
-                        if (batch.RemainingQuantity <= 0)
-                        {
-                            batch.RemainingQuantity = 0;
-                            batch.IsExhausted = true;
-                        }
-
-                        batch.UpdatedAt = now;
+                        candidate.Batch.RemainingQuantity = 0;
+                        candidate.Batch.IsExhausted = true;
                     }
                 }
 
                 if (remainingToDeduct > 0)
-                    continue;
+                    throw new InvalidOperationException(
+                        $"Insufficient batch stock for ProductId {item.ProductId} in WarehouseId {order.WarehouseId.Value}. Remaining quantity after FIFO allocation: {remainingToDeduct}.");
             }
 
             if (deductedByProductBin.Any())
