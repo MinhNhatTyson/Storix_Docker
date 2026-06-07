@@ -264,7 +264,9 @@ namespace Storix_BE.Repository.Implementation
 
             var shelfStocks = await _context.InventoryLocations
                 .AsNoTracking()
-                .Where(il => il.InventoryId.HasValue && inventoryIds.Contains(il.InventoryId.Value))
+                .Where(il => il.InventoryId.HasValue
+                             && inventoryIds.Contains(il.InventoryId.Value)
+                             && (il.Quantity ?? 0) > 0)
                 .Include(il => il.Shelf)
                     .ThenInclude(s => s!.Zone)
                 .Select(il => new
@@ -308,6 +310,7 @@ namespace Storix_BE.Repository.Implementation
                 .ToDictionary(
                     g => g.Key,
                     g => (IReadOnlyList<IInventoryOutboundRepository.WarehouseInventoryLocationDto>)g
+                        .Where(x => x.Quantity > 0)
                         .Select(x =>
                         {
                             var nestedBins = x.ShelfId.HasValue &&
@@ -764,9 +767,8 @@ namespace Storix_BE.Repository.Implementation
                 .ToListAsync()
                 .ConfigureAwait(false);
 
-            var inventoryIdByProductId = inventories
-                .GroupBy(x => x.ProductId)
-                .ToDictionary(g => g.Key, g => g.First().Id);
+            var productIdByInventoryId = inventories
+                .ToDictionary(x => x.Id, x => x.ProductId);
 
             var inventoryIds = inventories.Select(x => x.Id).Distinct().ToList();
 
@@ -793,23 +795,36 @@ namespace Storix_BE.Repository.Implementation
                              && il.Shelf != null
                              && il.Shelf.Zone != null
                              && il.Shelf.Zone.WarehouseId == warehouseId)
-                .GroupBy(il =>
+                .Select(il =>
                 {
                     var invId = il.InventoryId!.Value;
-                    var productId = inventories.First(x => x.Id == invId).ProductId;
-                    return productId;
+                    var productId = productIdByInventoryId.TryGetValue(invId, out var pid) ? pid : 0;
+                    return new
+                    {
+                        ProductId = productId,
+                        ZoneId = il.Shelf!.ZoneId,
+                        ZoneCode = il.Shelf.Zone!.Code,
+                        ShelfId = il.ShelfId!.Value,
+                        ShelfCode = il.Shelf.Code,
+                        Quantity = il.Quantity ?? 0,
+                        WarehouseId = il.Shelf.Zone.WarehouseId
+                    };
                 })
+                .Where(x => x.ProductId > 0)
+                .GroupBy(x => x.ProductId)
                 .ToDictionary(
                     g => g.Key,
                     g => (IReadOnlyList<IInventoryOutboundRepository.OutboundAvailableShelfDto>)g
-                        .OrderByDescending(x => x.Quantity ?? 0)
-                        .Select(x => new IInventoryOutboundRepository.OutboundAvailableShelfDto(
-                            x.ShelfId!.Value,
-                            x.Shelf!.Code,
-                            x.Shelf!.IdCode,
-                            x.Shelf!.ZoneId,
-                            x.Shelf!.Zone!.WarehouseId,
-                            x.Quantity ?? 0))
+                        .GroupBy(x => new { x.ZoneId, x.ZoneCode, x.ShelfId, x.ShelfCode, x.WarehouseId })
+                        .Select(shelfGroup => new IInventoryOutboundRepository.OutboundAvailableShelfDto(
+                            shelfGroup.Key.ShelfId,
+                            shelfGroup.Key.ShelfCode,
+                            null,
+                            shelfGroup.Key.ZoneId,
+                            shelfGroup.Key.WarehouseId,
+                            shelfGroup.Sum(x => x.Quantity)))
+                        .OrderByDescending(x => x.AvailableQuantity)
+                        .ThenBy(x => x.ShelfId)
                         .ToList());
 
             var binsByProduct = bins
@@ -818,26 +833,42 @@ namespace Storix_BE.Repository.Implementation
                             && b.Level.Shelf != null
                             && b.Level.Shelf.Zone != null
                             && b.Level.Shelf.Zone.WarehouseId == warehouseId)
-                .GroupBy(b =>
+                .Select(b =>
                 {
                     var invId = b.InventoryId!.Value;
-                    var productId = inventories.First(x => x.Id == invId).ProductId;
-                    return productId;
+                    var productId = productIdByInventoryId.TryGetValue(invId, out var pid) ? pid : 0;
+                    return new
+                    {
+                        ProductId = productId,
+                        BinId = b.Id,
+                        BinCode = b.Code,
+                        BinIdCode = b.IdCode,
+                        LevelId = b.LevelId,
+                        ShelfId = b.Level!.ShelfId,
+                        InventoryId = b.InventoryId,
+                        OccupancyPercentage = b.Percentage,
+                        Width = b.Width,
+                        Height = b.Height,
+                        Length = b.Length
+                    };
                 })
+                .Where(b => b.ProductId > 0)
+                .GroupBy(b => b.ProductId)
                 .ToDictionary(
                     g => g.Key,
                     g => (IReadOnlyList<IInventoryOutboundRepository.OutboundAvailableBinDto>)g
-                        .Select(b => new IInventoryOutboundRepository.OutboundAvailableBinDto(
-                            b.Id,
-                            b.Code,
-                            b.IdCode,
-                            b.LevelId,
-                            b.Level!.ShelfId,
-                            b.InventoryId,
-                            b.Percentage,
-                            b.Width,
-                            b.Height,
-                            b.Length))
+                        .GroupBy(b => new { b.BinId, b.BinCode, b.BinIdCode, b.LevelId, b.ShelfId, b.InventoryId, b.OccupancyPercentage, b.Width, b.Height, b.Length })
+                        .Select(binGroup => new IInventoryOutboundRepository.OutboundAvailableBinDto(
+                            binGroup.Key.BinId,
+                            binGroup.Key.BinCode,
+                            binGroup.Key.BinIdCode,
+                            binGroup.Key.LevelId,
+                            binGroup.Key.ShelfId,
+                            binGroup.Key.InventoryId,
+                            binGroup.Key.OccupancyPercentage,
+                            binGroup.Key.Width,
+                            binGroup.Key.Height,
+                            binGroup.Key.Length))
                         .ToList());
 
             var results = itemInfos.Select(ii =>
@@ -1791,9 +1822,45 @@ namespace Storix_BE.Repository.Implementation
                 if (remainingFifoNeed > 0)
                     continue;
 
+                var consumedByLocationId = new Dictionary<int, int>();
+
+                void AddSnapshot(
+                    IInventoryOutboundRepository.InventoryPlacementDto placement,
+                    InventoryBatch batch,
+                    InventoryBatchLocation location,
+                    int pickQty)
+                {
+                    var bin = location.Bin;
+                    snapshots.Add(new ResolvedOutboundAllocationSnapshot(
+                        placement.OutboundOrderItemId,
+                        placement.ProductId,
+                        product?.Name,
+                        product?.Sku,
+                        bin?.Level?.Shelf?.ZoneId,
+                        bin?.Level?.Shelf?.Zone?.Code,
+                        bin?.Level?.ShelfId,
+                        bin?.Level?.Shelf?.Code,
+                        bin?.Id,
+                        bin?.Code,
+                        bin?.IdCode ?? placement.BinIdCode,
+                        batch.Id,
+                        batch.InboundDate,
+                        batch.EffectiveUnitCost,
+                        orderItem.Price,
+                        orderItem.CostPrice,
+                        orderItem.PricingMethod,
+                        pickQty));
+
+                    consumedByLocationId[location.Id] = consumedByLocationId.TryGetValue(location.Id, out var consumed)
+                        ? consumed + pickQty
+                        : pickQty;
+                }
+
                 foreach (var placement in itemGroup.OrderBy(p => p.BinIdCode, StringComparer.OrdinalIgnoreCase))
                 {
-                    var targetBin = binByCode[placement.BinIdCode];
+                    if (!binByCode.ContainsKey(placement.BinIdCode))
+                        throw new InvalidOperationException($"Bin '{placement.BinIdCode}' was not found in warehouse {order.WarehouseId.Value}.");
+
                     var remaining = placement.Quantity;
 
                     for (var i = 0; i < fifoAllowances.Count && remaining > 0; i++)
@@ -1811,29 +1878,54 @@ namespace Storix_BE.Repository.Implementation
                         {
                             if (remaining <= 0 || allowance.RemainingAllowed <= 0) break;
 
-                            var fifoEligibleInLocation = Math.Min(location.Quantity, allowance.RemainingAllowed);
+                            var alreadyConsumed = consumedByLocationId.TryGetValue(location.Id, out var consumedQty)
+                                ? consumedQty
+                                : 0;
+                            var locationAvailable = Math.Max(0, location.Quantity - alreadyConsumed);
+                            var fifoEligibleInLocation = Math.Min(locationAvailable, allowance.RemainingAllowed);
                             var pickQty = Math.Min(fifoEligibleInLocation, remaining);
                             if (pickQty <= 0) continue;
 
-                            snapshots.Add(new ResolvedOutboundAllocationSnapshot(
-                                placement.OutboundOrderItemId,
-                                placement.ProductId,
-                                product?.Name,
-                                product?.Sku,
-                                targetBin.Level?.Shelf?.ZoneId,
-                                targetBin.Level?.Shelf?.Zone?.Code,
-                                targetBin.Level?.ShelfId,
-                                targetBin.Level?.Shelf?.Code,
-                                targetBin.Id,
-                                targetBin.Code,
-                                placement.BinIdCode,
-                                allowance.Batch.Id,
-                                allowance.Batch.InboundDate,
-                                allowance.Batch.EffectiveUnitCost,
-                                orderItem.Price,
-                                orderItem.CostPrice,
-                                orderItem.PricingMethod,
-                                pickQty));
+                            AddSnapshot(placement, allowance.Batch, location, pickQty);
+
+                            remaining -= pickQty;
+                            allowance = allowance with { RemainingAllowed = allowance.RemainingAllowed - pickQty };
+                            fifoAllowances[i] = allowance;
+                        }
+                    }
+
+                    for (var i = 0; i < fifoAllowances.Count && remaining > 0; i++)
+                    {
+                        var allowance = fifoAllowances[i];
+                        if (allowance.RemainingAllowed <= 0)
+                            continue;
+
+                        var fallbackLocations = allowance.Batch.BatchLocations
+                            .Where(bl =>
+                                bl.Quantity > 0 &&
+                                bl.Bin != null &&
+                                bl.Bin.Level != null &&
+                                bl.Bin.Level.Shelf != null &&
+                                bl.Bin.Level.Shelf.Zone != null &&
+                                bl.Bin.Level.Shelf.Zone.WarehouseId == order.WarehouseId.Value)
+                            .OrderByDescending(bl => string.Equals(bl.Bin?.IdCode, placement.BinIdCode, StringComparison.OrdinalIgnoreCase))
+                            .ThenByDescending(bl => bl.Quantity)
+                            .ThenBy(bl => bl.Bin?.IdCode, StringComparer.OrdinalIgnoreCase)
+                            .ToList();
+
+                        foreach (var location in fallbackLocations)
+                        {
+                            if (remaining <= 0 || allowance.RemainingAllowed <= 0) break;
+
+                            var alreadyConsumed = consumedByLocationId.TryGetValue(location.Id, out var consumedQty)
+                                ? consumedQty
+                                : 0;
+                            var locationAvailable = Math.Max(0, location.Quantity - alreadyConsumed);
+                            var fifoEligibleInLocation = Math.Min(locationAvailable, allowance.RemainingAllowed);
+                            var pickQty = Math.Min(fifoEligibleInLocation, remaining);
+                            if (pickQty <= 0) continue;
+
+                            AddSnapshot(placement, allowance.Batch, location, pickQty);
 
                             remaining -= pickQty;
                             allowance = allowance with { RemainingAllowed = allowance.RemainingAllowed - pickQty };
@@ -1842,7 +1934,8 @@ namespace Storix_BE.Repository.Implementation
                     }
 
                     if (remaining > 0)
-                        continue;
+                        throw new InvalidOperationException(
+                            $"Insufficient bin stock to allocate ProductId {placement.ProductId}. Requested: {placement.Quantity}, Missing: {remaining}.");
                 }
             }
 
